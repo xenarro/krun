@@ -64,7 +64,7 @@ leader election (about 40 lines on `CoordinationV1Api`). The SDKs
 ## 3. Repository layout
 
 ```
-bin/krun.js                          dispatch: gateway, scheduler, migrate, validate, init
+bin/krun.js                          dispatch: gateway, scheduler, migrate, validate
 packages/shared/src/config/          env parsing, one object per process
 packages/shared/src/store/           Store interface, model and table types, errors, Kysely setup, Migrator
 packages/shared/src/store/postgres/
@@ -78,7 +78,7 @@ packages/shared/src/health/          Fastify plugin: /healthz, /readyz, /metrics
 packages/shared/src/objstore/        presigned PUT and GET, object exists
 packages/shared/src/webhook/         host allowlist, private IP check, signing
 packages/sdk-node/src/               @krun/sdk: run(), context, local mode
-packages/cli/src/                    @krun/cli: init, validate
+packages/cli/src/                    @krun/cli: init, deploy, validate
 packages/cli/templates/node/         function project template
 packages/cli/templates/python/       function project template
 sdk/python/krun/                     krun Python SDK, pyproject.toml, tests
@@ -87,7 +87,7 @@ apps/gateway/src/                    Fastify apps: public /v1 and internal /inte
 apps/scheduler/src/                  leader, main loop, informer, deliveries, sweep, main.ts
 apps/scheduler/src/k8s/              KubeConfig, Job and Secret builders
 deploy/helm/krun/                    chart
-deploy/helm/krun/crds/               generated CRD, committed
+deploy/helm/krun/templates/crd-functions.yaml  generated CRD template, committed
 scripts/gen-crd.ts                   TypeBox schema to CRD YAML and editor JSON Schema
 test/e2e/                            kind-based tests
 Makefile  Dockerfile  package.json  pnpm-workspace.yaml  tsconfig.base.json
@@ -110,7 +110,7 @@ Gate: `make check` green in CI on an empty but wired repository.
       `tsconfig.base.json`, packages `packages/shared`, `apps/gateway`,
       `apps/scheduler`, each with a strict `tsconfig.json` and a `build`
       script; `.gitignore`; `bin/krun.js` dispatches `gateway`, `scheduler`,
-      `migrate`, `validate`, `init` to the built entrypoints, which print their name
+      `migrate`, `validate` to the built entrypoints, which print their name
       and exit 0. Acceptance:
       `pnpm -r build && node bin/krun.js gateway` prints `gateway`.
 - [ ] P0.2 Makefile with all targets in section 3, `biome.json` with the
@@ -138,7 +138,8 @@ Gate: `make check` green in CI on an empty but wired repository.
       registry); readiness returns 503 until marked ready. Acceptance: unit
       test with Fastify `inject`.
 - [ ] P0.8 `packages/shared/src/functions/schema.ts`: Function spec with TypeBox;
-      `scripts/gen-crd.ts` writes `deploy/helm/krun/crds/krun.io_functions.yaml`
+      `scripts/gen-crd.ts` writes `deploy/helm/krun/templates/crd-functions.yaml`
+      wrapped in the `crds.install` condition with the keep annotation
       (namespaced, short name `kfn`, status subresource, printer columns
       READY, IMAGE, AGE, `x-kubernetes-preserve-unknown-fields` on
       `inputSchema`, CEL digest rule) and `docs/schemas/function-v1alpha1.json`;
@@ -291,9 +292,9 @@ ends `failed` with `heartbeat_timeout` within 60 seconds, log tail in
       unit test with a run in `running` and no Job.
 - [ ] P4.6 Metrics from SPEC section 11 for queue wait, cold start and run
       duration. Acceptance: metric names appear on `/metrics` after one run.
-- [ ] P4.7 `test/e2e`: kind cluster script, install the CRD, apply the jobs
-      namespace manifests and a Function, deploy both processes from the local
-      image in embedded mode, run the scenarios in the gate. Acceptance:
+- [ ] P4.7 `test/e2e`: kind cluster script, apply the CRD, the jobs namespace
+      manifests and a `function.yaml` with `kubectl`, deploy both processes
+      from the local image in embedded mode, run the scenarios in the gate. Acceptance:
       `make e2e` green.
 - [ ] P4.8 Function status writer on the leader: `Ready` condition with the
       reason from P2.1, patched through `CustomObjectsApi` only when
@@ -361,11 +362,13 @@ switches to installing the chart instead of raw manifests, in embedded
 mode and in postgres mode with a plain Postgres Deployment from
 `test/e2e/postgres.yaml`.
 
-- [ ] P7.1 Chart skeleton, values from SPEC section 13, the CRD in `crds/`,
-      Function resources from `functions`, Services including
-      `krun-gateway-internal`, ServiceAccounts; keys mounted as a directory,
-      no `subPath`. Acceptance: `helm lint` passes and the rendered
-      manifests contain no `subPath` and no ConfigMap.
+- [ ] P7.1 Chart skeleton, values from SPEC section 13, the CRD templated
+      under `crds.install` with the keep annotation under `crds.keep`, no
+      Function resources, Services including `krun-gateway-internal`,
+      ServiceAccounts; keys mounted as a directory, no `subPath`.
+      Acceptance: `helm lint` passes; the rendered manifests contain no
+      `subPath`, no ConfigMap and no Function; `crds.install=false` drops
+      the CRD; `crds.keep=false` drops the annotation.
 - [ ] P7.2 Postgres mode: two Deployments, migrate hook Job, DSN from
       existing Secret. Acceptance: `helm template` renders without the
       StatefulSet.
@@ -376,7 +379,8 @@ mode and in postgres mode with a plain Postgres Deployment from
 - [ ] P7.4 Jobs namespace resources: Namespace with PSA labels, LimitRange,
       ResourceQuota, NetworkPolicy, `krun-job-default` ServiceAccount,
       scheduler Role and RoleBinding, gateway Role and RoleBinding for
-      Functions, gateway NetworkPolicy for the internal port, Lease RBAC. Acceptance: `helm template` output contains
+      Functions, `krun-function-author` Role without a binding, gateway
+      NetworkPolicy for the internal port, Lease RBAC. Acceptance: `helm template` output contains
       each kind; e2e verifies a job pod reaches the gateway internal port and
       not the public port.
 - [ ] P7.5 Chart README with every value documented. Acceptance: file
@@ -414,6 +418,11 @@ whose image builds; e2e runs one SDK-built function per language on kind.
       present), and a slow handler that outlives `heartbeatTimeout` while
       the SDK pings (stays `running`, then succeeds). Acceptance: `make e2e`
       green.
+- [ ] P8.6 `krun deploy` per SPEC section 7.2 with `--no-apply` and
+      `--registry`. Acceptance: on kind with a local registry, `krun deploy`
+      in a template project ends with `Ready=True` and prints the curl;
+      `--no-apply` leaves the cluster untouched and `function.yaml` carries
+      the digest.
 
 ### Phase 9: hardening, benchmarks, README
 
@@ -435,7 +444,7 @@ Gate: all e2e scenarios green; README states measured numbers and the
       sustained runs per second on kind.
       Acceptance: numbers written into README.
 - [ ] P9.4 README: purpose, boundaries, quick start for both modes, the
-      golden path (`krun init`, build, apply, run), function container contract,
+      golden path (`krun init`, `krun deploy`, run), function container contract,
       API summary, link to SPEC.md. Acceptance:
       a reader can run the quick start on kind in under 10 minutes.
 - [ ] P9.5 Tag `v0.1.0`, release workflow publishes the image and the chart
