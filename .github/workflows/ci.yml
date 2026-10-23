@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      UV_FROZEN: "true"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          run_install: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: "0.13.1"
+          python-version: "3.13.15"
+          enable-cache: true
+          cache-dependency-glob: sdk/python/uv.lock
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v4.3.0
+      - name: Validate workflow syntax
+        shell: bash
+        run: |
+          curl --fail --location --retry 3 https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz --output "$RUNNER_TEMP/actionlint.tar.gz"
+          printf '%s  %s\n' '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8' "$RUNNER_TEMP/actionlint.tar.gz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" .github/workflows/ci.yml
+      - name: Install locked dependencies
+        run: |
+          pnpm install --frozen-lockfile
+          uv sync --directory sdk/python --frozen
+      - name: Check source, tests and unused code
+        run: make check
+      - name: Check generated files
+        run: |
+          make generate
+          git diff --exit-code
+          test -z "$(git ls-files --others --exclude-standard)"
+      - name: Build container
+        run: make docker
+      - name: Verify container commands and runtime identity
+        run: |
+          for entry in gateway scheduler migrate validate; do
+            output=$(docker run --rm --read-only --network none --cap-drop ALL --security-opt no-new-privileges krun:local "$entry")
+            test "$output" = "$entry"
+          done
+          docker run --rm --read-only --network none --entrypoint /nodejs/bin/node krun:local -e 'const assert = require("node:assert/strict"); const fs = require("node:fs"); assert.equal(process.getuid(), 65532); assert.equal(process.getgid(), 65532); assert.equal(process.version, "v" + fs.readFileSync("/app/.node-version", "utf8").trim());'
+      - name: Lint chart
+        run: make helm-lint
+      - name: Audit production dependencies
+        run: pnpm audit --prod --audit-level=critical
+      - name: Scan container for fixable critical vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.76.1
+          scan-type: image
+          image-ref: krun:local
+          scanners: vuln
+          severity: CRITICAL
+          ignore-unfixed: "true"
+          exit-code: "1"
+          format: table

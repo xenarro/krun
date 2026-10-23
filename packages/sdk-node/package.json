@@ -1,0 +1,26 @@
+{
+  "name": "@krun/sdk",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "lint": "biome check . && tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "vitest": "^5.0"
+  }
+}

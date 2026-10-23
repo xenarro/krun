@@ -76,7 +76,7 @@ allowlist an agent checks before adding an import.
 | `picomatch` | key and webhook host globs |
 | `@clack/prompts`, `picocolors`, `tinyexec` | CLI only: prompts, colour, running `docker` and `kubectl` |
 
-Dev dependencies: `typescript`, `vitest`, `@effect/vitest`, `fast-check`,
+Dev dependencies: `typescript`, `vitest`, `vite` (Vitest's required peer, SPEC D37), `@effect/vitest`, `fast-check`,
 `testcontainers`, `@testcontainers/postgresql`, `@testcontainers/minio`,
 `@biomejs/biome`, `@types/node`, `@types/pg`, `knip`, `publint`,
 `@arethetypeswrong/cli`; `hypothesis` for the Python SDK.

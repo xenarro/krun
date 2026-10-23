@@ -1,0 +1,23 @@
+[project]
+name = "krun"
+version = "0.0.0"
+description = "krun function SDK scaffold"
+requires-python = ">=3.11"
+dependencies = []
+
+[dependency-groups]
+dev = ["pytest", "ruff", "mypy"]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+target-version = "py311"
+
+[tool.mypy]
+strict = true
+files = ["krun", "tests"]
