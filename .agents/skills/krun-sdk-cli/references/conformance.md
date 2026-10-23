@@ -1,0 +1,122 @@
+# `test/sdk-conformance` (P8.3)
+
+Source of truth: PLAN.md:811-818. One scenario table, read by both SDK test
+suites, pins the exact request sequence an SDK must produce, so the Node and
+Python SDKs are indistinguishable on the wire. Reordering one SDK's calls
+must fail that SDK's suite.
+
+## Layout
+
+```
+test/sdk-conformance/
+  scenarios.json        the table (data only, no code)
+  README.md             matcher grammar and how to add a scenario
+packages/sdk-node/src/conformance.test.ts     Vitest; loads ../../../test/sdk-conformance/scenarios.json
+sdk/python/tests/test_conformance.py          pytest; loads the same file
+```
+
+
+Each suite ships its own handler fixtures keyed by name (`echo`, `void`,
+`throws`, `status_then_return`, `two_status`, `big_result`, `slow`, ...).
+The table names the fixture; it never contains code.
+
+## Scenario shape
+
+```json
+{
+  "name": "status then heartbeat",
+  "handler": "status_then_return",
+  "env": { "KRUN_HEARTBEAT_TIMEOUT": "3", "KRUN_MAX_RESULT_BYTES": "262144", "upload": false },
+  "input": { "n": 1 },
+  "responses": {
+    "GET input": [ { "status": 200, "body": { "n": 1 } } ],
+    "POST status": [ { "status": 204 } ],
+    "PUT result": [ { "status": 204 } ]
+  },
+  "expect": {
+    "requests": [
+      { "method": "GET", "path": "/internal/v1/runs/{run}/input" },
+      { "method": "POST", "path": "/internal/v1/runs/{run}/status", "body": { "message": "loading", "progress": 0.1 } },
+      { "method": "POST", "path": "/internal/v1/runs/{run}/status", "body": { "message": "loading", "progress": 0.1 } },
+      { "method": "PUT", "path": "/internal/v1/runs/{run}/result", "body": { "rows": 42 } }
+    ],
+    "exitCode": 0,
+    "minGapMs": [ [1, 2, 900] ]
+  }
+}
+```
+
+
+- `responses` are consumed in order per route; the last entry repeats. An
+  entry may carry `"delayMs"` to answer late, or be `{ "hang": true }` to
+  simulate a never-answering gateway (for the 10 s / 3 s timeout cases).
+  Scale timeouts down only through an SDK test hook, never a public option.
+- `expect.requests` is the **ordered** list of requests to the fake, with
+  `{run}` substituted. An entry may carry `"body"` (deep-equal after JSON
+  parse), `"bodyBytesMax"`, or `"headers"` (subset match, e.g. `User-Agent`
+  prefix `krun-sdk-`).
+- `minGapMs: [[i, j, ms]]` asserts request j arrived at least `ms` after
+  request i (for the 1 s send gate). Keep tolerances wide (900 ms for a 1 s
+  gate) so CI jitter does not flake.
+- Upload requests go to a second fake listener; the scenario marks them
+  `"target": "upload"`.
+
+## Matcher rules
+
+- Order is strict for the listed requests. Extra heartbeat ticks are the
+  usual flake: pick `KRUN_HEARTBEAT_TIMEOUT` and handler timing so the count
+  is deterministic, or mark a request `"repeat": "1+"` (one or more
+  identical consecutive requests).
+- Bodies compare parsed JSON, never bytes: key order and whitespace differ
+  between languages.
+- Headers: the `Authorization` header carrying the per-run token (scheme
+  Bearer) must be present on every internal call and **absent** on the
+  upload (docs/INTERNAL-API.md:217-219).
+
+## Required scenarios (PLAN.md:812-817 plus the P8.1 matrix)
+
+| Scenario | Asserts |
+|---|---|
+| success | GET input, PUT result, exit 0 |
+| void handler | GET input, no result request, exit 0 |
+| `ctx.status("loading", 0.1)` then one heartbeat | two identical status bodies |
+| two immediate `ctx.status` calls | two requests at least 1 s apart |
+| 429 on status | the pending payload is re-sent at the next slot, not retried immediately |
+| no eager started | first status request is a heartbeat tick, body `{ "message": "started" }`, at least one interval after start |
+| heartbeat during input | `KRUN_HEARTBEAT_TIMEOUT=3` and `GET input` answered after 1500 ms: a `{ "message": "started" }` status arrives while the input is pending (the timer starts with `run`, SPEC.md:694-697) |
+| slow result write | heartbeats continue while PUT result is pending |
+| result above cap with upload URL | upload PUT with `Content-Length`, no `Authorization`, no SetResult after it |
+| upload 503 then 200 | upload retried after about 1 s, then exit 0, no SetResult |
+| upload 403 | SetError type `ResultWriteError`, exit 1 |
+| result above cap, no upload URL | SetError `ResultWriteError`, exit 1 |
+| thrown error | SetError with type, message, `details.stack` (at most 20 lines), exit 1 |
+| oversized status | message truncated to 1024 bytes, data omitted |
+| oversized error | message 4096, type 128, stack dropped from the end to fit 8192 |
+| 503 then 204 on GET input | one retry after about 1 s |
+| hanging GET input | timeout then retry |
+| 401 on status | process exits 1, no further requests |
+| User-Agent | `krun-sdk-node/<v>` or `krun-sdk-python/<v>` on every internal call |
+
+Local-mode stream separation is not a wire scenario. Keep it as a per-SDK
+unit test: stdout holds only the result, stderr holds log and status lines.
+
+## Proving the table bites
+
+Acceptance requires that reordering one SDK's calls fails its suite
+(PLAN.md:817-818). Add a matcher self-test: feed a recorded sequence with
+two requests swapped and assert a mismatch. Never leave a deliberately
+broken SDK branch in the tree.
+
+## Running
+
+- Node: `pnpm exec vitest run packages/sdk-node/src/conformance.test.ts`
+  spawns the fixture as a child process (`process.execPath` on the built
+  `dist/`, or on the `.ts` source through Node's type stripping) against
+  `http.createServer` fakes bound to `127.0.0.1:0`. Set a per-test timeout
+  above the slowest scenario: the hanging-input case waits a real 10 s
+  unless the SDK test hook scales it down.
+- Python: `uv run --directory sdk/python pytest tests/test_conformance.py`
+  spawns `sys.executable` with the fixture module.
+- Both use real time with small `KRUN_HEARTBEAT_TIMEOUT` values (3 s gives
+  1 s ticks); fake timers do not cross a process boundary.
+- `make test` runs both (PLAN.md:135-138).

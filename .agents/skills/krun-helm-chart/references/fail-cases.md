@@ -1,0 +1,90 @@
+# Chart `fail` cases and the NOTES.txt warning
+
+Source: SPEC.md:1352-1361, plus the embedded replica rule SPEC.md:1314-1315
+and the quota rule SPEC.md:1108. Each `fail` message names the value and
+what to set (PLAN.md:692-693 "fails with a clear message"). Put them in one
+helper, `templates/_validate.tpl`, called once from a template that always
+renders (gateway or StatefulSet), so no mode or flag skips a check. Use
+`fail`, not `required`: `required` only tests emptiness and cannot express
+cross-key conditions.
+
+Add no case SPEC does not list (PLAN.md:31-32):
+
+- no digest check on `litestream.image`;
+- no consistency check between `config.shutdownDelay` and
+  `terminationGracePeriodSeconds` (see SPEC RISK in SKILL.md);
+- nothing for the Gateway API, admission policy, telemetry or
+  user-namespace values (SPEC.md:1352-1359): no `fail` for
+  `gatewayApi.httpRoute.enabled` with empty `parentRefs`, no
+  `.Capabilities` check for the Gateway API or ValidatingAdmissionPolicy
+  APIs, no check of `observability.otlpEndpoint` or `tracesSampleRatio`,
+  nothing for `jobsNamespace.userNamespaces`.
+
+## Fail table
+
+| # | Condition (Go template, `$v := .Values`) | Suggested message | SPEC | PLAN test |
+|---|---|---|---|---|
+| F1 | `empty $v.apiKeys.existingSecret` | `apiKeys.existingSecret is required: the name of a Secret with key keys.yaml` | SPEC.md:1308-1309, 954-956 | P7.1 (PLAN.md:692-693) |
+| F2 | `and (eq $v.db.mode "postgres") (empty $v.db.postgres.existingSecret)` | `db.postgres.existingSecret is required in postgres mode (key dsn); the pre-install hook needs it before any release Secret exists` | SPEC.md:1309-1310 | P7.2 (PLAN.md:705) |
+| F3 | `and $v.webhooks.allowedHosts (empty $v.webhooks.existingSecret)` | `webhooks.existingSecret is required when webhooks.allowedHosts is set (key secret)` | SPEC.md:1310-1311 | P7.4a (PLAN.md:729-730) |
+| F4 | `and $v.objectStorage.enabled (or (empty $v.objectStorage.endpoint) (empty $v.objectStorage.bucket) (empty $v.objectStorage.existingSecret))` | `objectStorage.endpoint, objectStorage.bucket and objectStorage.existingSecret are required when objectStorage.enabled is true` | SPEC.md:1311-1312 | P7.4a (PLAN.md:730-731) |
+| F5 | `and (eq $v.db.mode "embedded") $v.db.embedded.litestream.enabled (or (empty $v.db.embedded.litestream.image) (empty $v.db.embedded.litestream.existingSecret))` | `db.embedded.litestream.image and db.embedded.litestream.existingSecret are required when litestream is enabled` | SPEC.md:1312-1313 | P7.3 (PLAN.md:717-718) |
+| F6 | `and $v.jobsNamespace.create (gt (int $v.config.maxRunning) (atoi (toString (index $v.jobsNamespace.quota "pods"))))` | `config.maxRunning (N) exceeds jobsNamespace.quota.pods (M); raise the quota or lower maxRunning` | SPEC.md:1313-1314, 1108, 1007-1008 | P7.4a (PLAN.md:728-729); `create=false --set config.maxRunning=300` must render (PLAN.md:742-743) |
+| F7 | `and (eq $v.db.mode "embedded") (or (gt (int $v.gateway.replicas) 1) (gt (int $v.scheduler.replicas) 1))` | `embedded mode runs one replica; set gateway.replicas and scheduler.replicas to 1 or use db.mode=postgres` | SPEC.md:1314-1315, 1349 | P7.3 (PLAN.md:716-717) |
+
+Also reject an unknown `db.mode` (`not (has $v.db.mode (list "postgres" "embedded"))`)
+with `db.mode must be postgres or embedded`. Without it neither workload
+renders and `helm install` succeeds with nothing running. This is input
+validation, not a new option.
+
+F6 and F7 types: `--set` produces int64; `values.yaml` may hold int or
+string (`quota.pods: "200"` is a string by SPEC). Normalise with `int` and
+`atoi (toString ...)` before `gt` (`atoi` parses the string form). UNVERIFIED against Helm 4; test both
+input paths. `quota` keys contain dots (`requests.cpu`), so only `index`
+reaches them in templates; in `--set` write `requests\.cpu`.
+
+## NOTES.txt warning (SPEC.md:1021-1025, 1316-1317)
+
+```
+{{- range .Values.jobsNamespace.egressCIDRs }}
+{{- if and (or (eq .cidr "0.0.0.0/0") (eq .cidr "::/0")) (not .except) }}
+WARNING: jobsNamespace.egressCIDRs contains {{ .cidr }} without `except`.
+Every function pod can reach every address, including cloud metadata
+endpoints and the node network. Add except: [10.0.0.0/8, 172.16.0.0/12,
+192.168.0.0/16, 100.64.0.0/10, 169.254.0.0/16] plus the node and Service
+CIDRs (docs/OPERATIONS.md, "Internet egress for functions").
+{{- end }}
+{{- end }}
+```
+
+Recipe text: docs/OPERATIONS.md:122-126. D32 (SPEC.md:1473) says why a bare
+`0.0.0.0/0` is a problem. A warning, not a `fail`: the owner chose to allow
+it (SPEC.md:1316-1317). P7.4c test (PLAN.md:749-750):
+`helm template --set 'jobsNamespace.egressCIDRs[0].cidr=0.0.0.0/0'` must
+print the warning in NOTES; the same with an `except` entry must not.
+
+## Acceptance checks per case
+
+Each case is one row in the Vitest chart test (SKILL.md "Testing the
+chart"): run `helm template` with the flags below, expect a non-zero exit
+and the message on stderr. The "skipped" row expects exit 0 (P7.1-P7.4a
+acceptance, PLAN.md:689-693, 701-705, 716-722, 731-734). Shell form for a
+quick local run under pinned Helm 4:
+
+```sh
+C=deploy/helm/krun
+base="--set apiKeys.existingSecret=keys --set db.postgres.existingSecret=pg"
+helm template t $C --set db.postgres.existingSecret=pg 2>&1 | grep -q 'apiKeys.existingSecret is required'          # F1
+helm template t $C --set apiKeys.existingSecret=keys 2>&1 | grep -q 'db.postgres.existingSecret is required'       # F2
+helm template t $C $base --set 'webhooks.allowedHosts[0]=hooks.example' 2>&1 | grep -q 'webhooks.existingSecret'   # F3
+helm template t $C $base --set objectStorage.enabled=true 2>&1 | grep -q 'objectStorage.endpoint'                  # F4
+helm template t $C --set apiKeys.existingSecret=keys --set db.mode=embedded \
+  --set gateway.replicas=1 --set db.embedded.litestream.enabled=true 2>&1 | grep -q 'litestream.image'             # F5
+helm template t $C $base --set config.maxRunning=300 2>&1 | grep -q 'exceeds jobsNamespace.quota.pods'             # F6
+helm template t $C $base --set config.maxRunning=300 --set jobsNamespace.create=false >/dev/null                   # F6 skipped
+helm template t $C --set apiKeys.existingSecret=keys --set db.mode=embedded 2>&1 | grep -q 'one replica'           # F7 (gateway.replicas defaults to 2)
+```
+
+F7: default `gateway.replicas: 2` makes a bare `--set db.mode=embedded`
+fail. The e2e embedded install must pass `gateway.replicas=1`
+(PLAN.md:758-760). The README says so (P7.5).

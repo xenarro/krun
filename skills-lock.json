@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "skills": {
+    "fastify-best-practices": {
+      "source": "mcollina/skills",
+      "sourceType": "github",
+      "skillPath": "skills/fastify/SKILL.md",
+      "computedHash": "cd479b552b22493a73eabcef8804f956847c8d3d9d0aaf051ccb01d22dc3247e"
+    },
+    "helm-chart-scaffolding": {
+      "source": "wshobson/agents",
+      "sourceType": "github",
+      "skillPath": "plugins/kubernetes-operations/skills/helm-chart-scaffolding/SKILL.md",
+      "computedHash": "d37f4bee4daa0c969ce9912054b46b04164d57ecd0e1d958e6dfb2e5aec16503"
+    },
+    "kubernetes-operator": {
+      "source": "alirezarezvani/claude-skills",
+      "sourceType": "github",
+      "skillPath": "engineering/skills/kubernetes-operator/SKILL.md",
+      "computedHash": "84c9426b65f54edac68edb5fcc12fb0414d737a900da070cfcacc2736cfa888f"
+    },
+    "kubernetes-skill": {
+      "source": "lukasniessen/kubernetes-skill",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "38594bb2e495b292ac1f695cdeaebe169d1b6668ca7a6f8572b53cc53b4f68d3"
+    },
+    "kysely": {
+      "source": "mindrally/skills",
+      "sourceType": "github",
+      "skillPath": "kysely/SKILL.md",
+      "computedHash": "0fe9165f634226cf1e1ca526ddbc6b40a69a2b6eb82eff280738071b6675ea7b"
+    },
+    "node": {
+      "source": "mcollina/skills",
+      "sourceType": "github",
+      "skillPath": "skills/node/SKILL.md",
+      "computedHash": "aba2163ddb3fcf3e6a9d101ac370fabc94055b3e628b125dd084969f1a945993"
+    },
+    "pnpm": {
+      "source": "antfu/skills",
+      "sourceType": "github",
+      "skillPath": "skills/pnpm/SKILL.md",
+      "computedHash": "d1bd6f4fd38ff1ba33b857223c58a832d1cd5b488163ba0d389db449be472603"
+    },
+    "vitest": {
+      "source": "antfu/skills",
+      "sourceType": "github",
+      "skillPath": "skills/vitest/SKILL.md",
+      "computedHash": "90f1cee9326269c91b46a601b3a575491505d8e771009dacff01329381d45291"
+    },
+    "zod-4": {
+      "source": "prowler-cloud/prowler",
+      "sourceType": "github",
+      "skillPath": "skills/zod-4/SKILL.md",
+      "computedHash": "74c140363ea586fcb92644559862ce181af16f4644a41db14722323421bbfc00"
+    }
+  }
+}

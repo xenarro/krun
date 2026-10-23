@@ -1,0 +1,158 @@
+# Job and Secret manifests (SPEC.md section 7, lines 567-630)
+
+Serves PLAN P4.1 and P6.2 (PLAN.md:662-667). Builders live in
+`apps/scheduler/src/k8s`. Acceptance test: golden-file comparison of the
+rendered Job and Secret for one function. Line numbers verified on
+2026-10-23.
+
+## Secret (SPEC.md:568-573)
+
+`krun-<run id>`, `immutable: true`, key `token` (32 random bytes,
+base64url). Only its SHA-256 is stored, in `runs.job_token_hash`, before
+the Job exists. Labels `krun.io/run-id`, `krun.io/function`,
+`krun.io/created-by`, `app.kubernetes.io/managed-by: krun`. No owner
+reference. The scheduler deletes it on the terminal transition; the sweep
+deletes orphans older than 1 hour by label.
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: krun-<id>
+  namespace: <KRUN_JOBS_NAMESPACE>
+  labels: { krun.io/run-id: <id>, krun.io/function: <function>, krun.io/created-by: <key name>, app.kubernetes.io/managed-by: krun }
+immutable: true
+type: Opaque
+data: { token: <base64 of the base64url token> }   # or stringData: { token: <base64url token> }
+```
+
+Token: `randomBytes(32).toString('base64url')`. Hash
+`createHash('sha256').update(token).digest('hex')` goes to `setJobToken`
+before `jobs.create` (SPEC.md:820-822, D27 SPEC.md:1468). Never log the
+token (SPEC.md:1149-1154).
+
+## Job (SPEC.md:577-630, verbatim)
+
+> Job `krun-<run id>` (41 characters, within the 63 limit):
+
+```yaml
+metadata:
+  labels: { krun.io/run-id: <id>, krun.io/function: <function>, krun.io/created-by: <key name>, app.kubernetes.io/managed-by: krun }
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: <function value>
+  ttlSecondsAfterFinished: <KRUN_TTL_AFTER_FINISHED>
+  template:
+    metadata:
+      labels: { krun.io/run-id: <id>, krun.io/function: <function>, krun.io/created-by: <key name>, app.kubernetes.io/managed-by: krun }
+    spec:
+      restartPolicy: Never
+      terminationGracePeriodSeconds: 30
+      hostUsers: <false when KRUN_JOB_HOST_USERS is false; omitted otherwise>
+      serviceAccountName: <function value>
+      automountServiceAccountToken: false
+      imagePullSecrets: <function value>
+      nodeSelector: <function value>
+      tolerations:
+        - { key: node.kubernetes.io/not-ready,   operator: Exists, effect: NoExecute, tolerationSeconds: 60 }
+        - { key: node.kubernetes.io/unreachable, operator: Exists, effect: NoExecute, tolerationSeconds: 60 }
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: <function value, default 65532>
+        runAsGroup: <function value, default 65532>
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: function
+          image: <digest-pinned image>
+          imagePullPolicy: IfNotPresent
+          resources: <function value>
+          env:
+            - { name: HOME, value: /tmp }
+            - { name: KRUN_RUN_ID, value: <id> }
+            - { name: KRUN_FUNCTION, value: <function> }
+            - { name: KRUN_GATEWAY_URL, value: <KRUN_GATEWAY_INTERNAL_URL> }
+            - { name: KRUN_TOKEN, valueFrom: { secretKeyRef: { name: krun-<id>, key: token } } }
+            - { name: KRUN_RESULT_UPLOAD_URL, value: <presigned PUT, only when object storage configured> }
+            - { name: KRUN_MAX_RESULT_BYTES, value: <KRUN_MAX_RESULT_BYTES> }
+            - { name: KRUN_HEARTBEAT_TIMEOUT, value: <seconds, only when the Function sets heartbeatTimeout> }
+            - <function env>
+          envFrom: [{ secretRef: { name: <each secretRef> } }]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: {}
+```
+
+Add `metadata.name: krun-<id>` and `metadata.namespace: <KRUN_JOBS_NAMESPACE>`.
+No owner reference on the Job either: SPEC sets none, and an owner
+reference to the Function would GC in-flight runs on re-apply.
+
+## Env list, in order
+
+| Name | Value | Present |
+|---|---|---|
+| `HOME` | `/tmp` | always (RO rootfs; `/tmp` is the only writable path) |
+| `KRUN_RUN_ID` | run id | always |
+| `KRUN_FUNCTION` | function name | always |
+| `KRUN_GATEWAY_URL` | `KRUN_GATEWAY_INTERNAL_URL` (SPEC.md:1195) | always |
+| `KRUN_TOKEN` | `secretKeyRef { name: krun-<id>, key: token }` | always; never a literal value |
+| `KRUN_RESULT_UPLOAD_URL` | presigned PUT for `runs/<id>/result.json`, TTL `KRUN_S3_PRESIGN_TTL` or `activeDeadlineSeconds` (SPEC.md:649-652, SPEC.md:1213) | only when `KRUN_S3_*` configured (P6.2) |
+| `KRUN_MAX_RESULT_BYTES` | `KRUN_MAX_RESULT_BYTES` (SPEC.md:1201) | always |
+| `KRUN_HEARTBEAT_TIMEOUT` | whole seconds, parsed from the Function duration | only when the Function sets `heartbeatTimeout` |
+| `<function env>` | from the Function spec | appended after krun's entries |
+
+`envFrom` carries one `secretRef` per Function `secretRefs` entry, never a
+`krun-*` name (the second validation layer rejects those, SPEC.md:143).
+
+## Builder rules
+
+- Builders are pure functions. Run, Function, config values and presigned
+  PUT URL come in as arguments: no `Effect`, no `Clock`, no I/O inside. The
+  presign happens before, in the `ObjectStore` service
+  (`krun-webhooks-objstore`), so the golden test needs no layers.
+- Name `krun-<uuid>` is 41 characters. `krun.io/run-id` and
+  `krun.io/function` are label values: both must satisfy the 63-char label
+  rule. The Function name passes the CRD pattern; the run id is a UUIDv7
+  (D9 SPEC.md:1450). Validate in the builder anyway (keda
+  `scaledobject_webhook.go:57-58` rejects over-long names for this reason).
+- Deterministic names make create idempotent after a timed-out call: a
+  retry hits `409 AlreadyExists`, which counts as success (SPEC.md:822-823;
+  keda `scale_jobs.go:205` uses `generateName` and cannot retry safely).
+- `hostUsers: false` only when config `KRUN_JOB_HOST_USERS` is `false`
+  (chart value `jobsNamespace.userNamespaces`, SPEC.md:592, 1022-1027,
+  1236). When `true` (the default) the key is absent, never
+  `hostUsers: true`. The builder takes it as a boolean argument from
+  config. With user namespaces the container's UID 65532 maps to an
+  unprivileged host UID; nothing else in the manifest changes (PSA
+  `restricted` accepts it).
+- `runAsUser`/`runAsGroup` default to 65532 when the Function sets none.
+  `imagePullSecrets`, `nodeSelector`, `resources` are copied from the
+  Function and omitted when unset (no empty objects in the golden file).
+- The input never appears in env, manifest, Secret or logs: the pod
+  fetches it over the internal API (D16 SPEC.md:1457, SPEC.md:1087-1089).
+- SPEC RISK (manifest extras):
+  `terminationMessagePolicy: FallbackToLogsOnError`, `enableServiceLinks: false`,
+  `krun.io/function-generation` labels appear in Knative and KEDA (serving
+  `revision_defaults.go:213-264`, keda `scaledjob_controller.go:269-328`),
+  not in SPEC.md:574-626. The manifest and golden file are exact: add none
+  without a Decisions row.
+
+## Golden-file test (PLAN.md:486-487)
+
+- Render one Function with `secretRefs`, `heartbeatTimeout`,
+  `nodeSelector`, custom `runAsUser`, object storage on and off,
+  `KRUN_JOB_HOST_USERS` true (no `hostUsers` key) and false
+  (`hostUsers: false` under `template.spec`).
+- Compare the JSON in Vitest with `expect(rendered).toEqual(fixture)`
+  against a checked-in fixture, or
+  `await expect(JSON.stringify(rendered, null, 2)).toMatchFileSnapshot(path)`.
+  Never auto-update in CI: a diff must fail.
+- Also assert `terminationGracePeriodSeconds: 30` and the two tolerations
+  explicitly, so a fixture regenerated by mistake cannot drop them.
+- The fixture must not contain a real-looking token or presigned URL. Use
+  `example` placeholders and a fake presigner.
