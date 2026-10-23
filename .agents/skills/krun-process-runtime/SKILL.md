@@ -1,6 +1,6 @@
 ---
 name: krun-process-runtime
-description: Use when wiring krun config, health, metrics, logs or process entry. Zod env schema as an Effect Config layer, admin listener with readiness over a Ref, prom-client, pino-backed Effect Logger, runMain and finalizer shutdown.
+description: Use when wiring krun config, health, metrics, logs or process entry. Zod env schema as a Config layer, readiness route over a Ref, prom-client, pino-backed Effect Logger, runMain shutdown.
 ---
 
 # krun process runtime: config, admin listener, metrics, logs, shutdown
@@ -125,13 +125,15 @@ P4.11; every app skill points here for these.
     informers, clear `holderIdentity`, close the pool, exit 0
     (SPEC.md:1170-1174); leader loss exits non-zero instead
     (SPEC.md:790-792).
-18. Shutdown is `NodeRuntime.runMain(Layer.launch(Main))` plus scope
-    finalizers (docs/STACK.md 4.1): SIGTERM interrupts the main fiber,
-    finalizers run in reverse acquisition order, so listeners close before
-    the pool. No signal handlers of your own, no `process.exit`. Both
-    sequences fit the 30 s grace (SPEC.md:1174, 1238): bound each release
-    step with `Effect.timeout` so a stuck step cannot outlive the kubelet's
-    SIGKILL.
+18. Shutdown is `NodeRuntime.runMain(Layer.launch(Main), { teardown })`
+    plus scope finalizers (docs/STACK.md 4.1): SIGTERM interrupts the main
+    fiber, finalizers run in reverse acquisition order, so listeners close
+    before the pool. Pass the teardown from `references/shutdown.md`: the
+    default maps SIGTERM to exit 130, SPEC wants 0. No signal handlers of
+    your own; `process.exit` only in the grace watchdog. Both sequences
+    fit the 30 s grace (SPEC.md:1174, 1238): bound each release step with
+    `Effect.timeout` and arm a 25 s watchdog so a stuck step cannot outlive
+    the kubelet's SIGKILL.
 19. Dependencies only from PLAN.md:58-74 (ranges in docs/STACK.md); `pino`
     arrives through `fastify`; `effect`, `@effect/platform-node`, `zod`,
     `prom-client`, `ipaddr.js` are listed; anything else (`pino-pretty`,
@@ -144,34 +146,39 @@ P4.11; every app skill points here for these.
 
 - Shape: Zod schemas `GatewayEnv` and `SchedulerEnv` over a plain
   `Record<string, string | undefined>`, and a `parseConfig(env)` Effect
-  that fails with a `ConfigError` tagged error carrying the variable name;
-  tests pass objects, never `process.env`. The `Config` service layer
-  (`Layer.effect`) reads `process.env` once and runs `parseConfig`; its
-  failure fails `Layer.launch`, and runMain exits 1 after the logger
-  writes one error line with the name only. Name the service so it is not
-  confused with Effect's `Config` module on import.
-- Treat `''` as `undefined` before every rule (rule 2): a `z.preprocess`
+  that fails with a `ConfigInvalid` `Data.TaggedError` carrying the
+  variable name; tests pass objects, never `process.env`. The service
+  layer (`Layer.effect`) reads `process.env` once and runs `parseConfig`.
+  Its failure fails `Layer.launch`: one error line naming the variable,
+  then the teardown exits 1 (probe: exit 1). Name the service `KrunConfig`
+  or similar so it is not confused with Effect's `Config` module.
+- Treat `''` as `undefined` before every rule (rule 2): one `z.preprocess`
   wrapper shared by every field. Trim nothing else; a stray space in a
   duration is a validation error.
-- Durations: `z.string().regex(/^\d+(ms|s|m|h)$/)` refined into an Effect
-  `Duration` (docs/STACK.md 4.3); integer variables are plain digits
-  (`KRUN_MAX_ACTIVE_DEADLINE=86400` is seconds, not a duration; see
-  `references/env-table.md`). Do not use `z.coerce.number()`: it accepts
-  `1e3`, ` 12` and `""`.
+- Durations: `z.string().regex(/^\d+(ms|s|m|h)$/)` transformed into an
+  Effect `Duration` (docs/STACK.md 4.3). Give its default with
+  `.prefault("5s")`, never `.default(Duration.seconds(5))`: Zod 4.6.7
+  shallow-clones an object default and the `Duration` comes back as a
+  plain object (probe). Integer variables are plain digits
+  (`KRUN_MAX_ACTIVE_DEADLINE=86400` is seconds, not a duration). Do not use
+  `z.coerce.number()`: it accepts `1e3`, ` 12` and `""`. Verified code and
+  the full table: `references/env-table.md`.
 - CIDRs: split on `,`, trim, parse each with `ipaddr.js` (`parseCIDR`,
   PLAN.md:73) in a transform that adds an issue on failure; keep the parsed
   tuples so the webhook check does not re-parse (`krun-webhooks-objstore`).
-- "First bad variable": the first issue's `path[0]`, in schema key order;
-  cross-field rules (DSN in postgres mode, scheduler webhook secret) in a
-  `superRefine` on the object. Never format the `ZodError` or
-  `issue.input` into a log line: it can hold the DSN or a secret.
+- "First bad variable": the first issue's `path[0]`. Field issues come in
+  schema key order (keep the SPEC table order); cross-field rules (DSN in
+  postgres mode, scheduler webhook secret) sit in a `superRefine`, whose
+  issues always come after the field issues. Never format the `ZodError`
+  or `issue.input` into a log line: it can hold the DSN or a secret.
 - The webhook-secret rule applies to the scheduler config only
   (SPEC.md:1180-1181); the gateway validates hosts and CIDRs but not the
   secret.
 - `KRUN_DB_MODE` is `postgres` or `embedded` (SPEC.md:1188); anything else
   is the first bad variable.
-- Acceptance (PLAN.md:183-186): one `@effect/vitest` test per rule plus
-  defaults and the empty-value case.
+- Acceptance (PLAN.md:183-186): one Vitest test per rule plus defaults and
+  the empty-value case. Parsing is pure, so plain `it` is enough; use
+  `it.effect` for the `parseConfig` Effect and its tagged failure.
 
 ## Admin listener (P0.7)
 
@@ -179,23 +186,35 @@ P4.11; every app skill points here for these.
   Fastify instance listening on `KRUN_ADMIN_LISTEN_ADDR`, wrapped in the
   `AdminServer` scoped layer; the gateway has three instances, the
   scheduler one (SPEC.md:178-180; one Fastify instance owns one server).
+  No `@fastify/under-pressure` (docs/STACK.md:98).
 - A `Readiness` service holds a `Ref` of `{ ready: boolean, draining:
   boolean, leader?: boolean }` plus a `dbCheck: Effect<void, DatabaseError>`
-  and `functionsSynced: Effect<boolean>`. `/readyz` runs an Effect: 503
-  when `draining`, when not `ready`, when `functionsSynced` is false, or
-  when `dbCheck` fails or does not finish within
-  `Effect.timeout("2 seconds")`; otherwise 200 with `{ status: 'ok',
-  leader: true|false }` on the scheduler. `main.ts` flips `ready` after
-  the first good check; the listener release sets `draining`.
+  and `functionsSynced: Effect<boolean>`. `main.ts` flips `ready` after the
+  first good check; the `Drain` finalizer sets `draining`.
+- The hand-written route (probe `mod.test.mjs` passed with this shape):
+  ```ts
+  app.get("/readyz", async (_req, reply) => {
+    const ok = await run(Effect.gen(function* () {
+      const s = yield* Ref.get(readiness.state)
+      if (s.draining || !s.ready || !(yield* readiness.functionsSynced)) return false
+      return Option.isSome(yield* readiness.dbCheck.pipe(Effect.timeoutOption("2 seconds"), Effect.option, Effect.map(Option.flatten)))
+    }))
+    return reply.code(ok ? 200 : 503).send({ status: ok ? "ok" : "unavailable", ...leaderField })
+  })
+  ```
+  `run` is `Effect.runPromiseWith(ctx)` over the context captured in the
+  layer constructor; `leaderField` is `{ leader }` on the scheduler only.
 - `/healthz` is a plain route that returns 200.
 - `/metrics`: `reply.type(registry.contentType).send(await
   registry.metrics())`.
-- Acceptance (PLAN.md:196-197): `@effect/vitest` `it.effect` tests with
-  Fastify `inject` (under `Effect.promise`) and `TestClock` for the
-  200/503 transitions, including a stalled DB check: `dbCheck =
-  Effect.never`, fork the `inject`, `TestClock.adjust("2 seconds")`, join,
-  expect 503. Build the app inside the test so its handlers see the
-  `TestClock`.
+- Acceptance (PLAN.md:196-197): `@effect/vitest` `it.effect` with Fastify
+  `inject` and `TestClock`. Build the app inside the test from
+  `yield* Effect.context()` so its handlers run on the `TestClock`. Stalled
+  DB check: `dbCheck = Effect.never`, fork `Effect.promise(() =>
+  app.inject("/readyz"))`, `TestClock.adjust("1999 millis")` and assert the
+  fiber is still pending (`fiber.pollUnsafe()` is `undefined` after an
+  `Effect.yieldNow`), adjust 1 ms more, join, expect 503. Also: 200 when
+  ready, 503 when `draining`, 404 for `/v1/functions` on the admin app.
 - Probe hits are not audit lines and not info logs
   (`references/logging.md`).
 
@@ -219,82 +238,46 @@ P4.11; every app skill points here for these.
 
 ## Logging and audit (P3.1b)
 
-- Details, redact list verbatim, audit fields, levels and the Effect
-  Logger: `references/logging.md`.
-- `disableRequestLogging: true` on the public and internal listeners; the
+- Details, redact list verbatim, audit fields, levels and the verified
+  Effect Logger code: `references/logging.md`.
+- Request logging off on every listener through `logController: new
+  LogController({ disableRequestLogging: true })` (the top-level
+  `disableRequestLogging` is deprecated in Fastify 5.12.7, FSTDEP023); the
   audit line is one `onResponse` hook on the public listener so 401, 404
   and 415 produce it too.
+- Effect logs: `Logger.layer([PinoLogger])` replaces the default logger
+  set, and `References.MinimumLogLevel` follows `KRUN_LOG_LEVEL` (Effect's
+  default minimum is `Info`). Inside a request, provide `request.log` as
+  the `CurrentPino` reference so `Effect.log*` lines carry `reqId`.
 - Redaction test (PLAN.md:382): capture pino output to a stream, log an
-  object with sentinel values at each redact path through both pino and
-  `Effect.log`, assert the sentinel is absent.
+  object with sentinel values at each redact path through the root pino,
+  `request.log` and `Effect.logInfo`, assert the sentinel is absent.
 
 ## Shutdown (P3.7, P4.11)
 
-- Step tables for both processes, the budget, and the tests:
-  `references/shutdown.md`.
-- Exit codes come from runMain: an interrupt-only exit (SIGTERM) is 0, a
-  failure or defect is 1. Leader loss fails the main fiber with a tagged
-  error, so it exits 1. Confirm the teardown rule in the installed
-  `@effect/platform-node` (check Effect's `MIGRATION.md`).
-- Flip readiness (`Ref.set`) as the first statement of the release, before
-  any sleep.
-- Fastify `close()` does not end hijacked `reply.raw` SSE responses: end
-  them (and answer waits) before `close()` or in a `preClose` hook.
+- Verified mechanism, layer shape, step tables for both processes, the
+  budget, the watchdog and the tests: `references/shutdown.md`.
+- Exit codes: SIGTERM is an interrupt-only exit; `runMain`'s default
+  teardown maps it to **130** (`Runtime.defaultTeardown`, probe). Pass
+  `teardown: (exit, onExit) => onExit(Exit.isSuccess(exit) ||
+  Cause.hasInterruptsOnly(exit.cause) ? 0 : 1)`. Leader loss and config
+  failure fail the main fiber with a tagged error and exit 1.
+- `Layer.mergeAll` releases its members concurrently, so the three
+  gateway listeners close together; a `Drain` layer on top of them flips
+  readiness first and waits `KRUN_SHUTDOWN_DELAY` once.
+- Flip readiness (`Ref.set`) as the first effect of the first finalizer,
+  before any sleep.
+- Fastify `close()` does not end hijacked `reply.raw` SSE responses:
+  complete the shutdown `Deferred` in the public listener's `preClose`
+  hook and await the tracked responses' `finish` there, or `close()`
+  waits on a busy keep-alive socket until its timeout (probe).
 
-## Library facts (confirm against the installed versions)
+## Library facts and prior art
 
-- Fastify 5.12: `requestIdHeader` default `false`; `genReqId` must be
-  error-free; `trustProxy` accepts `true`, CIDR strings or a function, hop
-  counts disabled.
-- Fastify 5 takes logger options through `logger: { level, redact }` and a
-  ready pino instance through `loggerInstance`; krun builds one pino
-  instance in the Logger layer and passes it as `loggerInstance` to every
-  Fastify instance so both share one redact list. `redact` is fast-redact
-  syntax with `*` wildcards; Fastify 5.12 accepts `pino ^9.14.0 ||
-  ^10.1.0`.
-- `close()` sequence: closing flag with 503 + `Connection: close` →
-  `preClose` → connection draining per `forceCloseConnections` (default
-  `"idle"`) → `server.close()` → `onClose`.
-- `prom-client` 15.1: `Registry`, `Counter/Gauge/Histogram` with
-  `registers: [registry]`, `await registry.metrics()`,
-  `registry.contentType`, ESM named imports work.
-- `onListen` hooks do not run under `inject()`; do not put readiness
-  wiring there if the P0.7 test uses `inject`.
-- Effect 4: services are `Context.Service`, layers acquire with
-  `Effect.acquireRelease` or `Effect.addFinalizer`, `Layer.launch` keeps a
-  layer alive until interruption. The exact name for replacing the default
-  logger and whether `Layer.scoped` still exists separately from
-  `Layer.effect` changed from Effect 3: check `MIGRATION.md`.
-
-## Lessons from Dapr, Knative Serving and KEDA
-
-- Not-ready is 503, never 500: Dapr's sidecar returns 500 for not-ready
-  on `/v1.0/healthz` while its control-plane servers use 503; krun uses
-  503 everywhere (`dapr pkg/messages/predefined.go:63-78`,
-  `pkg/healthz/server/server.go:58`).
-- Model readiness as named targets and log the unhealthy names at debug:
-  Dapr's operator marks the cache target ready only after cache sync
-  (`dapr pkg/operator/operator.go:344-366`, `pkg/healthz/server/server.go:55-62`).
-- Flip readiness before draining so probes fail during the drain, then
-  close under a hard cap: Dapr's scheduler (`dapr pkg/scheduler/server/server.go:336-366`)
-  and Knative's queue-proxy (`serving pkg/queue/sharedmain/main.go:310-347`).
-- A shutdown that overruns its grace is an error and is asserted by a test:
-  Dapr's integration suite expects exit code 1 and "Graceful shutdown
-  timeout exceeded" (`dapr tests/integration/suite/daprd/shutdown/graceful/timeout.go:50-60`).
-  krun: a release step past its `Effect.timeout` fails, so runMain exits 1.
-- Close independent servers under one deadline so the first close does
-  not cancel the rest (`dapr pkg/api/http/server.go:235-265`).
-- Hijacked streams are invisible to server close; signal them and drain
-  with a cap (`serving pkg/http/handler/hijack.go:27-66`).
-- Secrets resolve into values that are never logged; lines name the
-  resource or env var only (`dapr pkg/runtime/processor/secret/secret.go:134-186`).
-- High-cardinality metric labels are opt-in in KEDA because
-  per-trigger histogram labels exploded; keep krun labels bounded by
-  Function count and route templates (`keda pkg/metricscollector/prommetrics.go:35-178`).
-- Readiness waits for cache sync and fails fast when the initial list
-  cannot complete; KEDA exits non-zero on `WaitForCacheSync` failure,
-  krun stays 503 and retries with backoff (SPEC.md:159-161,
-  `keda cmd/operator/main.go:352-359`).
+Verified versions, Fastify/pino/prom-client/Effect 4 API facts, and the
+Dapr, Knative and KEDA lessons (503 not 500, flip readiness before the
+drain, grace overrun exits 1, bounded labels, readiness waits for cache
+sync): `references/library-facts.md`.
 
 ## Pitfalls
 
@@ -313,16 +296,26 @@ P4.11; every app skill points here for these.
   by design; do not "fix" it by serving before the initial list.
 - Default pino request logging plus the audit hook logs every request
   twice; probe hits at info drown the log at 1 line per 5 s per pod.
-- `process.exit` anywhere skips the finalizers and leaves the Lease held
-  and the pool open; only runMain ends the process. A config failure is a
-  failed layer, not an exit call.
-- `KRUN_SHUTDOWN_DELAY` must elapse once per process even though each
-  listener layer's release drains: share one memoised drain Effect
-  (`krun-gateway-api` pitfalls), or three sequential releases wait three
-  times.
+- `process.exit` anywhere but the grace watchdog skips the finalizers and
+  leaves the Lease held and the pool open; `runMain`'s teardown ends the
+  process. A config failure is a failed layer, not an exit call.
+- `NodeRuntime.runMain` without a `teardown` exits 130 on SIGTERM, and
+  the P3.7/P4.11 "exits 0" assertions fail.
+- `KRUN_SHUTDOWN_DELAY` must elapse once per process. Put it in one
+  `Drain` layer above the merged listeners (`references/shutdown.md`); if
+  each listener release drains instead, share one memoised Effect, or the
+  releases each wait the full delay.
 - A `ManagedRuntime` or context captured outside an `it.effect` body runs
   on the live clock; `TestClock.adjust` then does nothing and the 2 s
   readiness test hangs or sleeps for real.
+- Under `TestClock`, test the shutdown order by closing a `Scope` built
+  with `Layer.buildWithScope`, not by interrupting a `Layer.launch` fiber:
+  a finalizer's `Effect.sleep` returned `Interrupt` at once in that setup
+  (probe).
+- `.default(Duration.seconds(5))` on a Zod field yields a plain object,
+  not a `Duration`; use `.prefault("5s")`.
+- The Effect logger drops `logDebug` unless `References.MinimumLogLevel`
+  is set from `KRUN_LOG_LEVEL`: Effect's default minimum is `Info`.
 - Informer stop must run in a finalizer in the scheduler sequence or the
   watch keeps the event loop alive and the P4.11 5 s exit assertion fails.
 - The scheduler's `krun_http_*` series exist too (owner "both"); forgetting
@@ -331,12 +324,14 @@ P4.11; every app skill points here for these.
   should be a quiet period that restarts on activity; SPEC.md:1166-1167
   and D30 define a fixed `KRUN_SHUTDOWN_DELAY`. Implement the fixed delay;
   a quiet period is a Decisions row.
-- Open gap (Lease identity): SPEC.md:785 says `holderIdentity` is the pod
-  name from the downward API, but section 12 lists no variable carrying
-  it (e.g. `KRUN_POD_NAME`) and the chart's env list (SPEC.md:1240-1249)
-  does not name one. P4.2/P4.11 need a Decisions row adding the variable
-  (default: `os.hostname()`, which is the pod name in Kubernetes) before
-  the scheduler config can be complete.
+- Open gap (Lease identity, still open 2026-10-23): SPEC.md:785 says
+  `holderIdentity` is the pod name from the downward API (`metadata.name`),
+  but section 12 (SPEC.md:1186-1217) lists no variable carrying it (e.g.
+  `KRUN_POD_NAME`), the chart's `config:` block (SPEC.md:1240-1256) names
+  none, and P4.2 (PLAN.md:488-489) only says "the pod name". P4.2/P4.11
+  need a Decisions row adding the variable (default: `os.hostname()`,
+  which is the pod name in Kubernetes) before the scheduler config is
+  complete.
 - Open gap (namespace outside a pod): SPEC.md:1197 gives no behaviour
   when `KRUN_NAMESPACE` is unset and the ServiceAccount file is missing
   (P3.7/P4.11 process tests). Treat it as a startup validation failure
@@ -372,10 +367,12 @@ P4.11; every app skill points here for these.
 - Line numbers verified against the working tree on 2026-10-23;
   SPEC.md/PLAN.md are edited concurrently, so re-check a cited line before
   quoting it in a commit or a Decisions row.
-- Effect 4 names for the logger replacement, scoped layers and runMain's
-  teardown are not pinned here; check Effect's `MIGRATION.md` rather than
-  guess. `@fastify/swagger` behaviour remains UNVERIFIED; confirm at first
-  install.
+- Library facts were checked against effect/@effect/platform-node 4.0.6,
+  zod 4.6.7, fastify 5.12.7 and pino 10.4.0 with JavaScript probes on Node
+  26, not with TypeScript 7 type-checking; type signatures in the snippets
+  are UNVERIFIED until the first `tsc` run. `NodeRuntime` is
+  `@stability unstable` in 4.0.6. `@fastify/swagger` behaviour remains
+  UNVERIFIED.
 - This skill does not cover route handlers, error envelopes or SSE
   framing (`krun-gateway-api`), the loops and Lease contract
   (`krun-scheduler-k8s`), Store pool setup (`krun-store`), the informer

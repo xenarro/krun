@@ -37,9 +37,56 @@ wrapped by the same empty-is-unset preprocess and composed into
 limits; `dur` → the `^\d+(ms|s|m|h)$` regex refined into an Effect
 `Duration` (the same refinement the Function schema uses); `cidrs` →
 transform through `ipaddr.js` `parseCIDR`; `level` → `z.enum` of pino
-level names. Defaults with `.default(...)` after the preprocess. The
-result is the value of the `Config` service; nothing else reads
-`process.env`.
+level names. The result is the value of the `Config` service; nothing
+else reads `process.env`.
+
+Verified against zod 4.6.7 and effect 4.0.6 (probe `mod.test.mjs` in
+`~/.hermes/cache/scratch/krun-skills/probe-runtime/`):
+
+```ts
+const DURATION = /^(\d+)(ms|s|m|h)$/
+const unitMs = { ms: 1, s: 1_000, m: 60_000, h: 3_600_000 } as const
+const unset = (v: unknown) => (v === "" ? undefined : v)
+
+const duration = z.string().regex(DURATION).transform((s) => {
+  const [, n, u] = DURATION.exec(s)!
+  return Duration.millis(Number(n) * unitMs[u as keyof typeof unitMs])
+})
+const int = z.string().regex(/^\d+$/).transform(Number)
+
+export const GatewayEnv = z.object({
+  KRUN_DB_MODE: z.preprocess(unset, z.enum(["postgres", "embedded"]).default("postgres")),
+  KRUN_DB_DSN: z.preprocess(unset, z.string().optional()),
+  KRUN_MAX_INPUT_BYTES: z.preprocess(unset, int.pipe(z.number().max(1048576)).prefault("262144")),
+  KRUN_SHUTDOWN_DELAY: z.preprocess(unset, duration.prefault("5s")),
+  KRUN_S3_PRESIGN_TTL: z.preprocess(unset, duration.optional()),
+  // ... every gateway row of the table below, in table order
+}).superRefine((c, ctx) => {
+  if (c.KRUN_DB_MODE === "postgres" && c.KRUN_DB_DSN === undefined)
+    ctx.addIssue({ code: "custom", path: ["KRUN_DB_DSN"], message: "required in postgres mode" })
+})
+```
+
+- Defaults on a transformed schema: use `.prefault("5s")` (the raw input
+  runs through the regex and transform) or `.default(() => Duration.seconds(5))`.
+  `.default(Duration.seconds(5))` with a value is wrong: Zod 4.6.7
+  `shallowClone`s an object default, so the result is a plain object, not
+  a `Duration` (probe: `Duration.isDuration` was `false` and
+  `Duration.toMillis` gave 0). `.prefault` with the SPEC string keeps the
+  table and the schema visibly identical.
+- First bad variable = `String(result.error.issues[0].path[0])`. Field
+  issues come in schema key order, so declare the keys in the order of
+  the SPEC table. The `superRefine` still runs when a field failed (probe:
+  `KRUN_SHUTDOWN_DELAY=x` with no DSN gave
+  `[KRUN_SHUTDOWN_DELAY, KRUN_DB_DSN]`), but its issues come after the
+  field issues, so `issues[0]` is a field issue whenever one exists. Its
+  callback may see half-parsed values: guard each cross-field check on
+  the fields it reads. SPEC does not define "first"; table order is the
+  convention here.
+- A Zod issue carries `input` only when parsing with `reportInput: true`
+  (zod `core/util.ts`); never set it, and never log the `ZodError`: the
+  default issue message for a regex failure prints the pattern, not the
+  value, but a custom refinement might not.
 
 ## Table (SPEC.md:1186-1217)
 
@@ -78,6 +125,15 @@ result is the value of the `Config` service; nothing else reads
 
 `KRUN_API_URL`, `KRUN_API_KEY`, `KRUN_REGISTRY` are read by the CLI on a
 developer machine only (SPEC.md:1219-1221); they are not process config.
+`krun validate` and `krun deploy` also read the five validation ceilings
+named in SPEC section 3 (`KRUN_MAX_ACTIVE_DEADLINE`, `KRUN_MAX_QUEUED`,
+`KRUN_ALLOWED_REGISTRIES`, `KRUN_ALLOWED_SERVICE_ACCOUNTS`,
+`KRUN_WEBHOOK_ALLOWED_HOSTS`, SPEC.md:168-174) with the section 12
+defaults; share those field schemas with the CLI rather than copying them.
+
+Not in the table (open gap, see SKILL.md): the pod name the scheduler
+uses as Lease `holderIdentity` (SPEC.md:785). SPEC section 12 names no
+variable for it as of 2026-10-23.
 
 ## Notes for the parser
 

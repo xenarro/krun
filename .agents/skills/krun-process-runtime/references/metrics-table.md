@@ -61,21 +61,29 @@ Alert rules in SPEC.md:1391-1401 query `krun_scheduler_leader`,
 chart's PrometheusRule and `promtool` in `make helm-lint`; that is a
 Decisions row, not a refactor.
 
-## prom-client mapping (prom-client 15.1)
+## prom-client mapping (prom-client 15.1.3, `npm view` 2026-10-23)
 
 - One `new Registry()` per process, held by the `Metrics` service layer
-  (`packages/shared/src/runtime`, PLAN.md:107) and taken from it by every
-  module that registers a metric and by the admin plugin; never the global
-  default registry (duplicate registration throws when one Vitest file
-  builds several apps). Tests provide a fresh `Metrics` layer per test.
-  Effect `Metric` is not used (docs/STACK.md 2.5).
+  (`Layer.sync(Metrics, () => ...)` in `packages/shared/src/runtime`,
+  PLAN.md:107) and taken from it by every module that registers a metric
+  and by the admin plugin; never the global default registry (duplicate
+  registration throws when one Vitest file builds several apps). Tests
+  provide a fresh `Metrics` layer per test (`it.effect` with
+  `Effect.provide`, or `layer(MetricsTest)` from `@effect/vitest`).
+  Effect `Metric` is not used (docs/STACK.md 2.5), even though `effect`
+  4.0.6 ships a `Metric` module.
 - `new Counter({ name, help, labelNames, registers: [registry] })`,
   same for `Gauge` and `Histogram`.
 - `GET /metrics`: `reply.type(registry.contentType)` then
   `await registry.metrics()` (async, returns a string).
 - Observe seconds computed from `Clock` (`Clock.currentTimeMillis`
   differences, or `DateTime` differences for run timestamps), never
-  `Date.now()`, so `TestClock` tests can assert exact values.
+  `Date.now()`, so `TestClock` tests can assert exact values. Exception:
+  `krun_http_request_seconds` may observe `reply.elapsedTime / 1000` in
+  the `onResponse` hook; Fastify 5.12.7 measures it itself from a
+  high-resolution timer (`lib/reply.js` `elapsedTime`), so no
+  `Date.now()` appears in krun code. Tests of that histogram assert the
+  count, not the value.
 - Default buckets are `[0.005 … 10]` seconds: fine for
   `krun_http_request_seconds`, wrong for queue wait, cold start, run
   duration and terminal detect, whose values run from seconds to hours.

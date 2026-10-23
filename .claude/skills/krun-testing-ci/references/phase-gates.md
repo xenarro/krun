@@ -1,27 +1,29 @@
 # Phase gates (PLAN.md section 4, verbatim)
 
 Run the gate at the end of the phase, after every task is `[x]` and
-`make check` is green (PLAN.md:17-18). Each gate below quotes PLAN.md and
-adds the command and the "green" definition. Line numbers are against the
-working tree on 2026-10-23; re-check before citing.
+`make check` is green (PLAN.md:17-18). Each gate quotes PLAN.md exactly
+(re-read against the working tree on 2026-10-23; re-check the line numbers
+before citing) and adds the command and the "green" definition.
 
 ## Phase 0: scaffold (PLAN.md:146)
 
 > Gate: `make check` green in CI on an empty but wired repository.
 
-- [ ] `make check` passes locally (`make lint` = `biome check` + `tsc --noEmit`
-      per package; `make test` = `pnpm -r exec vitest run` +
-      `uv run --directory sdk/python pytest`).
-- [ ] Every package has a `vitest.config.ts`; the `@effect/vitest` smoke
-      test passes and `pnpm -r build && node bin/krun.js gateway` prints
+- [ ] `make check` passes locally: `make lint` = `biome check` and
+      `tsc --noEmit` (TypeScript 7) in every package (P0.2, PLAN.md:161-162);
+      `make test` = `pnpm -r exec vitest run` plus
+      `uv run --directory sdk/python pytest` (PLAN.md:51, 137-138).
+- [ ] Every package has a `vitest.config.ts` and the `@effect/vitest` smoke
+      test passes; `pnpm -r build && node bin/krun.js gateway` prints
       `gateway` (P0.1, PLAN.md:155-158).
-- [ ] The P0.7 readiness test runs under `it.effect` with Fastify `inject`
-      and `TestClock`, including a stalled database check (PLAN.md:196-197).
 - [ ] The first pull request shows a green `ci.yml` run (`gh run watch`,
-      PLAN.md:177-178).
-- [ ] `make helm-lint` passes on the stub chart (PLAN.md:162-165).
+      P0.4, PLAN.md:176-178); `actionlint` passes.
+- [ ] `make helm-lint` passes on the stub chart (P0.2, PLAN.md:162-165).
 - [ ] `make docker` builds and `docker run <image> gateway` prints `gateway`
-      (PLAN.md:170-171).
+      (P0.3, PLAN.md:170-171).
+- [ ] P0.7: `@effect/vitest` test with Fastify `inject` and `TestClock`,
+      including a stalled database check (PLAN.md:196-197).
+- [ ] P0.8: `make generate` twice leaves no diff (PLAN.md:209-212).
 - [ ] `release.yml` dry-run job passes on the pull request, or the progress
       log carries `BLOCKED P0.9: <owner precondition>` (PLAN.md:213-222).
 
@@ -32,24 +34,25 @@ working tree on 2026-10-23; re-check before citing.
 > `os.tmpdir()`, removed in `after`) and against Postgres via testcontainers,
 > both green.
 
-- [ ] The same contract suite file list runs against both dialects (one
-      `describe` per dialect importing the shared suite, `krun-store`); the
-      temp directory is removed in `afterAll` (the gate's "after").
-- [ ] Lease and expiry cases move time with `TestClock.adjust`, never a
-      real sleep.
-- [ ] The Postgres run needs Docker; without it the suite must fail, not
-      skip silently (rule 8 in SKILL.md).
-- [ ] The `explain` test names `runs_active_idx` on both dialects
-      (SPEC.md:547-549, `krun-store`).
+- [ ] One shared contract suite runs against both dialects (one `describe`
+      or `layer(...)` block per dialect providing the `Store` layer;
+      `krun-store`). "Removed in `after`" is Vitest `afterAll` or the
+      layer's `Effect.acquireRelease` finalizer.
+- [ ] The Postgres run needs Docker; without it the suite fails, not skips
+      (SKILL.md rule 13).
+- [ ] The `explain` tests name `runs_active_idx` (P1.4, PLAN.md:259-262) and
+      `runs_created_idx` (P1.6, PLAN.md:282-283).
+- [ ] Lease and staleness tests move time with `TestClock`, not sleeps.
 
 ## Phase 2: webhooks, functions and auth (PLAN.md:317)
 
 > Gate: `pnpm exec vitest run packages/shared/src/webhook packages/shared/src/functions packages/shared/src/auth` green, no cluster needed.
 
-- [ ] No test in these directories opens a socket to anything but `127.0.0.1`
+- [ ] No test in these paths opens a socket to anything but `127.0.0.1`
       listeners it started itself; DNS is stubbed.
+- [ ] fast-check properties for the address check (P2.1) pass.
 - [ ] `docker run -v "$PWD/fixtures:/f:ro" <image> validate /f/tag-image.yaml`
-      prints one line and exits 1 (P2.5, PLAN.md:359-361).
+      prints its line and exits 1 (P2.5, PLAN.md:359-361).
 
 ## Phase 3: gateway (PLAN.md:365-367)
 
@@ -58,11 +61,13 @@ working tree on 2026-10-23; re-check before citing.
 > testcontainers Postgres.
 
 - [ ] P3.7 process test (spawned `bin/krun.js gateway`, `KUBECONFIG` at
-      `test/fake-kube`) passes (PLAN.md:432-441):
-      `/readyz` 200 on the admin port, `/v1/*` 404 there, drain answers 200
-      after `/readyz` turned 503, exit 0 within 5 s of SIGTERM.
-- [ ] `make generate` leaves no diff for `docs/api/openapi-public.json` and
-      `docs/api/openapi-internal.json` (PLAN.md:383-388, 455-461).
+      `test/fake-kube`) passes (PLAN.md:432-441): `/readyz` 200 on the
+      admin port, `/v1/*` 404 there, a `/v1` request after `/readyz` turned
+      503 still answers 200 with `KRUN_SHUTDOWN_DELAY=2s`, exit 0 within
+      5 s of SIGTERM.
+- [ ] `make generate` leaves no diff for `docs/api/openapi-public.json`
+      (P3.1c, PLAN.md:383-388) and `docs/api/openapi-internal.json` (P3.8,
+      PLAN.md:459-461).
 
 ## Phase 4: scheduler core (PLAN.md:469-481)
 
@@ -80,10 +85,13 @@ working tree on 2026-10-23; re-check before citing.
 > sleeps ends `failed` with `heartbeat_timeout` within 60 seconds, `logTail`
 > set, Job gone.
 
-- [ ] `make kind-up` created the cluster, the registry and passed the
-      enforcement probe (P4.12, `references/kind-recipe.md`).
+- [ ] P4.1-P4.10 unit tests run on the fake `Kube` layer with `TestClock`
+      (`references/fake-kube.md` part 1); P4.6 and P4.11 process tests on
+      `test/fake-kube` (part 2).
+- [ ] `make kind-up` created the cluster and the registry and passed the
+      enforcement probe (P4.12, PLAN.md:600-612, `references/kind-recipe.md`).
 - [ ] The five scenarios in `references/e2e-scenarios.md` "Phase 4" are
-      green locally and in the `ci.yml` kind job (P4.13).
+      green locally and in the `ci.yml` kind job (P4.13, PLAN.md:613-614).
 - [ ] `make kind-down` removes the cluster and `kind-registry`.
 
 ## Phase 5: wait, SSE, webhooks (PLAN.md:618-623)
@@ -95,10 +103,11 @@ working tree on 2026-10-23; re-check before citing.
 > `KRUN_WEBHOOK_ALLOWED_CIDRS` set to the kind pod and Service CIDRs, that
 > records one signed delivery and verifies the timestamped signature.
 
-- [ ] Receiver pod deployed from `test/e2e/receiver.yaml`; its CIDRs come
-      from `kubectl cluster-info dump | grep -m1 cluster-cidr` and the
-      Service CIDR of the kind config, not hard-coded defaults.
-- [ ] P5.4 scenarios green (`references/e2e-scenarios.md` "Phase 5").
+- [ ] Receiver pod deployed from `test/e2e/receiver.yaml`; its CIDRs are
+      read from the cluster (`kubeadm-config` `podSubnet`, `serviceSubnet`),
+      not hard-coded.
+- [ ] P5.4 scenarios green (`references/e2e-scenarios.md` "Phase 5",
+      PLAN.md:646-649).
 
 ## Phase 6: object storage (PLAN.md:653-655)
 
@@ -108,7 +117,8 @@ working tree on 2026-10-23; re-check before citing.
 
 - [ ] MinIO deployed from `test/e2e/minio.yaml` with the raw egress
       NetworkPolicy in the jobs namespace manifests (P6.3, PLAN.md:668-670).
-- [ ] P6.1 unit test ran against a MinIO testcontainer, not against kind.
+- [ ] P6.1 unit test ran against an `@testcontainers/minio` container, not
+      against kind (PLAN.md:657-661).
 
 ## Phase 7: Helm chart (PLAN.md:674-678)
 
@@ -118,14 +128,15 @@ working tree on 2026-10-23; re-check before citing.
 > `test/e2e/postgres.yaml`, each into a fresh krun namespace labelled
 > `pod-security.kubernetes.io/enforce=restricted`.
 
-- [ ] Raw jobs-namespace manifests deleted from the e2e flow; only the CRD
-      is still applied with `kubectl` when `crds.install=false` is tested.
+- [ ] Raw jobs-namespace and krun manifests deleted from the e2e flow; the
+      CRD is applied with `kubectl` only in the `crds.install=false` case.
+- [ ] Chart render assertions (Vitest over `helm template` output, owned by
+      `krun-helm-chart`) pass under the Helm 4 version pinned in CI.
 - [ ] P7.6 matrix green in both modes (`references/e2e-scenarios.md`
-      "Phase 7"), including the two-scheduler leader check and the
-      upgrade/rollback scenario.
-- [ ] The chart render assertions (Vitest over `helm template` output, owned
-      by `krun-helm-chart`) pass under the Helm 4 version pinned in CI.
-- [ ] `promtool check rules` passes on the rendered PrometheusRule (P7.7).
+      "Phase 7", PLAN.md:758-771), including the two-scheduler leader check
+      and the upgrade/rollback scenario.
+- [ ] `promtool check rules` passes on the rendered PrometheusRule (P7.7,
+      PLAN.md:772-776).
 
 ## Phase 8: SDKs and CLI (PLAN.md:780-782)
 
@@ -134,14 +145,18 @@ working tree on 2026-10-23; re-check before citing.
 > function per language on kind.
 
 - [ ] P8.4 and P8.5 acceptance commands run verbatim in a temp dir
-      (PLAN.md:822-823, 827-828). The Node template's `npm test` is the
-      function author's own dependency-free test (it may use `node --test`);
-      it is not a krun test and does not run under Vitest.
-- [ ] P8.6 pushes both template images to `localhost:5001/<name>` and
-      references them by the `digest:` line of the push output.
+      (PLAN.md:822-829). The Node template's `npm test` is the function
+      author's own dependency-free test (it may use `node --test`); it is
+      not a krun test and does not run under Vitest.
+- [ ] `sdk/python` passes `pytest`, `ruff check` and `mypy --strict`
+      (STACK.md:127-128); `packages/sdk-node` `package.json` lists no
+      `dependencies` (PLAN.md:803-805).
 - [ ] `test/sdk-conformance` passes in both suites (Node SDK under Vitest,
       Python under pytest); reordering one SDK's calls fails its suite
-      (PLAN.md:817-818).
+      (P8.3, PLAN.md:811-818).
+- [ ] P8.6 pushes both template images to `localhost:5001/<name>` and
+      references them by the `digest:` line of the push output
+      (PLAN.md:830-837).
 
 ## Phase 9: hardening, benchmarks, README, release (PLAN.md:849-850)
 
@@ -149,15 +164,15 @@ working tree on 2026-10-23; re-check before citing.
 > "when not to use krun" section; `release.yml` dry-run green.
 
 - [ ] P9.1 backpressure, P9.2 security, P9.4 quickstart (both modes,
-      1800 s each), P9.6 drill green.
+      1800 s each), P9.6 drill green (PLAN.md:852-897).
 - [ ] P9.3 numbers in README and docs/OPERATIONS.md with the measurement
-      conditions (kind, runner size, image cached).
+      conditions (kind, runner size, image cached; PLAN.md:867-870).
 - [ ] The alert-name check script passes (P9.6, PLAN.md:893-897).
 - [ ] Release pull request prepared; the owner tags (PLAN.md:22, 885-892).
 
 ## Definition of done for v1 (PLAN.md:899-904)
 
-- Every task in Phases 0 to 9 is checked.
-- `make check` and `make e2e` are green on CI.
-- README quick start works on a fresh kind cluster in both database modes.
-- No row in SPEC.md section 15 is contradicted by the code.
+> - Every task in Phases 0 to 9 is checked.
+> - `make check` and `make e2e` are green on CI.
+> - README quick start works on a fresh kind cluster in both database modes.
+> - No row in SPEC.md section 15 is contradicted by the code.
