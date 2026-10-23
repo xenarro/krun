@@ -235,6 +235,14 @@ for (const address of ["invalid", ":65536"]) {
   );
 }
 
+it.effect("scope release marks readiness draining before the admin app is discarded", () =>
+  Effect.gen(function* () {
+    const readiness = yield* Readiness;
+    yield* Effect.scoped(makeHealthApp);
+    expect((yield* Ref.get(readiness.state)).draining).toBe(true);
+  }).pipe(Effect.provide(services())),
+);
+
 for (const role of ["gateway", "scheduler"] as const) {
   it.live(`binds ${role}'s configured admin address separately and releases the listener`, () =>
     Effect.gen(function* () {

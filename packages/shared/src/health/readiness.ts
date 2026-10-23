@@ -1,4 +1,4 @@
-import { Context, Effect, Exit, Layer, Option, Ref } from "effect";
+import { Context, Effect, Exit, Fiber, Layer, Option, Ref, Semaphore } from "effect";
 
 interface ReadinessState {
   readonly ready: boolean;
@@ -34,15 +34,57 @@ export const ReadinessLive = (databaseCheck: Effect.Effect<void, unknown>) =>
         draining: false,
         leader: false,
       });
+      const owner = yield* Effect.scope;
+      const mutex = yield* Semaphore.make(1);
+      type Flight = {
+        readonly fiber: Fiber.Fiber<Exit.Exit<void, unknown>>;
+        readonly generation: object;
+        users: number;
+      };
+      let active: Flight | undefined;
+      const acquire = Effect.gen(function* () {
+        if (active !== undefined) {
+          active.users++;
+          return active;
+        }
+        const generation = {};
+        const fiber = yield* Effect.forkIn(
+          Effect.exit(databaseCheck).pipe(
+            Effect.ensuring(
+              Effect.sync(() => {
+                // Clear only after DB cleanup, never when the HTTP waiter times out.
+                if (active?.generation === generation) active = undefined;
+              }),
+            ),
+          ),
+          owner,
+          { startImmediately: false, uninterruptible: false },
+        );
+        const flight: Flight = { fiber, generation, users: 1 };
+        active = fiber.pollUnsafe() === undefined ? flight : undefined;
+        return flight;
+      }).pipe(Semaphore.withPermit(mutex));
       const check = Effect.gen(function* () {
         const before = yield* Ref.get(state);
         if (!eligible(before)) {
           return { status: "unavailable", leader: before.leader } as const;
         }
-        const database = yield* Effect.exit(databaseCheck.pipe(Effect.timeoutOption("2 seconds")));
+        const database = yield* Effect.acquireUseRelease(
+          acquire,
+          // Time out only the waiter. Cancelling it never waits for DB cleanup.
+          (flight) => Fiber.await(flight.fiber).pipe(Effect.timeoutOption("2 seconds")),
+          (flight) =>
+            Effect.sync(() => {
+              flight.users--;
+              if (flight.users === 0) flight.fiber.interruptUnsafe();
+            }),
+        );
         const after = yield* Ref.get(state);
         const available =
-          Exit.isSuccess(database) && Option.isSome(database.value) && eligible(after);
+          Option.isSome(database) &&
+          Exit.isSuccess(database.value) &&
+          Exit.isSuccess(database.value.value) &&
+          eligible(after);
         return { status: available ? "ok" : "unavailable", leader: after.leader } as const;
       });
       return { state, check };
