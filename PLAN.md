@@ -6,7 +6,8 @@ agent can resume from any state with no chat history.
 
 ## 1. Agent protocol
 
-1. Read SPEC.md fully, then this file, then docs/OPERATIONS.md. Pick the
+1. Read SPEC.md fully, then docs/API.md and docs/INTERNAL-API.md, then
+   this file, then docs/OPERATIONS.md. Pick the
    first unchecked task in the lowest unfinished phase. Tasks inside a phase
    run in order unless marked "parallel".
 2. Work on a branch named after the task id, for example `p1-3-claim`. One
@@ -34,43 +35,59 @@ agent can resume from any state with no chat history.
 
 ## 2. Toolchain and dependencies
 
-- Node.js 24 LTS, TypeScript strict, ES modules, pnpm workspace. `tsc`
-  emits `dist/` per package. Tests run with `node --test` on the TypeScript
-  sources through type stripping, so only erasable syntax: no enums, no
-  parameter properties.
+docs/STACK.md is the normative stack: every library, its version range,
+its use, its rules and the alternatives rejected. This section is the
+allowlist an agent checks before adding an import.
+
+- Node.js 24 LTS, TypeScript 7 strict (`tsc` emits `dist/` per package),
+  ES modules, pnpm workspace. Erasable syntax only: no enums, no parameter
+  properties.
+- Effect 4 is the foundation of every process (docs/STACK.md section 4);
+  Zod 4 is the only schema language for krun's own schemas; Ajv only
+  compiles user-supplied `inputSchema`; time comes from Effect `Clock`,
+  `DateTime` and `Duration`, never `Date.now()`.
+- Tests: Vitest 5 with `@effect/vitest` (`it.effect`, `TestClock`),
+  fast-check for property tests, testcontainers for Postgres and MinIO.
+  `make test` runs `pnpm -r exec vitest run` and the Python suite.
 - `pnpm`, `biome` (lint and format), `docker`, `kind` 0.24 or newer (its
-  kindnetd enforces NetworkPolicy), `kubectl`, `helm`, `helm-docs`,
+  kindnetd enforces NetworkPolicy), `kubectl`, `helm` 4, `helm-docs`,
   `promtool`, `actionlint`, `gh`.
-- Python 3.12, `uv`, `ruff`, `pytest` for `sdk/python`.
+- Python 3.11 or newer, `uv`, `ruff`, `pytest`, `mypy` for `sdk/python`.
 - CI tools, not dependencies: Trivy, cosign, syft, `pnpm audit`, Renovate,
   helm/kind-action pinned to the same kind version.
-- Direct dependencies allowed up front:
+- Direct runtime dependencies allowed up front (ranges in docs/STACK.md):
 
 | Package | Use |
 |---|---|
-| `fastify` | HTTP, pino logging |
-| `@sinclair/typebox`, `@fastify/type-provider-typebox` | route schemas with static types, compiled serialization |
-| `@fastify/swagger` | OpenAPI documents generated from the routes |
-| `@fastify/under-pressure` | `/healthz`, `/readyz` with a custom health check |
-| `close-with-grace` | SIGTERM drain |
-| `pg`, `kysely` | Postgres driver, `LISTEN`, typed SQL for both dialects, migrations |
-| `better-sqlite3` | SQLite for Kysely's `SqliteDialect`, synchronous, WAL pragmas |
-| `@kubernetes/client-node` 2.x | Jobs, Secrets, informer, Lease API; promise API on undici fetch |
+| `effect`, `@effect/platform-node` | foundation: services, layers, typed errors, scopes, schedules, streams, clock; process entry with `NodeRuntime.runMain` |
+| `zod` | every boundary schema; CRD and editor schema through `z.toJSONSchema` |
+| `fastify`, `fastify-type-provider-zod`, `@fastify/swagger` | HTTP listeners, Zod route schemas, generated OpenAPI |
+| `kysely`, `pg`, `better-sqlite3` | typed SQL for both dialects, migrations, `LISTEN` |
+| `@kubernetes/client-node` 2.x | Jobs, Pods, Secrets, Leases, Functions, informers |
 | `undici` | webhook delivery with a pinned-address `Agent` |
-| `ajv`, `ajv-formats` | JSON Schema 2020-12 for function input schemas |
-| `uuid` | UUIDv7 |
-| `prom-client` | metrics |
-| `@aws-sdk/client-s3`, `@aws-sdk/s3-request-presigner` | S3 presigned URLs, object exists |
+| `ajv`, `ajv-formats` | user-supplied `inputSchema` only |
+| `uuid` | UUIDv7 with the time from `Clock` |
+| `canonicalize` | RFC 8785 serialisation for `request_hash` |
+| `@aws-sdk/client-s3`, `@aws-sdk/s3-request-presigner` | presigned URLs, object exists |
 | `yaml` | keys file, Function documents for `krun validate` |
-| `ipaddr.js` | address range classification and CIDR matching for webhook targets |
-| `testcontainers`, `@testcontainers/postgresql` | test only, Postgres and MinIO |
+| `ipaddr.js` | address classification and CIDR matching for webhook targets |
+| `prom-client` | metrics |
 
-Node built-ins for everything else: `node:crypto` for HMAC and
-`timingSafeEqual`, `node:dns/promises`, `node:fs`, `node:test`. Written in
-house, no package: token bucket, glob to regex, SSE on `reply.raw`, Lease
-leader election (about 40 lines on `CoordinationV1Api`), the Kubernetes API
-concurrency limiter. The SDKs (`packages/sdk-node`, `sdk/python`) have no
-runtime dependencies.
+Dev dependencies: `typescript`, `vitest`, `@effect/vitest`, `fast-check`,
+`testcontainers`, `@testcontainers/postgresql`, `@testcontainers/minio`,
+`@biomejs/biome`, `@types/node`, `@types/pg`, `@types/better-sqlite3`.
+
+Node built-ins for everything else: `node:crypto` for SHA-256, HMAC,
+`timingSafeEqual` and token bytes, `node:dns/promises`, `node:fs`,
+`node:util` `parseArgs` for the CLI. Written in house, no package: token
+bucket, glob to regex, SSE on `reply.raw`, Lease leader election (a scoped
+Effect layer on `CoordinationV1Api`), the duration grammar (a Zod
+refinement into `Duration`). The SDKs (`packages/sdk-node`, `sdk/python`)
+have no runtime dependencies and do not use Effect.
+
+Before writing code for a task, load the Claude Code skills docs/STACK.md
+section 5 lists for its area. Effect's `MIGRATION.md` overrides any skill
+text written for Effect 3.
 
 ## 3. Repository layout
 
@@ -83,10 +100,11 @@ packages/shared/src/store/sqlite/
 packages/shared/src/store/migrations/postgres/
 packages/shared/src/store/migrations/sqlite/
 packages/shared/src/store/contract/  contract suite run against both dialects
-packages/shared/src/functions/       Function schema (TypeBox), validation, informer cache
+packages/shared/src/functions/       Function schema (Zod), validation, informer cache
 packages/shared/src/k8s/             KubeConfig loading shared by gateway and scheduler
 packages/shared/src/auth/            keys.yaml loader, scopes, function globs, per-key limits
 packages/shared/src/health/          Fastify admin plugin: /healthz, /readyz, /metrics
+packages/shared/src/runtime/         Effect layers: Config, Logger (pino sink), Database, Kube, ObjectStore, Metrics; error-to-envelope mapping
 packages/shared/src/objstore/        presigned PUT and GET, object exists
 packages/shared/src/webhook/         host allowlist, address check with CIDR allowlist, pinned dispatcher, signing
 packages/sdk-node/src/               @krun/sdk: run(), context, local mode
@@ -100,7 +118,7 @@ apps/scheduler/src/k8s/              API limiter, Job and Secret builders
 deploy/crds/functions.krun.io.yaml   generated plain CRD manifest, committed
 deploy/helm/krun/                    chart
 deploy/helm/krun/templates/crd-functions.yaml  generated CRD template, committed
-scripts/gen-crd.ts                   TypeBox schema to both CRD files and the editor JSON Schema
+scripts/gen-crd.ts                   Zod schema to both CRD files and the editor JSON Schema (`z.toJSONSchema`)
 scripts/quickstart.sh                the README quick start, run by e2e
 docs/api/                            generated OpenAPI documents, committed
 docs/OPERATIONS.md  docs/PROBLEM.md  docs/AGENT-KICKOFF.md
@@ -133,7 +151,9 @@ Gate: `make check` green in CI on an empty but wired repository.
       each with a strict `tsconfig.json` and a `build` script; `sdk/python`
       with `pyproject.toml` and a placeholder pytest; `bin/krun.js`
       dispatches `gateway`, `scheduler`, `migrate`, `validate` to the built
-      entrypoints, which print their name and exit 0. Acceptance:
+      entrypoints, each an Effect program under `NodeRuntime.runMain` that
+      logs its name and exits 0; `vitest.config.ts` per package and one
+      `@effect/vitest` smoke test. Acceptance:
       `pnpm -r build && node bin/krun.js gateway` prints `gateway`;
       `make test` passes.
 - [ ] P0.2 Makefile with all targets in section 3 (`generate` runs only the
@@ -156,8 +176,9 @@ Gate: `make check` green in CI on an empty but wired repository.
       `renovate.json` for npm, Docker digests and Actions. Acceptance:
       `actionlint` passes on `.github/workflows/`; the first push shows a
       green run (`gh run watch`).
-- [ ] P0.5 `packages/shared/src/config`: parse every variable from SPEC
-      section 12 with defaults, the duration grammar, CIDR parsing for
+- [ ] P0.5 `packages/shared/src/config`: a Zod schema over `process.env`,
+      exposed as an Effect `Config` service layer, for every variable from
+      SPEC section 12 with defaults, the duration grammar, CIDR parsing for
       `KRUN_WEBHOOK_ALLOWED_CIDRS`, and the startup validation rules (exit 1
       naming the first bad variable). Acceptance: unit test covers
       defaults, one invalid duration, one invalid CIDR, DSN empty in
@@ -169,14 +190,15 @@ Gate: `make check` green in CI on an empty but wired repository.
       Acceptance: the rules match.
 - [ ] P0.7 Admin listener plugin in `packages/shared/src/health`:
       `/healthz`, `/readyz`, `/metrics` on `KRUN_ADMIN_LISTEN_ADDR` for both
-      processes (`@fastify/under-pressure` with a custom `healthCheck`,
-      `prom-client` registry); readiness returns 503 until marked ready,
+      processes (a readiness route over an Effect `Ref`, `prom-client`
+      registry); readiness returns 503 until marked ready,
       when the database check exceeds 2 seconds, and from the start of
-      shutdown. Acceptance: unit test with Fastify `inject`, including a
-      stalled database check.
-- [ ] P0.8 `packages/shared/src/functions/schema.ts`: Function spec with
-      TypeBox including `runAsUser`, `runAsGroup`, `heartbeatTimeout`, the
-      duration pattern; `scripts/gen-crd.ts` writes the plain manifest
+      shutdown. Acceptance: `@effect/vitest` test with Fastify `inject` and `TestClock`,
+      including a stalled database check.
+- [ ] P0.8 `packages/shared/src/functions/schema.ts`: Function spec as a Zod
+      `strictObject` including `runAsUser`, `runAsGroup`, `heartbeatTimeout`, the
+      duration pattern; `scripts/gen-crd.ts` (`z.toJSONSchema`, target `openapi-3.0`) writes
+      the plain manifest
       `deploy/crds/functions.krun.io.yaml` and, derived from it,
       `deploy/helm/krun/templates/crd-functions.yaml` wrapped in the
       `crds.install` condition with the keep annotation (namespaced, short
@@ -201,13 +223,14 @@ Gate: `make check` green in CI on an empty but wired repository.
 
 ### Phase 1: store
 
-Gate: `node --test 'packages/shared/src/store/**/*.test.ts'` runs the
+Gate: `pnpm exec vitest run packages/shared/src/store` runs the
 contract suite against SQLite on a temp-file database (`fs.mkdtemp` under
 `os.tmpdir()`, removed in `after`) and against Postgres via testcontainers,
 both green.
 
-- [ ] P1.1 Model types, Kysely table types, `RunSummary`, `toRunSummary`
-      and the `Store` interface exactly as SPEC section 6 (`transition`
+- [ ] P1.1 Model types, Kysely table types, `toRun`, `toRunSummary`
+      (the only row-to-wire mappers: `name`, UPPER_SNAKE enums, `*Time`,
+      `resultUri`, `reportTime`, `observeTime`) and the `Store` interface exactly as SPEC section 6 (`transition`
       takes the optional `event` payload), with error classes `NotFoundError`, `ConflictError`. Acceptance: `tsc --noEmit`
       passes, no implementation yet.
 - [ ] P1.2 Migrations for both dialects with the Kysely `Migrator` and
@@ -218,11 +241,15 @@ both green.
       pending exit 1. Acceptance: migrate up twice is idempotent on both; a
       database with one extra migration recorded yields exit 0 and the
       warning; extra plus pending yields exit 1.
-- [ ] P1.3 `createRun` with idempotency: composite unique index, returns
-      the existing run on same key and hash, `ConflictError` on same key
-      and different hash; when created, appends the `queued` `run_events`
-      row with `payload.actor` and notifies. Acceptance: contract test with
-      concurrent duplicate creates yields exactly one row and one event.
+- [ ] P1.3 `createRun` with idempotency: composite unique index on
+      (`created_by`, `function_name`, `idempotency_key`), `request_hash` the
+      SHA-256 of the RFC 8785 serialisation of `{ input, priority,
+      callback }`, returns the existing run on same key and hash,
+      `ConflictError` on same key and different hash; when created, appends
+      the `queued` `run_events` row with `payload.actor` and notifies.
+      Acceptance: contract test with concurrent duplicate creates yields
+      exactly one row and one event; a duplicate with reordered JSON keys
+      returns the same row.
 - [ ] P1.4 `claimQueued`, `releaseLease`, `setJobToken`, `markScheduled`
       (boolean; sets `scheduled_at`, appends a row, notifies),
       `countByState`, `countQueued`, `countQueuedBy`, `listByState` with
@@ -240,11 +267,16 @@ both green.
       `toRunSummary` of the updated row. Acceptance: stale transition
       returns false and writes nothing; a terminal transition with a
       callback leaves exactly one pending delivery whose payload has no
-      `input`; `started_at` equals the event `at`; a transition with
-      `event: { actor }` writes it as the row payload.
-- [ ] P1.6 `getRun`, `listRuns` returning `RunSummary` items, order
-      `created_at desc, id desc`, cursor base64url of `created_at|id`,
-      default limit 50, the cursor as the row-value comparison
+      `input`, has `name`, `state: 'SUCCEEDED'` and `createTime`;
+      `started_at` equals the event `at`; a transition with
+      `event: { actor }` writes it as the row payload; a transition whose
+      patch carries a `KRUN` error does not overwrite a `FUNCTION` error
+      already set (`coalesce`).
+- [ ] P1.6 `getRun`, `listRuns` returning `RunSummary` items with the
+      docs/API.md filter (`state`, `failureReason`, `createTime` bounds,
+      `AND`), order `created_at desc, id desc`, cursor base64url of
+      `created_at|id` plus a hash of parent and filter, default limit 50,
+      the cursor as the row-value comparison
       `(created_at, id) < ($createdAt, $id)`, owner scoping. Acceptance:
       pagination test over 250 rows with limit 100; items lack `input`,
       `result`, `logTail`, `error.details`; Postgres `explain` for an
@@ -282,9 +314,7 @@ both green.
 
 ### Phase 2: webhooks, functions and auth (parallel with Phase 1)
 
-Gate: `node --test 'packages/shared/src/webhook/**/*.test.ts'
-'packages/shared/src/functions/**/*.test.ts'
-'packages/shared/src/auth/**/*.test.ts'` green, no cluster needed.
+Gate: `pnpm exec vitest run packages/shared/src/webhook packages/shared/src/functions packages/shared/src/auth` green, no cluster needed.
 
 - [ ] P2.1 `packages/shared/src/webhook`: host glob allowlist, address
       check after DNS resolution (unwrap IPv4-mapped; accept when inside
@@ -332,69 +362,114 @@ Gate: `node --test 'packages/shared/src/webhook/**/*.test.ts'
 
 ### Phase 3: gateway
 
-Gate: `node --test 'apps/gateway/src/**/*.test.ts'` green against SQLite in
+Gate: `pnpm exec vitest run apps/gateway/src` green against SQLite in
 memory, plus one route test that POSTs then GETs a run against
 testcontainers Postgres.
 
 - [ ] P3.1a App factory, store, Function cache and keys as Fastify plugins
-      and decorators, auth hook, JSON error envelope with the section 4
-      code table. Acceptance: 401 without key, 403 for a function outside
-      the globs, envelope shape on both.
+      and decorators, auth hook, the AIP-193 error envelope with
+      `ErrorInfo.reason` per the docs/API.md table, rejection of unknown
+      fields, `null` values and query parameters, `setNotFoundHandler` and
+      `setErrorHandler` rendering every framework error in the envelope.
+      Acceptance: 401 `KEY_MISSING` without key, 404 `FUNCTION_NOT_FOUND`
+      for a function outside the globs with a generic message, envelope
+      shape on both, 400 `REQUEST_INVALID` on an unknown query parameter
+      and on `null`, 404 `ROUTE_NOT_FOUND` on an unknown path, 415
+      `CONTENT_TYPE_UNSUPPORTED` on `text/plain`.
 - [ ] P3.1b `X-Request-Id` handling, audit log fields, pino redaction,
       `krun_http_*` metrics with the `route` label rule. Acceptance: the
       401 line has `key: null` and a `reqId`; a 404 counts under
       `unmatched`; a redacted field never appears in a log line.
 - [ ] P3.1c `@fastify/swagger` and the `make generate` step writing
-      `docs/api/openapi-public.json`. Acceptance: no diff on a second run.
-- [ ] P3.2 `GET /v1/functions` (`{ items, next: null }`),
-      `GET /v1/functions/{function}` filtered by key globs, Ready only.
-      Acceptance: handler test.
-- [ ] P3.3 `POST /v1/functions/{function}/runs`: size limit before parsing,
-      schema validation with details, idempotency header, `priority` range
-      and `runs:priority` scope, default callback from the Function,
-      callback host and address check (400 `request_invalid` with
-      `details[0].path`), rate limit, function and per-key `maxQueued`
-      via `countQueued` and `countQueuedBy`, 202 with `Location`,
+      `docs/api/openapi-public.json` (OpenAPI 3.1, the machine-readable
+      form of docs/API.md). Acceptance: no diff on a second run; every
+      method in the docs/API.md table appears with its path; response enums
+      are typed `string` with the known values in `description`; no schema
+      is nullable.
+- [ ] P3.2 `ListFunctions` (`{ functions, nextPageToken }`, `pageSize`,
+      `pageToken`) and `GetFunction`, filtered by key globs, Ready only,
+      Function fields per docs/API.md including `callback`, `queueTimeout`,
+      `maxInputBytes`, `maxResultBytes`, `maxWait`. Acceptance: handler
+      test; a key with no matching function gets an empty list;
+      `callback` is present when `spec.callback` is set and omitted
+      otherwise; no field is ever `null`.
+- [ ] P3.3 `CreateRun`: size limit before parsing, schema validation with
+      `BadRequest.fieldViolations`, `requestId` idempotency on the request
+      fingerprint, looked up before schema, callback and `maxQueued` checks
+      (replay returns the current run with 201 and `Idempotent-Replay:
+      true`, honouring `wait`; `ABORTED` on a different fingerprint), `priority`
+      range and `runs:priority` scope, default callback from the Function,
+      callback host and address check (`CALLBACK_NOT_ALLOWED`), rate limit,
+      function and per-key `maxQueued` via `countQueued` and
+      `countQueuedBy`, 201 with the FULL run and `Location`,
       `Retry-After: 1` on 429, `krun_admission_rejections_total`.
-      Acceptance: one test per response code in SPEC section 4, including
-      403 for priority without scope, 400 for a private callback address
-      and 429 `queue_full` for the key limit.
-- [ ] P3.4 `GET /v1/runs/{id}` (full form) and `GET /v1/runs`
-      (`{ items, next }` of `RunSummary`, order, cursor, malformed cursor
-      400, `since` and `until` on `createdAt`, default limit 50) with owner
-      scoping and 404 for other keys' runs. Acceptance: handler tests; a
-      list item has no `input`.
-- [ ] P3.5 `DELETE /v1/runs/{id}`: 202 with the full run from queued,
-      scheduled, running (transition to `cancelling` with `payload.actor` =
-      key name) and when already `cancelling` (no new transition); 409 when
-      terminal. Acceptance: handler test asserts the `cancelling` event
-      carries `actor` and a repeat adds no event.
-- [ ] P3.6 `GET /v1/runs/{id}/result` with inline and 307 branches, 409 when
-      not terminal. Acceptance: handler test with a fake object store.
+      Acceptance: one test per row of the docs/API.md error table that
+      `CreateRun` can produce, including 403 `SCOPE_MISSING` for priority
+      without scope, 400 `CALLBACK_NOT_ALLOWED` for a private callback
+      address, 429 `QUEUE_FULL` with `metadata.limit` `key`, a replay with
+      a changed `priority` yielding `ABORTED`.
+- [ ] P3.4 `GetRun` (FULL, `view=BASIC` accepted, `-` wildcard) and
+      `ListRuns` (`{ runs, nextPageToken }` of BASIC runs through
+      `toRunSummary`, `-` wildcard, `pageSize` coercion and negative
+      rejection, `pageToken` bound to parent and filter, the filter
+      grammar with `FILTER_INVALID`, malformed or mismatched token
+      `REQUEST_INVALID`, no `view`) with owner scoping and `RUN_NOT_FOUND`
+      for other keys' runs. Acceptance: handler tests; a list item has no
+      `input`; `state = FAILED AND createTime >= "..."` filters correctly;
+      a bad filter is 400 `FILTER_INVALID`; a token replayed with another
+      filter is 400 `REQUEST_INVALID`; `pageSize=500` returns 200 items.
+- [ ] P3.5 `CancelRun` (`POST ...:cancel`): 200 with the FULL run from
+      queued, scheduled, running (transition to `cancelling` with
+      `payload.actor` = key name) and when already `cancelling` or
+      `cancelled` (no new transition); 400 `FAILED_PRECONDITION`
+      `RUN_TERMINAL` with `metadata.state` on `succeeded` or `failed`.
+      Acceptance: handler test asserts the `cancelling` event carries
+      `actor`, a repeat adds no event, a `cancelled` run returns 200.
+- [ ] P3.6 `GetRunResult` (`GET ...:getResult`) with inline, 307 (300 s
+      presign, `Cache-Control: no-store`), `RESULT_MISSING` and
+      `RUN_NOT_TERMINAL` branches; 200 on a failed run that kept a result.
+      Acceptance: handler test with a fake object store covering all five.
 - [ ] P3.7 `krun gateway` wires config, store, Function cache, keys, the
-      three listeners, readiness, SIGTERM drain with `close-with-grace`:
+      three listeners as scoped Effect layers under `NodeRuntime.runMain`,
+      readiness, SIGTERM drain through scope finalizers:
       `/readyz` 503 first, `KRUN_SHUTDOWN_DELAY`, then close. Acceptance:
       process starts in embedded mode with a temp directory and `KUBECONFIG`
-      pointing at `test/fake-kube` serving one Function, answers `/readyz` 200 on the admin port, `/v1/*` is 404
-      on the admin port, and with `KRUN_SHUTDOWN_DELAY=0` exits 0 within 5
-      seconds of SIGTERM after `/readyz` turned 503.
-- [ ] P3.8 Internal API: second Fastify instance on
-      `KRUN_INTERNAL_LISTEN_ADDR` under `/internal/v1`, per-run token auth
+      pointing at `test/fake-kube` serving one Function, answers `/readyz`
+      200 on the admin port, `/v1/*` is 404 on the admin port, with
+      `KRUN_SHUTDOWN_DELAY=2s` a `/v1` request after `/readyz` turned 503
+      still answers 200, and the process exits 0 within 5 seconds of
+      SIGTERM.
+- [ ] P3.8 Internal API per docs/INTERNAL-API.md: second Fastify instance
+      on `KRUN_INTERNAL_LISTEN_ADDR` under `/internal/v1`, per-run token auth
       against `job_token_hash` in `queued` with token, `scheduled` or
-      `running`, `GET input`, `POST status` with the 1 per second per run
-      limit (body replaces `runtimeStatus` wholesale), `PUT result` with
-      `KRUN_MAX_RESULT_BYTES`, `PUT error` with its size limits,
-      `User-Agent` logged, unknown version 404 `unsupported_api_version`;
-      `make generate` writes `docs/api/openapi-internal.json`. Acceptance:
-      one test per response code in SPEC section 4; `/internal/*` is 404 on
+      `running`, the docs/INTERNAL-API.md check order, per-route body caps
+      (status 16384, error 32768, result `KRUN_MAX_RESULT_BYTES`; Fastify's
+      413 rewritten into the envelope), `GET input` re-serialised with
+      `Content-Length`, `POST status` with the 1 accepted report per second
+      window starting at the last 204 (body replaces `runtime_status`
+      wholesale, `at` set by the gateway at receipt), `PUT result`, `PUT
+      error` with field limits measured as compact JSON, store calls
+      bounded to 5 s (`pg` `query_timeout`) answering 503 `NOT_READY`,
+      `User-Agent` logged, unknown version 404 `UNSUPPORTED_API_VERSION`,
+      the docs/INTERNAL-API.md error table (`TOKEN_INVALID`,
+      `RESULT_TOO_LARGE`, `STATUS_RATE_LIMITED`, ...); `make generate`
+      writes `docs/api/openapi-internal.json`. Acceptance: one test per row
+      of the docs/INTERNAL-API.md error table; a run posting status at 10
+      per second receives one 204 per second; a stalled fake store yields
+      503 within 6 s; `make generate` leaves no diff for
+      `docs/api/openapi-internal.json`, which lists the four operations,
+      types `status` as `string` and has no nullable schema; `/internal/*`
+      is 404 on
       the public listener and `/v1/*` on the internal one; a token from
-      another run gets 401; a `queued` run with a token is accepted.
+      another run gets 401; a `queued` run with a token is accepted; the
+      stored JSON has key `at` and `GetRun` renders `reportTime`.
 
 ### Phase 4: scheduler core
 
 Gate: `make e2e` on kind in embedded mode: submit a run for a
-`curlimages/curl` function that fetches its input, posts one status and
-PUTs the input back as its result, observe `succeeded` with the result and
+`curlimages/curl` function shaped like docs/INTERNAL-API.md section 9
+(`set -e`, `--fail-with-body`, retries) that fetches its input, posts one
+status and PUTs the input back as its result, observe `succeeded` with the result and
 `runtimeStatus`; a function that exits 1 ends `failed` within 10 seconds
 with `failureReason` `exit_code` and `logTail` set; a function with an
 unpullable image and a 60 second deadline shows `jobStatus.reason`
@@ -429,7 +504,7 @@ set, Job gone.
       `Retry-After`.
 - [ ] P4.3b Main loop per SPEC section 8: `countByState` first, expire
       queued runs of every function with queued runs (cached
-      `maxQueueTime` or 1h; an expired run with a token also gets its Job
+      `queueTimeout` or 1h; an expired run with a token also gets its Job
       and Secret deleted), free slots, claim, per run Secret with token
       (`AlreadyExists` reads it), `setJobToken`, Job (`AlreadyExists` ok),
       `markScheduled` with cleanup on false and a cached-informer replay on
@@ -452,7 +527,8 @@ set, Job gone.
       `observedAt`,
       `running` on pod phase `Running`, `succeeded` from `running` or
       `scheduled`, terminal handling in order: object store check carrying
-      `result_ref` (succeeded only), compare-and-set with final `jobStatus`,
+      `result_ref` (completed Job only, and only when `result` is null),
+      compare-and-set with final `jobStatus`,
       `failureReason`, `error`, `logTail` and `startedAt` when missing;
       Secret delete; Job delete with background propagation; a run already
       terminal on read gets no writes but its Secret and Job deleted, 404 as
@@ -463,14 +539,15 @@ set, Job gone.
       the container), an object store error (run untransitioned, retried on
       the reconcile tick), a terminal run's replayed event (deletes only);
       the Job delete call is observed after the transition and the delivery
-      payload carries `resultRef`.
+      payload carries `resultUri`.
 - [ ] P4.5 Main-loop step 6 and the reconcile timer: `job_lost` detection
       from `listByState` against the informer cache with a leader-local
       first-absent map, active only after the Job informer's initial list,
-      2 minute grace, `krun`-sourced error, written `result` kept, Secret
-      deleted; startup log of `scheduled` or `running` runs with no Job.
-      Acceptance: unit test with a run in `running` and no Job fails after
-      2 minutes; a run with a result keeps it; a Job reappearing clears the
+      2 minute grace, `krun`-sourced error unless the function reported
+      one, written `result` kept, Secret deleted; startup log of
+      `scheduled` or `running` runs with no Job. Acceptance: unit test with
+      a run in `running` and no Job fails after 2 minutes; a run with a
+      result keeps it; a run with a reported error keeps it; a Job reappearing clears the
       entry; nothing fires before the initial list.
 - [ ] P4.6 Metrics from SPEC section 11 owned by the leader:
       `krun_runs_transitions_total`, `krun_runs_current` from
@@ -506,7 +583,8 @@ set, Job gone.
       a stale run asserts the call order and the final state; a run of a
       Function without `heartbeatTimeout` is untouched; a run with a fresh
       status is untouched; a stale run whose cached Job is `Complete` is
-      skipped; nothing fires before the initial list.
+      skipped; a stale run with a reported error keeps it; nothing fires
+      before the initial list.
 - [ ] P4.10 Sweep loop every 10 minutes: `sweep(now - KRUN_RETENTION, 1000)`
       until a batch returns fewer than 1000; delete `krun.io/run-id` Secrets
       older than 1 hour with no matching Job; `krun_sweep_deleted_total`.
@@ -537,18 +615,22 @@ set, Job gone.
 
 ### Phase 5: wait, SSE, webhooks
 
-Gate: e2e adds a `?wait=30s` scenario returning 200 with the result and an
-in-cluster webhook receiver pod, reachable through
+Gate: e2e adds a `?wait=30s` scenario on `CreateRun` returning 201 with
+`state: SUCCEEDED` and the inline `result`, then a `POST ...:wait` on the
+same run returning 200 with the same terminal run, and an in-cluster webhook
+receiver pod, reachable through
 `KRUN_WEBHOOK_ALLOWED_CIDRS` set to the kind pod and Service CIDRs, that
 records one signed delivery and verifies the timestamped signature.
 
 - [ ] P5.1 Notify fan-out in the gateway: subscribe before insert, 1 second
-      poll fallback, `?wait` on create and on get, `KRUN_MAX_WAIT` cap,
+      poll fallback, `wait` on `CreateRun` (status stays 201) and
+      `WaitRun` (`POST ...:wait` with `timeout`), `KRUN_MAX_WAIT` cap,
       SIGTERM answers in-flight waits at once. Acceptance: handler test with
-      a fake store emitting a transition, and one where SIGTERM ends the
-      wait early.
-- [ ] P5.2 `GET /v1/runs/{id}/events` SSE of state, status and job status
-      events with `RunSummary` data, closes after terminal state and on
+      a fake store emitting a transition, `WaitRun` returning the run at
+      timeout without error, and one where SIGTERM ends the wait early.
+- [ ] P5.2 `WatchRun` (`GET ...:watch`) SSE of state, status and job
+      status events with BASIC run data, `id` per docs/API.md, keepalive
+      comments every 15 seconds, closes after terminal state and on
       SIGTERM; the first message is the current state, a terminal run at
       connect gets one message then EOF. Acceptance: handler test reads a
       state event, a status event, then EOF; `data` has no `input`;
@@ -561,22 +643,28 @@ records one signed delivery and verifies the timestamped signature.
       with a local `http.createServer` receiver returning 500 then 200, a
       302 counted as failure, a sixth failure marking `dead`, 40 pending
       rows delivered with at most 8 in flight.
-- [ ] P5.4 e2e scenarios for wait and webhook with the CIDR allowlist.
-      Acceptance: `make e2e` green.
+- [ ] P5.4 e2e scenarios for wait (201 on `CreateRun`, 200 on `WaitRun`)
+      and webhook (constant `X-Krun-Delivery` across a retried attempt, two
+      `v1=` entries during rotation) with the CIDR allowlist. Acceptance:
+      `make e2e` green.
 
 ### Phase 6: object storage
 
 Gate: e2e with MinIO in kind: a function uploads a 1 MB result, the run
-shows `resultRef`, `GET /v1/runs/{id}/result` returns 307 to a URL that
+shows `resultUri`, `GetRunResult` returns 307 to a URL that
 serves the object.
 
-- [ ] P6.1 `packages/shared/src/objstore`: presigned PUT with TTL, presigned
-      GET, object exists. Acceptance: unit test against a MinIO
-      testcontainer.
-- [ ] P6.2 Scheduler sets `KRUN_RESULT_UPLOAD_URL` when configured and
-      checks object existence before the terminal compare-and-set on
-      `Complete`. Acceptance: unit test with a fake object store; the
-      delivery payload carries `resultRef`.
+- [ ] P6.1 `packages/shared/src/objstore`: presigned PUT with TTL and no
+      signed `Content-Type` (`requestChecksumCalculation: WHEN_REQUIRED`),
+      presigned GET, object exists. Acceptance: unit test against a MinIO
+      testcontainer; a PUT with `Content-Type: application/json` succeeds
+      against the presigned URL.
+- [ ] P6.2 Scheduler sets `KRUN_RESULT_UPLOAD_URL` when configured
+      (`KRUN_S3_PRESIGN_TTL` else `activeDeadlineSeconds`) and checks object
+      existence before the terminal compare-and-set on `Complete` when
+      `result` is null. Acceptance: unit test with a fake object store; the
+      delivery payload carries `resultUri`; a run with an inline result
+      skips the check; the TTL follows the variable.
 - [ ] P6.3 e2e scenario with MinIO, with a raw NetworkPolicy manifest in
       the pre-chart jobs namespace manifests allowing egress to the MinIO
       pods. Acceptance: `make e2e` green.
@@ -693,29 +781,40 @@ Gate: `krun init` for both languages yields a project whose tests pass and
 whose image builds against vendored packed SDKs; e2e runs one SDK-built
 function per language on kind.
 
-- [ ] P8.1 `packages/sdk-node`: `run(handler)` per SPEC section 7.1, no
-      runtime dependencies, `/internal/v1`, local mode (result on stdout,
-      logs and status on stderr), `ctx.status` never throws, the last
-      status payload re-sent by the heartbeat, `ResultWriteError`,
-      heartbeat with `setInterval(...).unref()`, `User-Agent`. Acceptance:
-      unit tests against a local `http.createServer` fake of the internal
-      API for success, result above `KRUN_MAX_RESULT_BYTES` uploaded to the
-      presigned URL, upload failure reported as `ResultWriteError` with
-      exit 1, thrown error reported then exit 1, heartbeat pings at a third
-      of `KRUN_HEARTBEAT_TIMEOUT` carrying the last status body, 429 on
-      status dropped, oversized status and error bodies truncated to the
-      section 4 limits, retry on 503, local mode stream separation;
-      `package.json` lists no `dependencies`; the process exits without
-      waiting for the heartbeat timer.
+- [ ] P8.1 `packages/sdk-node`: `run(handler)` per SPEC section 7.1 and
+      docs/INTERNAL-API.md, no runtime dependencies, `/internal/v1`, local
+      mode (result on stdout, logs and status on stderr), the status send
+      gate (latest payload, at most once per second, pending on 429, no
+      eager `started`), `ctx.status` one attempt with a 3 s timeout that
+      never throws, heartbeat with `setInterval(...).unref()` running until
+      the result or error call returned, void handler sends no result,
+      `ResultWriteError`, 10 s timeouts with 3 retries on the three other
+      calls, 300 s upload, exit 1 on 401 and SIGTERM, `User-Agent`.
+      Acceptance: unit tests against a local `http.createServer` fake of
+      the internal API for success, void handler (no result request, exit
+      0), result above `KRUN_MAX_RESULT_BYTES` uploaded to the presigned
+      URL with `Content-Length`, upload 403 reported as `ResultWriteError`
+      with exit 1, thrown error reported then exit 1, heartbeat pings at a
+      third of `KRUN_HEARTBEAT_TIMEOUT` carrying the last status body and
+      continuing during a slow result write, two immediate `ctx.status`
+      calls yielding two requests 1 s apart, 429 re-sent at the next slot,
+      oversized status and error bodies truncated to the contract limits,
+      retry on 503, a never-answering fake timing out and retrying, 401
+      ending the process, local mode stream separation; `package.json`
+      lists no `dependencies`; the process exits without waiting for the
+      heartbeat timer.
 - [ ] P8.2 `sdk/python`: the same with `urllib.request` and a daemon thread
-      for heartbeats; `pyproject.toml`, `uv`, `ruff`, `pytest`; `make test`
+      for heartbeats, `run(handle)` as a plain call under `__main__`, never
+      a decorator; `pyproject.toml`, `uv`, `ruff`, `pytest`; `make test`
       runs it. Acceptance: the same test matrix as P8.1 against the same
-      fake.
+      fake; importing a handler module executes nothing.
 - [ ] P8.3 `test/sdk-conformance`: one scenario table (requests expected in
       order, with bodies) read by both SDK test suites, including
       `ctx.status("loading", 0.1)` followed by one heartbeat expecting two
-      identical status bodies, and an oversized status and error case.
-      Acceptance: both suites pass on it;
+      identical status bodies, two immediate `ctx.status` calls expecting
+      two requests 1 s apart, a void handler expecting no result request,
+      a slow result write with heartbeats during it, and an oversized
+      status and error case. Acceptance: both suites pass on it;
       reordering one SDK's calls fails its suite.
 - [ ] P8.4 `krun init --lang node` in `packages/cli` with the template from
       SPEC section 7.2: SDK dependency at the CLI version, Dockerfile with
@@ -738,7 +837,7 @@ function per language on kind.
       green.
 - [ ] P8.7 `krun deploy` per SPEC section 7.2 with `--no-apply`,
       `--namespace`, `--api-url`, `--registry`, the printed curl, the
-      in-flight log command and the `GET /v1/runs/{id}` hint. Acceptance:
+      in-flight log command and the `GetRun` hint. Acceptance:
       on kind with `--registry localhost:5001`, `krun deploy` in a vendored
       template project ends with `Ready=True` and prints the three
       commands;
@@ -751,7 +850,7 @@ Gate: all e2e scenarios green; README states measured numbers and the
 "when not to use krun" section; `release.yml` dry-run green.
 
 - [ ] P9.1 Backpressure e2e: submit 3000 runs for a function with
-      `maxQueued` 1000 and `maxConcurrency` 5; assert 429 `queue_full`
+      `maxQueued` 1000 and `maxConcurrency` 5; assert 429 `QUEUE_FULL`
       after the cap, never more than 5 Jobs active, quota rejections leave
       runs `queued`; a key with `maxQueued` 10 gets 429 at 11.
       Acceptance: test green.
@@ -760,9 +859,11 @@ Gate: all e2e scenarios green; README states measured numbers and the
       port, the admin ports and the database; a run's token rejected for
       another run id; tag-only image rejected at apply by the CRD; a
       Function with a non-compiling `inputSchema` shows `Ready=False` and
-      gets 404 on POST; a Function naming a forbidden service account shows
-      `ServiceAccountNotAllowed`; a run of another key is 404; a webhook to
-      an unlisted `10.0.0.1` is rejected at create. Acceptance: test green.
+      gets 404 on POST whose envelope carries no validation reason; a
+      Function naming a forbidden service account shows
+      `ServiceAccountNotAllowed`; a run of another key is 404
+      `RUN_NOT_FOUND`; a webhook to an unlisted `10.0.0.1` is rejected at
+      create with `CALLBACK_NOT_ALLOWED`. Acceptance: test green.
 - [ ] P9.3 Benchmark script: 500 runs of a 10 second function; record
       submit to `running` latency p50 and p95, failure detection latency
       p95 and sustained runs per second on kind. Acceptance: numbers

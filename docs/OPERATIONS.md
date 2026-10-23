@@ -71,7 +71,7 @@ Rule names match `metrics.prometheusRule` in the chart (SPEC section 13).
 | `KrunNoLeader` | no scheduler holds the Lease, or no scheduler is scraped; nothing is claimed, no transitions happen | `kubectl get lease krun-scheduler -n krun -o jsonpath='{.spec.holderIdentity}'`; scheduler pod logs; API server reachability; a leader that cannot renew exits and restarts |
 | `KrunFunctionsNotSynced` | a process cannot list Functions | CRD present and Established; RBAC for `functions.krun.io`; API server |
 | `KrunJobLost` | Jobs vanish before krun records them | scheduler downtime vs `config.ttlAfterFinished`; someone deleting Jobs in the jobs namespace; node loss |
-| `KrunHeartbeatTimeouts` | functions stop reporting | the run's `error` and `logTail` via `GET /v1/runs/{id}`; whether `heartbeatTimeout` is shorter than the work it protects |
+| `KrunHeartbeatTimeouts` | functions stop reporting | the run's `error` and `logTail` via `GetRun`; whether `heartbeatTimeout` is shorter than the work it protects |
 | `KrunDeliveriesDead` | a webhook endpoint failed for about 15 hours | receiver availability; `webhooks.allowedHosts` and `allowedCIDRs`; DNS; signature verification on the receiver |
 | `KrunQuotaRejections` | ResourceQuota or LimitRange refusing Jobs | `kubectl describe quota -n krun-jobs`; function requests vs `limitRange.max` |
 | `KrunQueueWaitHigh` | runs wait too long | free slots per function (`krun_runs_current`); `config.maxRunning`; cluster capacity; cold start |
@@ -85,8 +85,8 @@ server).
 
 `kubectl logs -f -n krun-jobs job/krun-<id>` works only while the run is
 `scheduled` or `running`: the scheduler deletes the Job at the terminal
-transition (SPEC D28). For a finished run, `GET /v1/runs/{id}` returns
-`logTail` on failure only (last 100 lines, 16 KB, may be null when the
+transition (SPEC D28). For a finished run, `GetRun`
+(`GET /v1/functions/-/runs/{id}`) returns `logTail` on failure only (last 100 lines, 16 KB, may be null when the
 container never ran). Successful runs leave no logs in krun; use the
 cluster's log aggregation. Function authors get `krun-job-viewer` for the
 in-flight case.
@@ -139,10 +139,10 @@ in-flight case.
 ```
 # runs stuck in queued for one function
 kubectl get kfn <name> -n krun -o jsonpath='{.status.conditions}'
-curl -s -H "Authorization: Bearer $KRUN_API_KEY" "$KRUN_API_URL/v1/runs?function=<name>&state=queued&limit=5"
+curl -sG -H "Authorization: Bearer $KRUN_API_KEY" "$KRUN_API_URL/v1/functions/<name>/runs" --data-urlencode 'filter=state = QUEUED' --data-urlencode pageSize=5
 
 # a failed run
-curl -s -H "Authorization: Bearer $KRUN_API_KEY" "$KRUN_API_URL/v1/runs/<id>" | jq '.failureReason, .error, .logTail'
+curl -s -H "Authorization: Bearer $KRUN_API_KEY" "$KRUN_API_URL/v1/functions/-/runs/<id>" | jq '.failureReason, .error, .logTail'
 
 # a run still in flight
 kubectl logs -f -n krun-jobs job/krun-<id>

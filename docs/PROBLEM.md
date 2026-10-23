@@ -16,7 +16,7 @@ queues and status tracking.
 - **Callers**: backend services and their developers. They need "run this
   and tell me when it is done": reports, exports, batch inference, data
   migrations, media processing, third-party integrations. They want an HTTP
-  API: 202, status, result, idempotency, a webhook. They must not hold
+  API: create, status, result, idempotency, a webhook. They must not hold
   Kubernetes credentials.
 - **Function authors**: engineers who own the code that runs. They want to
   write a handler, build an image, register it, and see failures with a
