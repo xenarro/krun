@@ -10,7 +10,7 @@ listeners' paths (SPEC.md:181, docs/API.md:332).
 ## 1. Admin listener (`KRUN_ADMIN_LISTEN_ADDR`, default `:9090`)
 
 No authentication, never exposed outside the cluster (SPEC.md:183). Served
-by the shared plugin in `packages/shared/src/health/` (PLAN.md:90); the
+by the shared plugin in `packages/shared/src/health/` (PLAN.md:106); the
 `krun-process-runtime` skill owns it. Listed here only so the gateway wires
 it (P3.7).
 
@@ -89,7 +89,8 @@ Fingerprint: lowercase hex SHA-256 of the RFC 8785 (JCS) serialisation of
 `{ input, priority, callback }` as received, absent `priority` as `0`,
 absent `callback` as `null`, before the Function's default callback is
 applied; `requestId` and `wait` excluded; stored in `request_hash`
-(SPEC.md:226-228, SPEC.md:527-529, docs/API.md:200-204).
+(SPEC.md:226-228, SPEC.md:527-529, docs/API.md:200-204). Serialise with
+the `canonicalize` package, hash with `node:crypto` (docs/STACK.md 2.5).
 
 ## 4. Public error table (docs/API.md:322-342, binding through SPEC.md:218-224)
 
@@ -138,8 +139,10 @@ route and version (404) → token hash and run state (401) → `Content-Type`
 (415) → body cap (413) → body validation (400) → status rate limit (429,
 accepted reports only) → store write guarded by state, zero rows = 401
 `TOKEN_INVALID` with nothing written or notified. Each store call bounded
-to 5 s from after the body is read and validated; on expiry cancel the
-query and answer 503 `NOT_READY`. Per-field byte limit = UTF-8 length of the
+to 5 s from after the body is read and validated (`Effect.timeout`, the
+`NotReady` tagged error); on expiry cancel the query and answer 503
+`NOT_READY`. Body caps are per-route Fastify `bodyLimit`; body shapes are
+`z.strictObject` schemas, `data` and `details` opaque. Per-field byte limit = UTF-8 length of the
 compact JSON serialisation after parsing (docs/INTERNAL-API.md:90-94).
 
 ## 6. Internal error table (docs/INTERNAL-API.md:275-286) — P3.8

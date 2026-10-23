@@ -793,7 +793,7 @@ calls and exits non-zero; Kubernetes restarts it as a standby.
 
 Kubernetes API usage: one scheduler-wide limiter caps concurrent API calls
 at `KRUN_K8S_CONCURRENCY` (default 8); every call aborts at 10 seconds
-through `AbortSignal.timeout`. A 429 in the main loop releases the leases
+through `Effect.timeout`, which fires the request's `AbortSignal`. A 429 in the main loop releases the leases
 of claimed runs not yet scheduled, pauses the loop for `Retry-After`
 (default 1 second, cap 60) and logs at warn. Every Secret or Job delete
 treats 404 as success.

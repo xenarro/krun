@@ -4,7 +4,7 @@ The Postgres DDL below is verbatim from SPEC.md:402-465 (re-verify the
 lines against the current file). The SQLite DDL is the same schema with the
 type mapping from SPEC.md:390-397 applied; keep table and column names
 identical (SPEC.md:385). Both live as raw SQL inside `sql` templates in the
-first migration of each dialect folder (PLAN.md:215-217):
+first migration of each dialect folder (PLAN.md:236-238):
 `packages/shared/src/store/migrations/postgres/` and
 `packages/shared/src/store/migrations/sqlite/` (SPEC.md:386-387).
 
@@ -135,12 +135,12 @@ implicit `rowid` of `run_events` (SPEC.md:541-543).
 
 | Index | Used by | Why it must stay partial / ordered this way |
 |---|---|---|
-| `runs_idem_idx` (unique, partial) | `createRun` dedupe | partial so runs without a key never collide; the unique violation is how concurrent duplicates collapse to one row (SPEC.md:433-434, PLAN.md:223-231) |
+| `runs_idem_idx` (unique, partial) | `createRun` dedupe | partial so runs without a key never collide; the unique violation is how concurrent duplicates collapse to one row (SPEC.md:433-434, PLAN.md:244-252) |
 | `runs_queue_idx` (partial `state = 'queued'`) | `claimQueued` inner select, `countQueued`, `countQueuedBy`, `expireQueued` | matches `order by priority desc, created_at` (SPEC.md:435, 479) |
 | `runs_active_idx` (partial, four states) | `countByState`, `listByState` | the predicate must appear as literal text in the query so the planner can match the partial index (SPEC.md:436, 534-536) |
 | `runs_function_idx` | `listRuns` for one function | `(function_name, created_at desc, id desc)` matches the fixed order (SPEC.md:437, 236) |
 | `runs_owner_idx` | `listRuns` across functions for one key | `(created_by, created_at desc, id desc)` (SPEC.md:438) |
-| `runs_created_idx` | `listRuns` admin list across functions | `explain` must name it for the unfiltered admin list (SPEC.md:439, PLAN.md:261-262) |
+| `runs_created_idx` | `listRuns` admin list across functions | `explain` must name it for the unfiltered admin list (SPEC.md:439, PLAN.md:282-283) |
 | `runs_finished_idx` (partial `finished_at is not null`) | `sweep` | batched delete of terminal rows (SPEC.md:440, 467-468) |
 | `run_events_run_idx` | run history, `subscribe` poll uses `rowid` not this index | (SPEC.md:450) |
 | `deliveries_due_idx` (partial `state = 'pending'`) | `claimDeliveries` | `where state = 'pending' and next_at <= $now order by next_at` (SPEC.md:463, 515) |
@@ -162,8 +162,10 @@ returning *;
 ```
 
 `$1` owner, `$2` leaseUntil, `$3` fn, `$4` now, `$5` limit
-(`claimQueued(fn, owner, leaseUntil, limit)`, SPEC.md:502; pass `now`
-explicitly from the caller's clock so tests can control it).
+(`claimQueued(fn, owner, leaseUntil, limit)`, SPEC.md:502). `now` is not a
+parameter of the method: read it from `Clock` / `DateTime.now` inside
+`claimQueued`, so `TestClock.adjust` controls lease expiry without
+changing the SPEC signature.
 
 ## Claim query, SQLite (SPEC.md:485-487)
 
@@ -171,7 +173,7 @@ Same statement without `for update skip locked`, run inside a transaction
 that the `SqliteDriver` subclass opens with `begin immediate`
 (SPEC.md:485-486, 562). `begin immediate` takes the write lock up front, so
 two claimers serialise instead of one failing with `SQLITE_BUSY` on the
-upgrade from a deferred read (node-stack-facts.md:678-681).
+upgrade from a deferred read (docs/research/node-stack-facts.md:678-681).
 
 ```sql
 update runs
@@ -214,13 +216,14 @@ returning *;
 ```
 
 SQLite: same without `for update skip locked`, inside `begin immediate`;
-compute `now + 60s` in the application and bind it as an RFC 3339 string
-instead of using `interval`.
+compute `now + 60s` in the application (`DateTime.addDuration`, check
+the Effect 4 name) and bind it as an RFC 3339 string from
+`DateTime.formatIso` instead of using `interval`.
 
 ## Delivery row inserted by every terminal path (SPEC.md:348-351, D29)
 
 Inside the terminal transaction, when `callback_url` is set:
-`id` UUIDv7 (SPEC.md:1081), `run_id`, `url = callback_url`,
+`id` UUIDv7 (`v7({ msecs })` from `Clock`, SPEC.md:1081), `run_id`, `url = callback_url`,
 `payload = toRunSummary(updated row)`, `attempt 0`, `next_at = at` of the
 transition, `state 'pending'`, `created_at = at`. Paths: `transition` to a
 terminal state, `expireQueued`, and through `transition` the heartbeat,

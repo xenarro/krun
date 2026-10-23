@@ -174,7 +174,7 @@ spec:
       containers:
         - name: migrate
           image: ...
-          args: [migrate]          # bin/krun.js dispatch (PLAN.md:79)
+          args: [migrate]          # bin/krun.js dispatch (PLAN.md:95)
           env: KRUN_DB_MODE, KRUN_DB_DSN (secretKeyRef) + config env
           securityContext: ...container partial
           volumeMounts: [{ name: tmp, mountPath: /tmp }]

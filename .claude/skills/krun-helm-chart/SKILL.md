@@ -27,8 +27,12 @@ stub), P7.1-P7.7 and the P9.6 alert-name check.
   SPEC.md:1176-1222 (section 12 env names), SPEC.md:1125-1175 (metrics,
   health, shutdown), SPEC.md:118-128 (CRD generation into the chart).
 - Decisions D22 (SPEC.md:1463), D30 (SPEC.md:1471), D32 (SPEC.md:1473).
-- PLAN.md:140-146 (P0.2 stub), PLAN.md:178-191 (P0.8 generated CRD
-  template), PLAN.md:652-756 (Phase 7), PLAN.md:873-877 (P9.6).
+- PLAN.md:159-165 (P0.2 stub), PLAN.md:198-212 (P0.8 generated CRD
+  template), PLAN.md:672-776 (Phase 7), PLAN.md:893-897 (P9.6);
+  PLAN.md:52-54 (Helm 4, `helm-docs`, `promtool` on the toolchain).
+- docs/STACK.md section 3 (tools, Vitest for tests) and section 5 (load
+  `helm-chart-scaffolding`, `kubernetes-skill`, `operating-kubernetes`,
+  `kubernetes-hardening` for Phase 7).
 - docs/OPERATIONS.md:7-41 (install, keep, upgrade), 43-63 (capacity),
   65-77 (alerts), 94-107 (Litestream drill), 109-135 (security ops).
 - References here: [values.md](references/values.md) (values verbatim,
@@ -50,12 +54,14 @@ stub), P7.1-P7.7 and the P9.6 alert-name check.
 2. Template the CRD from the generated `templates/crd-functions.yaml` under
    `crds.install`, with `helm.sh/resource-policy: keep` under `crds.keep`;
    never put it in `crds/`, which Helm never upgrades (SPEC.md:1366-1370,
-   PLAN.md:180-184).
+   PLAN.md:200-204).
 3. Never edit `templates/crd-functions.yaml` by hand; `scripts/gen-crd.ts`
-   writes it and CI fails on a diff (SPEC.md:120-128).
+   writes it from the Zod Function schema through `z.toJSONSchema`
+   (`target: "openapi-3.0"`) and CI fails on a diff (SPEC.md:120-128,
+   PLAN.md:198-212).
 4. Every `fail` case in references/fail-cases.md renders a message naming the
    value; use `fail`, not `required`, and validate once from a template that
-   always renders (SPEC.md:1308-1315, PLAN.md:672-673).
+   always renders (SPEC.md:1308-1315, PLAN.md:692-693).
 5. Embedded mode `fail`s when `gateway.replicas` or `scheduler.replicas`
    exceeds 1: one StatefulSet replica owns the SQLite file (SPEC.md:1314-1315,
    1349).
@@ -110,7 +116,7 @@ stub), P7.1-P7.7 and the P9.6 alert-name check.
 20. `keep` consequences go in the README: kept CRD/Namespace retain
    `meta.helm.sh` annotations; re-install with the same name and namespace or
    `kubectl annotate ... --overwrite`; deleting the CRD deletes every Function
-   (SPEC.md:1382-1389, PLAN.md:733-737).
+   (SPEC.md:1382-1389, PLAN.md:753-757).
 21. Keep scheduler downtime (upgrades, embedded restarts) below
    `config.ttlAfterFinished`, or finished runs become `job_lost`
    (SPEC.md:1416-1417, docs/OPERATIONS.md:37-38).
@@ -162,16 +168,25 @@ Keep one kind per file so `helm template --show-only` targets a test.
   satisfy the `fail` cases (`apiKeys.existingSecret`, `db.postgres.existingSecret`);
   P0.2 only needs `Chart.yaml` and a `values.yaml` with
   `crds: {install: true, keep: true}` so the generated CRD template has
-  its condition (PLAN.md:140-146, 182-184).
-- Render assertions are shell or `node:test` over `helm template` output
-  (PLAN.md:669-673): grep for absent `subPath`, `kind: ConfigMap`,
-  `kind: Secret`, `kind: Function`; present `krun-gateway-internal`;
-  `--set crds.install=false` drops the CRD; `--set crds.keep=false` drops
-  the annotation; `--set jobsNamespace.keep=false` likewise.
+  its condition (PLAN.md:159-165, 202-204).
+- Render assertions are Vitest tests over `helm template` output, or
+  shell (PLAN.md:689-693). A Vitest test (for example
+  `test/helm/render.test.ts` with its own `test/helm/vitest.config.ts`,
+  run by `make helm-lint` as
+  `pnpm exec vitest run --config test/helm/vitest.config.ts`) calls
+  `helm template` through `execFileSync`, parses the stream with the
+  `yaml` package (`parseAllDocuments`) and asserts on objects, not on
+  text: no `subPath`, no `kind: ConfigMap`, `Secret` or `Function`;
+  `krun-gateway-internal` present; `--set crds.install=false` drops the
+  CRD; `--set crds.keep=false` drops the annotation;
+  `--set jobsNamespace.keep=false` likewise. A failing render is asserted
+  on the non-zero exit and the stderr message. Plain `it` is enough: the
+  chart tests touch no Effect code and no clock. `node:test` is not used
+  (docs/STACK.md section 2.6).
 - Each `fail` case has a one-line check in references/fail-cases.md.
 - Alerts: references/alerts.md has the `promtool check rules` procedure
   (strip the CR to `.spec` first) and the P9.6 name diff.
-- e2e (P7.6, PLAN.md:738-751): both modes into fresh namespaces labelled
+- e2e (P7.6, PLAN.md:758-771): both modes into fresh namespaces labelled
   `pod-security.kubernetes.io/enforce=restricted`, `objectStorage.egress`
   at the MinIO pods, policy reachability checks, `scheduler.replicas=2`
   one leader, `helm upgrade --set config.logLevel=debug` then
@@ -180,19 +195,27 @@ Keep one kind per file so `helm template --show-only` targets a test.
 
 ## Library facts
 
-- `helm`, `helm-docs`, `promtool`, `kind` 0.24+ (kindnetd enforces
-  NetworkPolicy) are toolchain, not dependencies (PLAN.md:42-44). `yq` is
+- `helm` 4, `helm-docs`, `promtool`, `kind` 0.24+ (kindnetd enforces
+  NetworkPolicy) are toolchain, not dependencies (PLAN.md:52-54). `yq` is
   not listed; strip PrometheusRule CRs with the `yaml` package
-  (PLAN.md:65) or `node -e`.
-- `@fastify/under-pressure` 9.2.1 couples `/healthz` and `/readyz` into
-  one `healthCheck`; the research recommends a hand-written `/readyz`
-  (node-stack-facts.md:575-599, VERIFIED README, recommendation marked
-  as such). Chart-side consequence: probe paths and timings come from
-  SPEC, not from the plugin's `/status` default.
+  (PLAN.md:72) inside the Vitest chart test.
+- Helm 4 is the installed and supported version. The chart keeps
+  `apiVersion: v2` (P0.2), which Helm 4 renders unchanged; every command in
+  this skill and in the e2e harness must run under Helm 4, and CI installs
+  a pinned Helm 4 release (one `HELM_VERSION` in the Makefile read by the
+  workflows, like kind). Helm 4 changed install-time flags and behaviour
+  (server-side apply for new releases, `--atomic` and `--force` renamed);
+  check `helm install --help` of the pinned version before writing e2e
+  commands. UNVERIFIED in detail against the pinned release.
+- `/readyz` and `/healthz` are krun's own routes on the admin listener
+  (`krun-process-runtime`): readiness is an Effect-backed route over a
+  `Ref`, no Fastify health plugin (docs/STACK.md section 2.6). Chart-side
+  consequence: probe paths and timings come from SPEC section 13, never
+  from a plugin default.
 - Helm `--set` yields int64 for numbers while `values.yaml` keeps
   `quota.pods: "200"` a string: normalise with `int`/`atoi` before `gt`
-  (references/fail-cases.md). UNVERIFIED against a specific Helm minor;
-  test both input paths.
+  (references/fail-cases.md). UNVERIFIED against Helm 4; test both input
+  paths.
 
 ## Lessons from KEDA, dapr, knative serving
 
@@ -251,7 +274,7 @@ Keep one kind per file so `helm template --show-only` targets a test.
   8080/8081 to it and lets job pods reach it.
 - `helm-docs` reads `# -- description` comments; a `values.yaml` line
   without one leaves a blank README row and P7.5's "every value" check
-  fails (PLAN.md:733-737).
+  fails (PLAN.md:753-757).
 - SPEC RISK: knative-serving.md:162,180 recommends the chart `fail` when
   `terminationGracePeriodSeconds < config.shutdownDelay + margin`; SPEC
   lists no such `fail` (SPEC.md:1308-1315) and PLAN.md:31-32 forbids
@@ -267,22 +290,23 @@ Keep one kind per file so `helm template --show-only` targets a test.
 
 - P0.2: `make check && make helm-lint`.
 - P7.1-P7.4c, P7.7: `make helm-lint`, `helm template` in both modes, every
-  acceptance grep in PLAN.md:669-673, 681-685, 696-702, 711-714, 718-723,
-  730-731, 754-756 passes; `promtool check rules` green.
+  acceptance check in PLAN.md:689-693, 701-705, 716-722, 731-734, 738-743,
+  750-751, 774-776 passes in the Vitest chart test under the pinned Helm 4;
+  `promtool check rules` green.
 - P7.5: `make generate` twice leaves no diff; README keys equal `values.yaml`.
 - P7.6: `make e2e` green with the chart-based install.
 - P9.6: the alert-name script in references/alerts.md exits 0.
-- Then `make check` (CLAUDE.md:5), append the progress-log line
+- Then `make check` (CLAUDE.md rule 3), append the progress-log line
   `2026-MM-DD P7.x <sha> note` to PLAN.md section 6 and commit it with the
   code (PLAN.md:19-20), branch `p7-x-<slug>`, PR to main merged when CI
   is green, never push main (PLAN.md:13-22). No `Co-Authored-By`, no
-  Claude attribution (CLAUDE.md:7, PLAN.md:16).
+  Claude attribution (CLAUDE.md rule 5, PLAN.md:16).
 
 ## Limitations
 
-- Written before the chart exists; file names in "Chart layout" are
-  suggestions, and Helm type-coercion notes are UNVERIFIED against a
-  specific Helm minor.
+- Written before the chart exists; file names in "Chart layout" and the
+  `test/helm/` location are suggestions, and Helm type-coercion and
+  Helm 4 flag notes are UNVERIFIED against the pinned Helm 4 release.
 - Does not cover the per-run Job manifest, the CRD schema generator, or
   the e2e harness mechanics (`krun-scheduler-k8s`, `krun-functions-crd`,
   `krun-testing-ci`).

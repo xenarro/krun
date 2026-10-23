@@ -1,6 +1,6 @@
 # `test/sdk-conformance` (P8.3)
 
-Source of truth: PLAN.md:791-798. One scenario table, read by both SDK test
+Source of truth: PLAN.md:811-818. One scenario table, read by both SDK test
 suites, that pins the exact request sequence an SDK must produce. Its job is
 to make the Node and Python SDKs indistinguishable on the wire. Reordering
 one SDK's calls must fail that SDK's suite.
@@ -11,8 +11,8 @@ one SDK's calls must fail that SDK's suite.
 test/sdk-conformance/
   scenarios.json        the table (data only, no code)
   README.md             matcher grammar and how to add a scenario
-packages/sdk-node/src/conformance.test.ts     loads ../../../test/sdk-conformance/scenarios.json
-sdk/python/tests/test_conformance.py          loads the same file
+packages/sdk-node/src/conformance.test.ts     Vitest; loads ../../../test/sdk-conformance/scenarios.json
+sdk/python/tests/test_conformance.py          pytest; loads the same file
 ```
 
 Each suite ships its own handler fixtures keyed by name (`echo`, `void`,
@@ -46,7 +46,8 @@ the table names the fixture, never contains code.
 ```
 
 - `responses` are consumed in order per route; the last entry repeats.
-  An entry may be `{ "hang": true }` to simulate a never-answering gateway
+  An entry may carry `"delayMs"` to answer late, or be `{ "hang": true }`
+  to simulate a never-answering gateway
   (for the 10 s / 3 s timeout cases; scale timeouts down only through an
   SDK test hook, never a public option).
 - `expect.requests` is the **ordered** list of requests to the fake, with
@@ -70,7 +71,7 @@ the table names the fixture, never contains code.
 - Headers: the `Authorization` header carrying the per-run token (scheme Bearer) must be present on every
   internal call and **absent** on the upload (docs/INTERNAL-API.md:217-219).
 
-## Required scenarios (PLAN.md:792-797 plus the P8.1 matrix)
+## Required scenarios (PLAN.md:812-817 plus the P8.1 matrix)
 
 | Scenario | Asserts |
 |---|---|
@@ -79,9 +80,11 @@ the table names the fixture, never contains code.
 | `ctx.status("loading", 0.1)` then one heartbeat | two identical status bodies |
 | two immediate `ctx.status` calls | two requests at least 1 s apart |
 | 429 on status | the pending payload is re-sent at the next slot, not retried immediately |
-| no eager started | first status request is a heartbeat tick, body `{ "message": "started" }` |
+| no eager started | first status request is a heartbeat tick, body `{ "message": "started" }`, at least one interval after start |
+| heartbeat during input | `KRUN_HEARTBEAT_TIMEOUT=3` and `GET input` answered after 1500 ms: a `{ "message": "started" }` status arrives while the input is pending (the timer starts with `run`, SPEC.md:694-697) |
 | slow result write | heartbeats continue while PUT result is pending |
-| result above cap with upload URL | upload PUT with `Content-Length`, no `Authorization`, no SetResult |
+| result above cap with upload URL | upload PUT with `Content-Length`, no `Authorization`, no SetResult after it |
+| upload 503 then 200 | upload retried after about 1 s, then exit 0, no SetResult |
 | upload 403 | SetError type `ResultWriteError`, exit 1 |
 | result above cap, no upload URL | SetError `ResultWriteError`, exit 1 |
 | thrown error | SetError with type, message, `details.stack` (at most 20 lines), exit 1 |
@@ -98,17 +101,20 @@ unit test (stdout holds only the result, stderr holds log and status lines).
 ## Proving the table bites
 
 Acceptance requires that reordering one SDK's calls fails its suite
-(PLAN.md:797-798). Add a self-test: run the matcher against a recorded
+(PLAN.md:817-818). Add a self-test: run the matcher against a recorded
 sequence with two requests swapped and assert it reports a mismatch.
 Do not leave a deliberately broken SDK branch in the tree.
 
 ## Running
 
-- Node: `node --test packages/sdk-node/src/conformance.test.ts` spawns the
-  fixture as a child process (`process.execPath`) against
-  `http.createServer` fakes bound to `127.0.0.1:0`.
+- Node: `pnpm exec vitest run packages/sdk-node/src/conformance.test.ts`
+  spawns the fixture as a child process (`process.execPath` on the built
+  `dist/` or on the `.ts` source through Node's type stripping) against
+  `http.createServer` fakes bound to `127.0.0.1:0`. Give these tests a
+  per-test timeout above the slowest scenario (the hanging-input case
+  waits a real 10 s unless the SDK test hook scales it down).
 - Python: `uv run --directory sdk/python pytest tests/test_conformance.py`
   spawns `sys.executable` with the fixture module.
 - Both use real time with small `KRUN_HEARTBEAT_TIMEOUT` values (3 s gives
   1 s ticks); fake timers do not cross a process boundary.
-- `make test` runs both (PLAN.md:120-121).
+- `make test` runs both (PLAN.md:135-138).

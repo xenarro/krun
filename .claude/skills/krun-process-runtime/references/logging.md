@@ -4,26 +4,40 @@ Line numbers from the working tree 2026-10-23; re-check before quoting.
 
 ## pino setup
 
-- JSON via pino, one line per event (SPEC.md:1149). Fastify owns the pino
-  instance: pass `logger: { level, redact }` to every Fastify instance
-  (public, internal, admin, scheduler admin) and derive module loggers
-  with `app.log.child({ module })`; a second pino instance would miss the
-  redact list.
+- JSON via pino, one line per event (SPEC.md:1149). One pino instance per
+  process, built in the Logger layer (`packages/shared/src/runtime`,
+  PLAN.md:107) with `{ level, redact }` and passed as `loggerInstance` to
+  every Fastify instance (public, internal, admin, scheduler admin);
+  derive module loggers with `.child({ module })`. A second pino instance
+  would miss the redact list.
+- The Effect `Logger` is replaced by one that writes to that pino instance
+  (docs/STACK.md 2.5): map the Effect log level to the pino method, the
+  message to `msg`, and log annotations (`Effect.annotateLogs({ run_id,
+  function })`) and spans to fields. So `Effect.logInfo` in a loop or
+  handler produces the same JSON line, through the same redaction, as
+  `request.log.info`. Install it with the Effect 4 logger-replacement API
+  (check `MIGRATION.md`; the Effect 3 `Logger.replace(Logger.defaultLogger,
+  ...)` form may not exist), and remove the default console logger so no
+  line is printed twice.
 - Level from `KRUN_LOG_LEVEL`, default `info` (SPEC.md:1150, SPEC.md:1217).
 - Fields where relevant: `run_id`, `function`, `state`, `reason`, `reqId`
   (SPEC.md:1149-1150). Use exactly these names (snake_case `run_id`,
   camelCase `reqId`, as written); dashboards and the audit test grep them.
 - `reqId` is on every request-scoped line (SPEC.md:277); Fastify adds it
-  through the request logger (`request.log`), so handlers log with
-  `request.log`, never `app.log`, inside a request.
+  through the request logger (`request.log`), and the handler runner
+  annotates the handler Effect with `reqId` so `Effect.log*` lines inside a
+  request carry it too. Never log with `app.log` inside a request.
 - `X-Request-Id`: accepted up to 128 characters, else replaced by a UUID;
   echoed on every response (SPEC.md:276-277). Fastify's `requestIdHeader`
-  defaults to `false` (node-stack-facts.md:490-492): set
-  `requestIdHeader: 'x-request-id'` and a `genReqId` that validates the
-  length and falls back to `randomUUID()`; add an `onSend` hook that sets
-  the response header.
+  defaults to `false` in Fastify 5, and when a header name is set
+  `genReqId` is skipped whenever the header is present. Keep
+  `requestIdHeader: false` and read `x-request-id` inside `genReqId`:
+  accept it when 1 to 128 characters, else return `v7()` from `uuid`
+  (synchronous, outside Effect, so no `Clock` there); the id is then right
+  in `request.log` from the first line. Confirm against the installed
+  Fastify. Add an `onSend` hook that sets the response header.
 - `trustProxy: true` so `client_ip` is the forwarded address
-  (SPEC.md:1157; node-stack-facts.md:497-500 for the option forms).
+  (SPEC.md:1157; Fastify 5 accepts `true`, CIDR strings or a function).
 - Fastify's default request/response logging prints `req`/`res`
   summaries at info; keep `disableRequestLogging: true` on the public and
   internal listeners and write the audit line yourself in `onResponse`,
@@ -51,9 +65,10 @@ redact the same keys one level down for the shapes krun logs
 not set `censor` to something that reveals length.
 
 P3.1b acceptance: "a redacted field never appears in a log line"
-(PLAN.md:363). Write the test against a pino destination stream (or
-`logger.stream`), log an object containing each path with a sentinel
-value, and assert the sentinel is absent from the captured output.
+(PLAN.md:382). Write the test (`@effect/vitest`) against a pino
+destination stream, log an object containing each path with a sentinel
+value once through pino and once through `Effect.log` with the replaced
+Logger, and assert the sentinel is absent from the captured output.
 
 ## Never-log list
 
@@ -82,7 +97,7 @@ One line per `/v1` request (public listener only), at `info`; `warn` for
 
 | Field | Value | Notes |
 |---|---|---|
-| `key` | key name, or `null` | never the key itself (SPEC.md:1159); P3.1b asserts `key: null` on the 401 line (PLAN.md:362) |
+| `key` | key name, or `null` | never the key itself (SPEC.md:1159); P3.1b asserts `key: null` on the 401 line (PLAN.md:381) |
 | `client_ip` | `request.ip` with `trustProxy: true` | SPEC.md:1157 |
 | `user_agent` | `User-Agent` header | |
 | `route` | `request.routeOptions.url`, `unmatched` on 404 | same rule as the `route` metric label (SPEC.md:1131) |
@@ -108,4 +123,5 @@ line. The internal listener logs `User-Agent` of each request
   delivery attempt failures, Lease 409 retries.
 - `error`: permanent failures (`job_create_failed`), informer watch
   errors before restart, startup validation failure (then exit 1).
-- `fatal`: shutdown grace exceeded (then exit 1).
+- `fatal`: a shutdown release step exceeded its `Effect.timeout` (then
+  runMain exits 1).

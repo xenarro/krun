@@ -6,7 +6,7 @@ lint` and `helm template` must pass with them off and on. Rule names,
 expressions, `for` and severity are fixed by SPEC; `thresholds.*` are
 the only variables. P9.6 verifies by script that every name in the
 docs/OPERATIONS.md table exists in the rendered PrometheusRule
-(PLAN.md:873-877), so the seven names below are a contract across SPEC,
+(PLAN.md:893-897), so the seven names below are a contract across SPEC,
 chart and docs.
 
 ## PodMonitor (SPEC.md:1374-1375, 990-994)
@@ -94,23 +94,34 @@ Quote `{{ $t.x }}` nowhere: PromQL wants a bare number. Use `for: 0m`
 literally rather than omitting `for` so the rendered rule matches the
 table a reader compares against. Annotations are free text; keep them
 one line and point at docs/OPERATIONS.md by section name (the P9.6
-script checks names only, PLAN.md:873-874).
+script checks names only, PLAN.md:893-894).
 
 ## Checks
 
-```sh
-C=deploy/helm/krun; base="--set apiKeys.existingSecret=k --set db.postgres.existingSecret=p"
-helm template t $C $base --set metrics.prometheusRule.enabled=true --set metrics.podMonitor.enabled=true \
-  --show-only templates/prometheusrule.yaml > "$TMPDIR/rule.yaml"
-# promtool wants a plain rules file ({groups: [...]}), not the CR: strip to .spec with the workspace's yaml package
-node -e 'const y=require("yaml");const fs=require("fs");const d=y.parse(fs.readFileSync(process.argv[1],"utf8"));fs.writeFileSync(process.argv[2],y.stringify(d.spec))' "$TMPDIR/rule.yaml" "$TMPDIR/rules-only.yaml"
-promtool check rules "$TMPDIR/rules-only.yaml"
-test "$(grep -c 'alert: Krun' "$TMPDIR/rule.yaml")" = 7
-diff <(grep -o 'alert: Krun[A-Za-z]*' "$TMPDIR/rule.yaml" | cut -d' ' -f2 | sort -u) \
-     <(grep -o '`Krun[A-Za-z]*`' docs/OPERATIONS.md | tr -d '`' | sort -u)
+In the Vitest chart test (SKILL.md "Testing the chart"):
+
+```ts
+// test/helm/alerts.test.ts
+const base = ['--set', 'apiKeys.existingSecret=k', '--set', 'db.postgres.existingSecret=p']
+const out = execFileSync('helm', ['template', 't', 'deploy/helm/krun', ...base,
+  '--set', 'metrics.prometheusRule.enabled=true', '--set', 'metrics.podMonitor.enabled=true',
+  '--show-only', 'templates/prometheusrule.yaml'], { encoding: 'utf8' })
+const rule = parse(out)                                   // from 'yaml'
+// promtool wants a plain rules file ({groups: [...]}), not the CR: write .spec only
+const file = join(await mkdtemp(join(tmpdir(), 'krun-rules-')), 'rules.yaml')
+await writeFile(file, stringify(rule.spec))
+execFileSync('promtool', ['check', 'rules', file])        // throws on a non-zero exit
+const names = rule.spec.groups.flatMap((g) => g.rules.map((r) => r.alert)).sort()
+expect(names).toHaveLength(7)
+const documented = [...new Set(readFileSync('docs/OPERATIONS.md', 'utf8').match(/`Krun[A-Za-z]*`/g))]
+  .map((n) => n.replaceAll('`', '')).sort()
+expect(names).toEqual(documented)                         // the P9.6 name check
 ```
 
 `promtool check rules` takes a plain rules file (`groups:` at the top),
-not a `PrometheusRule` CR (PLAN.md:755). `yq` is not in PLAN.md section
+not a `PrometheusRule` CR (PLAN.md:775). `yq` is not in PLAN.md section
 2, so the strip uses the `yaml` package the workspace already depends on
-(PLAN.md:65). The last command is the P9.6 name check (PLAN.md:873-874).
+(PLAN.md:72). The last assertion is the P9.6 name check (PLAN.md:893-894);
+the P9.6 `scripts/check-alert-names.ts` can import the same helper. Both
+need `helm` 4 and `promtool` on the path, so they run in `make helm-lint`,
+not in `make test`.

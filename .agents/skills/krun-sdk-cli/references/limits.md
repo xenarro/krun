@@ -24,16 +24,20 @@ well-behaved function never sees a 400 or 413 for its own reports.
 
 ## How to measure
 
-- Measure the **compact JSON serialisation in UTF-8 bytes** (SPEC.md:711-712):
-  Node `Buffer.byteLength(JSON.stringify(v), "utf8")`; Python
-  `len(json.dumps(v, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))`.
+- Measure the **field's compact JSON serialisation in UTF-8 bytes**
+  (SPEC.md:711-712, docs/INTERNAL-API.md:90-94; the gateway's measure is
+  authoritative): Node `Buffer.byteLength(JSON.stringify(v), "utf8")`;
+  Python `len(json.dumps(v, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))`.
   `ensure_ascii=False` matters: the default escapes non-ASCII as `\uXXXX`, which
   changes the byte count and the bytes the gateway receives.
-- For a string field the limit applies to the UTF-8 bytes of the string
-  value, not including JSON quotes or escapes. Be conservative: if the
-  gateway measures the escaped form, a string full of `"` or control
-  characters can exceed it; pin the gateway's actual rule with one
-  conformance case containing quotes and newlines.
+- For a string field that serialisation includes the two quotes and every
+  escape (`\"`, `\n`, `\u0001`), so a 1024-byte `message` limit leaves at
+  most 1022 bytes of plain ASCII text and fewer for text full of quotes or
+  control characters. Truncate the raw string, re-measure the serialised
+  form, and repeat until it fits; pin it with one conformance case
+  containing quotes and newlines.
+- The result cap applies to the whole serialised body, the same bytes that
+  are sent.
 - `KRUN_MAX_RESULT_BYTES` arrives as a decimal string; parse once with
   `Number.parseInt(v, 10)` / `int(v)`. Missing or unparseable in pod mode is a
   bug in the scheduler: fall back to 262144 and log at warn.
@@ -65,9 +69,15 @@ def truncate_utf8(s: str, max_bytes: int) -> str:
     return b[:max_bytes].decode("utf-8", errors="ignore")
 ```
 
+These cut the raw string to a byte budget; the caller lowers the budget
+until the field's serialised form (quotes and escapes included) fits.
+
 Both versions must produce identical output for the same input; add the
-same three cases to both suites: ASCII at the limit, a 2-byte character
-straddling the limit, a 4-byte emoji straddling the limit.
+same four cases to both suites: ASCII at the limit, a 2-byte character
+straddling the limit, a 4-byte emoji straddling the limit, a string of
+`"` characters whose escaped form is twice its raw length. In the Node
+suite a fast-check property is cheap: for any string and budget, the result
+is a prefix of the input, valid UTF-8, and within the budget.
 
 ## Stack dropping
 
@@ -85,6 +95,6 @@ end (SPEC.md:714-715).
 - Oversized error `message`, `type` and stack arrive within limits, stack
   lines removed from the end.
 - Result of exactly `KRUN_MAX_RESULT_BYTES` goes inline; one byte more goes
-  to the upload URL with `Content-Length` (PLAN.md:775-776).
+  to the upload URL with `Content-Length` (PLAN.md:795-796).
 - Result over the cap with no upload URL: `SetError` type
   `ResultWriteError`, exit 1 (docs/INTERNAL-API.md:231-232).

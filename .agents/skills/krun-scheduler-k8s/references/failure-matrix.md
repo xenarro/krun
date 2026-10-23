@@ -1,7 +1,7 @@
 # Failure matrix (SPEC.md section 5 rules and section 8 "Failure detection")
 
-Serves PLAN P4.4 (PLAN.md:503-522), P4.8 (PLAN.md:542-555), P4.9
-(PLAN.md:556-567). Sources: SPEC.md:367-381 (error and `failureReason`
+Serves PLAN P4.4 (PLAN.md:523-542), P4.8 (PLAN.md:562-575), P4.9
+(PLAN.md:576-587). Sources: SPEC.md:367-381 (error and `failureReason`
 precedence), SPEC.md:847-860 (`jobStatus` fields), SPEC.md:877-919 (failure
 detection), SPEC.md:1136-1140 (metrics). Line numbers verified against the
 working tree on 2026-10-23; re-check before citing.
@@ -16,7 +16,7 @@ apply, the precedence sections below decide.
 | Kubernetes signal | `jobStatus` (`phase`, `reason`, `message`, `exitCode`) | run `state` | `failureReason` | `error.source` | `logTail` | Metric |
 |---|---|---|---|---|---|---|
 | pod condition `PodScheduled=False` reason `Unschedulable` | `Pending`, `Unschedulable`, condition message, - | stays `scheduled` | none yet; `deadline_exceeded` when the Job later fails with `DeadlineExceeded` | `kubernetes` at the end unless the function reported | null (container never ran) | `krun_runs_failed_total{reason="deadline_exceeded"}` at the end |
-| `function` container `waiting` reason `ImagePullBackOff` / `ErrImagePull` / `CreateContainerConfigError` | `Pending`, that reason, waiting message, - | stays `scheduled` (PLAN.md:516-517) | `deadline_exceeded` once the Job condition `Failed` reason `DeadlineExceeded` arrives | `kubernetes` | null | `krun_runs_failed_total{reason="deadline_exceeded"}` |
+| `function` container `waiting` reason `ImagePullBackOff` / `ErrImagePull` / `CreateContainerConfigError` | `Pending`, that reason, waiting message, - | stays `scheduled` (PLAN.md:536-537) | `deadline_exceeded` once the Job condition `Failed` reason `DeadlineExceeded` arrives | `kubernetes` | null | `krun_runs_failed_total{reason="deadline_exceeded"}` |
 | pod phase `Running` | `Running`, -, -, - | `scheduled -> running` (SPEC.md:861) | - | - | - | `krun_cold_start_seconds{function}` scheduled -> running (SPEC.md:1138) |
 | `function` container `terminated` exit 0, then Job condition `Complete=True` | `Succeeded`, -, -, `0` | `running -> succeeded`, or `scheduled -> succeeded` when `running` was never observed (SPEC.md:861-863) | - | - | never fetched (SPEC.md:894) | `krun_run_duration_seconds{function,state="succeeded"}` |
 | `function` container `terminated` exit N != 0, reason `Error` | `Failed`, `Error`, terminated message, `N` | `-> failed` on Job condition `Failed=True` | `exit_code` | `function` if it called `PUT error`, else `kubernetes` (`Error` + message) | fetched on the first pod event showing exit N (SPEC.md:890-893) | `krun_runs_failed_total{reason="exit_code"}`, `krun_terminal_detect_seconds{function}` from `terminated.finishedAt` to the CAS (SPEC.md:887-889) |
@@ -75,7 +75,7 @@ is `function`. A function that reports an error and exits 0 still succeeds:
 the exit code is the truth (SPEC.md:375-376). Never log `error.details`
 (SPEC.md:1151-1153).
 
-## `logTail` capture (SPEC.md:890-899, PLAN.md:542-545)
+## `logTail` capture (SPEC.md:890-899, PLAN.md:562-565)
 
 | Trigger (first Pod event showing it) | Fetch |
 |---|---|
@@ -88,13 +88,17 @@ the exit code is the truth (SPEC.md:375-376). Never log `error.details`
 
 Call `coreV1.readNamespacedPodLog({ name, namespace, container: 'function',
 tailLines: 100, limitBytes: 16384 })` once per run, keep the string in a
-leader-local `Map<runId, string | null>` until the terminal CAS, then drop
-it. Abort after 10 s (`AbortSignal.timeout`); on `TimeoutError` or any
-error leave `logTail` null and continue (SPEC.md:896-897). `limitBytes` may
+leader-local `Ref<Map<runId, string | null>>` (created in the leader
+scope) until the terminal CAS, then drop it. The call goes through the
+`Kube` service, so it is bounded by its 10 s `Effect.timeout` and the
+request is aborted on timeout; on the timeout or any `KubeApiError` leave
+`logTail` null and continue (`Effect.orElseSucceed(() => null)` or the
+Effect 4 equivalent; SPEC.md:896-897). A hanging stub in the test is
+released with `TestClock.adjust("10 seconds")`. `limitBytes` may
 cut the first line mid-way; that is acceptable. Fetch before any delete,
 always: terminal path and heartbeat path both read the log before the Job
 or Secret goes (SPEC.md:898-899, SPEC.md:906-908). `logTail` is FULL-view
-only (SPEC.md:241) and is separate from `error` (PLAN.md:548).
+only (SPEC.md:241) and is separate from `error` (PLAN.md:567-568).
 
 ## Metrics on this path (SPEC.md:1134-1140)
 
@@ -104,7 +108,7 @@ only (SPEC.md:241) and is separate from `error` (PLAN.md:548).
 | `krun_runs_failed_total` | terminal `failed` | `function`, `reason` = `failureReason` |
 | `krun_cold_start_seconds` | `scheduled -> running` | `function`; `scheduleTime` to `startTime` |
 | `krun_run_duration_seconds` | `running -> terminal` | `function`, `state`; `startTime` to `endTime` |
-| `krun_terminal_detect_seconds` | terminal CAS after a container exit | `function`; `terminated.finishedAt` to the CAS time; target 10 s (SPEC.md:887-889, docs/PROBLEM.md) |
+| `krun_terminal_detect_seconds` | terminal CAS after a container exit | `function`; `terminated.finishedAt` (parsed into a `DateTime`) to the CAS time from `Clock`; target 10 s (SPEC.md:887-889, docs/PROBLEM.md) |
 
 Keep histogram label sets to `function` only; KEDA made high-cardinality
 histogram labels opt-in after they exploded (keda
@@ -112,7 +116,7 @@ histogram labels opt-in after they exploded (keda
 these (SPEC.md:1134-1140); flip `krun_scheduler_leader` to 0 and stop
 publishing on loss.
 
-## Acceptance cases (PLAN.md:542-555, PLAN.md:515-522)
+## Acceptance cases (PLAN.md:569-575, PLAN.md:535-542)
 
 - Exit 3: `failed`, `exit_code`, `jobStatus.exitCode` 3, `logTail` fetched
   on the pod event before the Job `Failed` event.

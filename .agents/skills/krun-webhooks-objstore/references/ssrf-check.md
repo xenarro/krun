@@ -1,9 +1,10 @@
 # Webhook host allowlist and SSRF address check (P2.1)
 
-Source: SPEC.md:1062-1073, D31 (SPEC.md:1472), PLAN.md:300-309,
-docs/OPERATIONS.md:120-121. Module: `packages/shared/src/webhook`.
+Source: SPEC.md:1062-1073, D31 (SPEC.md:1472), PLAN.md:319-328,
+docs/OPERATIONS.md:120-121, docs/STACK.md sections 2.2 and 2.5. Module:
+`packages/shared/src/webhook`.
 
-## Inputs (parsed by `packages/shared/src/config`, P0.5)
+## Inputs (parsed by the Zod Config schema in `packages/shared/src/config`, P0.5)
 
 | Value | Env | Shape | Citation |
 |---|---|---|---|
@@ -11,7 +12,7 @@ docs/OPERATIONS.md:120-121. Module: `packages/shared/src/webhook`.
 | allowed CIDRs | `KRUN_WEBHOOK_ALLOWED_CIDRS` | comma-separated CIDRs; a CIDR that does not parse exits 1 at startup | SPEC.md:1183, :1215 |
 | secrets | `KRUN_WEBHOOK_SECRET` | comma-separated; required on the scheduler when hosts are set | SPEC.md:1181, :1216 |
 
-Glob grammar: the in-house glob-to-regex (PLAN.md:71) used for API key
+Glob grammar: the in-house glob-to-regex (PLAN.md:83) used for API key
 function globs; `*` matches any run of characters including dots
 (`*.acme.com` matches `hooks.acme.com` and `a.b.acme.com`), anchored both
 ends, case-insensitive on the host. Match against `url.hostname` with IPv6
@@ -20,27 +21,30 @@ brackets removed. No port, no path, no scheme in the glob.
 ## Algorithm
 
 ```
-checkCallback(url: string, cfg): Promise<{ address: string, family: 4 | 6 }>
-  1. u = new URL(url)                    -- throws: reject (malformed)
-  2. u.protocol in {http:, https:}       -- else reject
+resolveAndCheck(url: string, cfg): Effect<Pinned, CallbackNotAllowed>
+                                   -- Pinned = { address: string, family: 4 | 6, servername?: string }
+  1. u = new URL(url)                    -- throws: fail CallbackNotAllowed("malformed")
+  2. u.protocol in {http:, https:}       -- else fail ("scheme")
   3. host = u.hostname, strip [ ]        -- IPv6 literal
-  4. hostMatches(host, cfg.allowedHosts) -- else reject (SPEC.md:1062)
+  4. hostMatches(host, cfg.allowedHosts) -- else fail ("host") (SPEC.md:1062)
   5. if ipaddr.isValid(host): addrs = [host]
-     else: addrs = (await dns.promises.lookup(host, { all: true })).map(r => r.address)
-           empty or ENOTFOUND: reject
+     else: addrs = yield* Effect.tryPromise(() => dns.promises.lookup(host, { all: true }))
+           empty or ENOTFOUND: fail ("unresolvable")
   6. for each a in addrs:
        addr = ipaddr.process(a)          -- unwraps ::ffff:x.x.x.x (SPEC.md:1063)
        ok = subnetMatch(addr, { allowed: cidrsOfFamily(addr) }, 'default') === 'allowed'
             || addr.range() === 'unicast'  (SPEC.md:1064-1068)
-       if !ok: reject
+       if !ok: fail (addr.range())
   7. return { address: addrs[0], family }  -- the pinned address
 ```
 
 The pure part is `checkAddress(addrs: string[], cidrs: Cidr[]): boolean`;
-test it without DNS. `resolveAndCheck` composes DNS with it. The gateway
-calls `resolveAndCheck` at create and maps a rejection to 400
+test it without DNS. `resolveAndCheck` composes DNS with it as an Effect
+whose failure is the tagged `CallbackNotAllowed` carrying the reason; the
+DNS lookup sits behind a small `Resolver` service so tests provide a stub
+layer. The gateway runs `resolveAndCheck` at create and maps the tag to 400
 `CALLBACK_NOT_ALLOWED`, `fieldViolations[0].field` = `callback.url`
-(docs/API.md:327, PLAN.md:383). The scheduler calls it again before every
+(docs/API.md:327, PLAN.md:402). The scheduler runs it again before every
 attempt (SPEC.md:1069) and treats a rejection as a failed attempt with
 `last_error` naming the reason, never as `dead` at once (the DNS may be
 fixed before the next attempt).
@@ -57,10 +61,11 @@ only against v4 CIDRs and a v6 address only against v6 CIDRs, after
 `process()` has turned `::ffff:10.0.0.1` into v4. An allowlisted
 `10.0.0.0/8` must admit `::ffff:10.0.0.1` through the unwrapped v4 form.
 
-## Required test vectors (PLAN.md:305-309 plus SPEC.md:1066-1068)
+## Required test vectors (PLAN.md:324-328 plus SPEC.md:1066-1068)
 
-Every row is a unit test on `checkAddress`; the "reason" column is the
-expected ipaddr.js `range()` so a naming mismatch fails loudly.
+Every row is a Vitest case on `checkAddress` (`it.each` over the table);
+the "reason" column is the expected ipaddr.js `range()` so a naming
+mismatch fails loudly. Gate: `pnpm exec vitest run packages/shared/src/webhook`.
 
 | Address | CIDRs | Expect | Reason |
 |---|---|---|---|
@@ -85,7 +90,8 @@ expected ipaddr.js `range()` so a naming mismatch fails loudly.
 | `10.1.0.1` | `10.0.0.0/16` | reject | outside the listed CIDR, still `private` |
 | `169.254.169.254` | `169.254.0.0/16` | accept | listed; the operator chose to allow it |
 
-Host-level vectors (on `resolveAndCheck` with a stubbed lookup):
+Host-level vectors (on `resolveAndCheck` with a stub `Resolver` layer, run
+with `it.effect` from `@effect/vitest`):
 
 | URL | Hosts | Expect |
 |---|---|---|
@@ -96,30 +102,50 @@ Host-level vectors (on `resolveAndCheck` with a stubbed lookup):
 | `http://[::1]:8080/` | `*` | reject (`loopback`, after bracket strip) |
 | `http://receiver.krun-e2e.svc:8080/` resolving to `10.96.0.12` | `*.svc` with CIDR `10.96.0.0/12` | accept (the e2e receiver, D31) |
 
+Property tests (fast-check, docs/STACK.md section 3), next to the table:
+
+- any IPv4 `a` in `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`,
+  `127.0.0.0/8`, `100.64.0.0/10`, `169.254.0.0/16`: rejected with no CIDR
+  listed, accepted when its enclosing block is listed;
+- for every IPv4 `a`: `checkAddress(['::ffff:' + a], c) === checkAddress([a], c)`;
+- a list containing any rejected address is rejected, whatever else it holds.
+
 ## Pinned dispatcher
 
 ```ts
 import { Agent, fetch } from 'undici'   // the package, not globalThis.fetch
+import { Effect } from 'effect'
 
-const dispatcher = new Agent({
-  connect: {
-    lookup: (_hostname, _opts, cb) => cb(null, pinned.address, pinned.family),
-    servername: isIpLiteral ? undefined : hostname,   // SNI and cert check on the name
-    timeout: 10_000,
-  },
-})
-const res = await fetch(url, {
-  method: 'POST', body, headers, dispatcher,
-  redirect: 'manual',
-  signal: AbortSignal.any([AbortSignal.timeout(10_000), loopSignal]),
-})
+const post = (url: string, pinned: Pinned, body: Uint8Array, headers: Record<string, string>) =>
+  Effect.acquireRelease(
+    Effect.sync(() => new Agent({
+      connect: {
+        lookup: (_hostname, _opts, cb) => cb(null, pinned.address, pinned.family),
+        servername: pinned.servername,   // the URL host for DNS names, undefined for IP literals
+        timeout: 10_000,
+      },
+    })),
+    (agent) => Effect.promise(() => agent.close()),
+  ).pipe(
+    Effect.flatMap((dispatcher) => Effect.tryPromise({
+      try: async (signal) => {
+        const res = await fetch(url, { method: 'POST', body, headers, dispatcher, redirect: 'manual', signal })
+        await res.body?.cancel()          // release the socket; the body is never read or logged
+        return res.status
+      },
+      catch: (cause) => new DeliveryTransportError({ cause }),
+    })),
+    Effect.timeout('10 seconds'),         // interrupts the fiber, which aborts `signal`
+    Effect.scoped,
+  )
 ```
 
-One `Agent` per attempt (the pinned address differs per delivery); close
-it after the response is consumed. Node's global `fetch` carries its own
-bundled undici and ignores this dispatcher (node-stack-facts.md:748-751),
-so the import above is load-bearing.
+One `Agent` per attempt (the pinned address differs per delivery), closed
+by the scope's release after the response. Node's global `fetch` carries
+its own bundled undici and ignores this dispatcher, so the import above is
+load-bearing. The `connect.timeout` bounds the TCP and TLS handshake; the
+`Effect.timeout` bounds the whole attempt (SPEC.md:922).
 
-Any `res.status` outside 200-299 fails the attempt, 3xx included
-(SPEC.md:1072-1073). Drain or cancel the body on failure so the socket is
-released before the next attempt.
+Any status outside 200-299 fails the attempt, 3xx included
+(SPEC.md:1072-1073). The body is cancelled unread in every case so the
+socket is released before the scope closes.

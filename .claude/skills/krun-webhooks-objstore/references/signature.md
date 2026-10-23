@@ -15,15 +15,18 @@ docs/OPERATIONS.md:114-117.
 Body: the stored `deliveries.payload` bytes, the BASIC `Run` (`RunSummary`
 from `toRunSummary`, SPEC.md:1082-1083, SPEC.md:529-533). It omits
 `input`, `result`, `logTail` and `error.details`; receivers fetch the
-result with `GetRunResult` (docs/API.md:384).
+result with `GetRunResult` (docs/API.md:384). `resultUri` appears only on
+a `SUCCEEDED` run whose result went to object storage, never beside an
+inline `result` (docs/API.md:109).
 
 ## Signing (sender, scheduler)
 
 ```ts
 import { createHmac } from 'node:crypto'
 
-function sign(body: Uint8Array, secrets: string[], now = Date.now()): string {
-  const t = Math.floor(now / 1000)
+// pure: the caller passes Clock time, tests pass a fixed value
+export function sign(body: Uint8Array, secrets: readonly string[], nowMillis: number): string {
+  const t = Math.floor(nowMillis / 1000)
   const sigs = secrets.map(s =>
     'v1=' + createHmac('sha256', s).update(`${t}.`).update(body).digest('hex'))
   return `t=${t},${sigs.join(',')}`
@@ -36,7 +39,16 @@ function sign(body: Uint8Array, secrets: string[], now = Date.now()): string {
   compute it on the `Buffer`/`Uint8Array` that goes into `fetch`, never on
   a re-stringified object.
 - Call `sign` inside the attempt, after the address re-check and before
-  `fetch`; a retry 12 hours later carries a fresh `t` (SPEC.md:927-928).
+  `fetch`, with the time read there:
+
+  ```ts
+  const nowMillis = yield* Clock.currentTimeMillis
+  const signature = sign(bodyBytes, cfg.webhookSecrets, nowMillis)
+  ```
+
+  A retry 12 hours later carries a fresh `t` (SPEC.md:927-928). Never
+  `Date.now()` (CLAUDE.md rule 8): under `TestClock` the header must follow
+  the test's clock.
 - A bare `KRUN_WEBHOOK_SECRET` with hosts set and no secret is a startup
   error (SPEC.md:1180-1181); the signer therefore always has at least one
   secret.
@@ -46,11 +58,13 @@ function sign(body: Uint8Array, secrets: string[], now = Date.now()): string {
 ```ts
 import { createHmac, timingSafeEqual } from 'node:crypto'
 
-function verify(header: string, rawBody: Buffer, secret: string, now = Date.now()): boolean {
+// pure; krun's own receivers (tests, the e2e receiver) pass a fixed or Clock time,
+// a third-party receiver passes its own clock reading
+export function verify(header: string, rawBody: Buffer, secret: string, nowMillis: number): boolean {
   const parts = header.split(',')
   const t = parts.find(p => p.startsWith('t='))?.slice(2)
   if (!t || !/^\d+$/.test(t)) return false
-  if (Math.abs(Math.floor(now / 1000) - Number(t)) > 300) return false   // SPEC.md:1081
+  if (Math.abs(Math.floor(nowMillis / 1000) - Number(t)) > 300) return false   // SPEC.md:1081
   const expected = createHmac('sha256', secret).update(`${t}.`).update(rawBody).digest()
   return parts
     .filter(p => p.startsWith('v1='))
@@ -74,7 +88,7 @@ function verify(header: string, rawBody: Buffer, secret: string, now = Date.now(
   (SPEC.md:923, :926). Do the work after acknowledging if it is slow; the
   attempt times out at 10 s.
 
-The e2e receiver (P5.4, PLAN.md:626-629) implements this with a 10-line
+The e2e receiver (P5.4, PLAN.md:646-649) implements this with a 10-line
 `http.createServer` and asserts a constant `X-Krun-Delivery` across a
 retried attempt and two `v1=` entries during rotation.
 
@@ -91,11 +105,21 @@ retried attempt and two `v1=` entries during rotation.
 Order of `v1=` entries follows the env order; receivers must not depend on
 position. No `v2=` scheme exists; a new scheme would be a Decisions row.
 
-## Tests (PLAN.md:308-309)
+## Tests (PLAN.md:327-328)
+
+Vitest in `packages/shared/src/webhook`, gate
+`pnpm exec vitest run packages/shared/src/webhook`:
 
 - `sign` with two secrets yields two `v1=` and `verify` passes with each.
-- `verify` fails on a tampered byte, on a wrong secret, on `t` 301 s old,
-  and on a header with no `v1=`.
-- Signing the same body twice 1 s apart yields different headers.
+- `verify` fails on a tampered byte, on a wrong secret, on `t` 301 s old
+  (fixed `nowMillis` values, no clock), and on a header with no `v1=`.
+- Signing the same body at `nowMillis` and `nowMillis + 1000` yields
+  different headers.
+- fast-check properties: for any body bytes and any non-empty list of
+  secrets, `verify(sign(b, ss, n), b, s, n)` holds for every `s` in `ss`;
+  flipping any one byte of `b` makes it false; any skew above 300 s makes it
+  false, any skew up to 300 s keeps it true.
+- In the deliveries loop test (`it.effect`), the `t=` value equals the
+  `TestClock` time in seconds after `TestClock.adjust`.
 - Never commit a real secret; tests generate theirs with `randomBytes`
   (PLAN.md:33).

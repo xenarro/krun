@@ -1,7 +1,7 @@
 # Scheduler main loop (SPEC.md section 8)
 
-Serves PLAN P4.3b (PLAN.md:485-499), P4.3c (PLAN.md:500-502), P4.5
-(PLAN.md:523-531). Line numbers verified against the working tree on
+Serves PLAN P4.3b (PLAN.md:505-519), P4.3c (PLAN.md:520-522), P4.5
+(PLAN.md:543-551). Line numbers verified against the working tree on
 2026-10-23; re-check before citing.
 
 ## Triggers and deadline (SPEC.md:801-806, verbatim)
@@ -13,22 +13,39 @@ Serves PLAN P4.3b (PLAN.md:485-499), P4.3c (PLAN.md:500-502), P4.5
 > step 4; past it, the leases of unprocessed claimed runs are released and
 > the iteration ends.
 
-Implementation shape (hand-written, no workqueue; PLAN.md:69-74):
+Implementation shape (Effect fibers in the leader scope, no workqueue;
+docs/STACK.md 4.3, PLAN.md:82-87). Constructor names follow Effect 3
+spelling; check Effect's `MIGRATION.md` for the Effect 4 names
+(`Effect.forkIn`, `Queue.sliding`, `Effect.catchAll`, the `Stream`
+runners):
 
-```
-let running = false, pending = false;
-async function tick() {
-  if (running) { pending = true; return; }     // coalesce: exactly one more
-  running = true;
-  try { await iteration(deadline = now + 10_000); }
-  finally { running = false; if (pending) { pending = false; queueMicrotask(tick); } }
-}
-setInterval(tick, 1000);                        // plus store.subscribe(signal) -> kind === 'state' ? tick() : ignore
+```ts
+const wake = yield* Queue.sliding<void>(1)              // capacity 1: coalesces
+yield* Queue.offer(wake, undefined).pipe(               // 1 s ticker
+  Effect.repeat(Schedule.spaced("1 second")), Effect.forkIn(leaderScope))
+yield* store.subscribe.pipe(                            // notifies, kind state only
+  Stream.filter((n) => n.kind === "state"),
+  Stream.runForEach(() => Queue.offer(wake, undefined)), Effect.forkIn(leaderScope))
+yield* Queue.take(wake).pipe(                           // the one loop fiber
+  Effect.zipRight(iteration.pipe(
+    Effect.timeout("10 seconds"),                       // iteration deadline
+    Effect.ensuring(releaseUnprocessedClaims),          // leases of claimed, not yet scheduled runs
+    Effect.catchAll(logIterationFailure))),             // a failed iteration never ends the loop
+  Effect.forever, Effect.forkIn(leaderScope))
 ```
 
 Two notifies during one iteration yield one extra iteration, not two
-(acceptance in PLAN.md:498-499). Readiness of the loop: it runs only on the
-leader and stops on Lease loss or SIGTERM (SPEC.md:776-779).
+(acceptance in PLAN.md:518-519): the sliding queue holds at most one wake.
+The claimed-but-unscheduled set lives in a `Ref` filled by step 3 and
+emptied at each `markScheduled` or permanent failure; the `ensuring`
+finalizer releases what is left, whether the iteration ended, timed out or
+was interrupted by leader loss or SIGTERM. The finalizer runs
+uninterruptibly, so bound its store calls. An interruption between Job
+create and `markScheduled` is safe: the lease is released, the next claim
+finds the Secret and Job by name (`AlreadyExists`) and continues. Readiness
+of the loop: it runs only on the leader and stops when the leader scope
+closes (SPEC.md:776-779). A failed `subscribe` stream is retried with a `Schedule`
+(`Stream.retry`); the 1 s ticker keeps the loop running meanwhile.
 
 ## Steps 1-6 (SPEC.md:808-845, verbatim)
 
@@ -79,11 +96,15 @@ leader and stops on Lease loss or SIGTERM (SPEC.md:776-779).
 | c | `jobs.create(buildJob(run, fn))` | `409 AlreadyExists` = success; transient: release lease, back off; permanent: delete the Secret, `queued -> failed job_create_failed` with `error.details { code, reason }` |
 | d | `store.markScheduled(id)` | `false`: delete Job (`propagationPolicy: Foreground`) and Secret, 404 = success (SPEC.md:798-799); `true`: replay the Job/Pod handler on `jobInformer.get(name)` and the cached pod, no API call |
 
-Between runs: check the 10 s deadline; past it, `releaseLease` for every
-claimed run not yet at step d and end the iteration (SPEC.md:804-806). A 429
-anywhere in the loop also releases the leases of claimed-but-unscheduled
-runs, pauses the loop for `Retry-After` (default 1 s, cap 60 s) and logs at
-warn (SPEC.md:796-798).
+The 10 s deadline (SPEC.md:804-806) is the `Effect.timeout` on the whole
+iteration: when it fires, the iteration fiber is interrupted wherever it
+is, and the `ensuring` finalizer calls `releaseLease` for every claimed run
+not yet past step d. Process the claimed runs sequentially (no
+`concurrency` option on the per-run `Effect.forEach`) so "unprocessed" is
+well defined. A 429 anywhere in the loop also releases the leases of
+claimed-but-unscheduled runs, pauses the loop fiber for `Retry-After`
+(default 1 s, cap 60 s, `Effect.sleep` so `TestClock` controls it) and logs
+at warn (SPEC.md:796-798).
 
 Never log the token, the Job manifest or the env list: `KRUN_RESULT_UPLOAD_URL`
 is a presigned URL (SPEC.md:1149-1154).
@@ -93,14 +114,17 @@ is a presigned URL (SPEC.md:1149-1154).
 Order: Job delete `Foreground` (404 ok) -> Secret delete (404 ok) ->
 `transition(id, 'cancelling', 'cancelled', null, {})`. The gateway writes
 `cancelling` from `queued`, `scheduled` or `running`; a `cancelling` run
-whose Job never existed still ends `cancelled` (PLAN.md:500-502 tests both
+whose Job never existed still ends `cancelled` (PLAN.md:520-522 tests both
 Job absent and present).
 
 ## Step 6 job_lost (SPEC.md:838-845, SPEC.md:914-919, D28 SPEC.md:1469)
 
-- Gate: only after the Job informer's initial list; nothing fires before it
-  (PLAN.md:523-531). `firstAbsent: Map<runId, number>` lives on the leader
-  instance and is discarded on leader change.
+- Gate: only after both the Job and Pod informers' initial list (SPEC
+  section 8 intro; step 6 itself names the Job informer, and both is the
+  stricter gate); nothing fires before it (PLAN.md:543-551). `firstAbsent:
+  Ref<Map<runId, DateTime.Utc>>` is created in the leader scope, so it is
+  discarded on leader change. First-absent times come from `DateTime.now`,
+  never `Date.now()`.
 - `absent` means `jobInformer.get('krun-<id>', jobsNamespace)` is undefined.
   Drop the map entry when the Job reappears.
 - Past 2 minutes (SPEC.md:1123): `transition(id, state, 'failed', 'job_lost',
@@ -112,7 +136,7 @@ Job absent and present).
   Job (SPEC.md:916-917). Downtime longer than `KRUN_TTL_AFTER_FINISHED`
   turns finished runs into `job_lost` (SPEC.md:917-919, docs/OPERATIONS.md:37-38).
 
-## Acceptance cases to write first (PLAN.md:492-499, PLAN.md:500-502, PLAN.md:528-531)
+## Acceptance cases to write first (PLAN.md:512-519, PLAN.md:520-522, PLAN.md:548-551)
 
 - `AlreadyExists` on Secret (token read back) and on Job (success).
 - 403 quota -> lease released, `krun_quota_rejections_total` incremented.
@@ -127,6 +151,11 @@ Job absent and present).
 - Deadline hit mid step 4 -> remaining claims released.
 - Two `state` notifies during an iteration -> exactly one more iteration.
 - Cancelling with the Job absent and present -> `cancelled` both times.
-- `job_lost`: running run with no Job fails after 2 min, result kept, a
-  reported error kept, Job reappearing clears the entry, nothing before the
-  initial list.
+- `job_lost`: running run with no Job fails after `TestClock.adjust("2
+  minutes")`, result kept, a reported error kept, Job reappearing clears
+  the entry, nothing before the initial list.
+
+Write them as `@effect/vitest` `it.effect` tests with the `Kube` and Store
+stubs provided as layers; drive the 1 s ticker, the 10 s deadline, the
+`2^n` backoff and the 2 minute grace with `TestClock.adjust`, never with
+real sleeps.

@@ -105,7 +105,7 @@ for the CLI.
 |---|---|---|
 | `typescript` | `^7.0` | `tsc` (native compiler) for type-checking and emitting `dist/` |
 | `vitest` | `^5.0` | test runner for every TypeScript package; requires Node 22.12 or 24 |
-| `@effect/vitest` | `~4.0.6` | `it.effect`, `it.scoped`, `layer(...)`, `TestClock` for every Effect test |
+| `@effect/vitest` | `~4.0.6` | `it.effect` (already scoped; there is no `it.scoped` in 4.x), `layer(...)`, `TestClock` for every Effect test |
 | `fast-check` | `^4.10` | property tests: request fingerprint, filter parser, duration grammar, address checks |
 | `testcontainers` | `^12.2` | Postgres and MinIO in integration tests |
 | `@testcontainers/postgresql` | `^12.2` | |
@@ -162,7 +162,9 @@ NodeRuntime.runMain(Layer.launch(Main))
 ### 4.2 Errors
 
 - Domain failures are `Data.TaggedError` classes (`FunctionNotFound`,
-  `RunNotFound`, `QueueFull`, `IdempotencyConflict`, `TokenInvalid`, ...).
+  `RunNotFound`, `QueueFull`, `IdempotencyConflict`, `TokenInvalid`, ...);
+  the store's own `NotFoundError` and `ConflictError` (PLAN P1.1) are
+  translated into them at the gateway.
   One function maps each tag to its AIP-193 envelope (docs/API.md section
   4, docs/INTERNAL-API.md section 6); a defect is 500 `INTERNAL`.
 - Infrastructure failures (`DatabaseError`, `KubeApiError` with the HTTP

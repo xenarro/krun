@@ -42,7 +42,7 @@ verbatim so the platform team controls that shape (SPEC.md:1014-1016,
 1019-1020).
 
 `except` renders inside `ipBlock` only; the P7.4c acceptance requires a
-rendered `except` in `helm template` output (PLAN.md:731), so the chart
+rendered `except` in `helm template` output (PLAN.md:751), so the chart
 test must set at least one entry with `except`.
 
 What the chart does not do here: no per-function egress, no ingress to
@@ -68,7 +68,7 @@ embedded StatefulSet template carry it, SPEC.md:991-992).
 has no `krun.io/gateway` label) receives nothing on 8080/8081 and only
 `metricsFrom` can reach its 9090. In embedded mode the one pod carries
 `gw`, so its 8081 is reachable from the jobs namespace and its 9090 and
-9091 only from `metricsFrom` (P7.6 asserts both, PLAN.md:741-743).
+9091 only from `metricsFrom` (P7.6 asserts both, PLAN.md:761-763).
 
 Ports: use the numeric ports, not names; a named port requires the name
 on every selected container and the two admin ports have different
@@ -100,7 +100,7 @@ Plus `helm.sh/resource-policy: keep` when `jobsNamespace.keep`
 (SPEC.md:1001-1003). The chart never labels the krun namespace; the
 platform team does before `helm install` (SPEC.md:1325-1327,
 docs/OPERATIONS.md:16-18) and the P7 e2e creates it labelled
-(PLAN.md:657-658).
+(PLAN.md:677-678).
 
 ## LimitRange and ResourceQuota (SPEC.md:1027-1031)
 
@@ -123,7 +123,7 @@ spec:
 ```
 
 Each of the three LimitRange maps and the quota must carry
-`ephemeral-storage` (P7.4a acceptance, PLAN.md:711-713): a function
+`ephemeral-storage` (P7.4a acceptance, PLAN.md:731-733): a function
 filling `/tmp` is evicted and classified `evicted` (SPEC.md:1030-1031,
 D32). A LimitRange `max` below a Function's requests makes the Job
 rejected at admission, which the scheduler classifies as permanent
@@ -151,7 +151,7 @@ section 13 unless the owner changes them.
 `functions.krun.io` in SPEC prose means `apiGroups: [krun.io]`,
 `resources: [functions]` in RBAC. Nothing cluster-wide except the CRD
 object (SPEC.md:1041). The Lease rule needs two entries because `create`
-cannot carry `resourceNames` (PLAN.md:717-718). No verb on
+cannot carry `resourceNames` (PLAN.md:737-738). No verb on
 `secrets` beyond the listed four is granted: `get` serves the
 `AlreadyExists` path (read the existing token, SPEC.md:821), `list` the
 orphan Secret sweep (SPEC.md:572-573, D11), and there is no `update`,
@@ -160,4 +160,4 @@ orphan Secret sweep (SPEC.md:572-573, D11), and there is no `update`,
 P7.4b check: `--set jobsNamespace.create=false` still renders the
 scheduler Role, RoleBinding, `krun-job-default` and `krun-job-viewer`,
 and no Namespace, LimitRange, ResourceQuota or NetworkPolicy in the jobs
-namespace (PLAN.md:719-721).
+namespace (PLAN.md:739-741).

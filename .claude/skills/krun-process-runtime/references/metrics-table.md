@@ -9,30 +9,30 @@ quoting.
 
 | Metric | Owner | Meaning (SPEC text) | type | PLAN task |
 |---|---|---|---|---|
-| `krun_http_requests_total{route,code}` | both | `route` is `request.routeOptions.url`, `unmatched` for 404 | Counter | P3.1b (PLAN.md:360-363); registered on every listener incl. the scheduler admin listener in P4.11 |
+| `krun_http_requests_total{route,code}` | both | `route` is `request.routeOptions.url`, `unmatched` for 404 | Counter | P3.1b (PLAN.md:379-382); registered on every listener incl. the scheduler admin listener in P4.11 |
 | `krun_http_request_seconds{route}` | both | | Histogram | P3.1b |
-| `krun_admission_rejections_total{reason}` | gateway | `rate_limit`, `max_queued`, `input_size`, `schema` | Counter | P3.3 (PLAN.md:386) |
-| `krun_runs_transitions_total{function,to}` | scheduler leader | | Counter | P4.6 (PLAN.md:532-536) |
+| `krun_admission_rejections_total{reason}` | gateway | `rate_limit`, `max_queued`, `input_size`, `schema` | Counter | P3.3 (PLAN.md:405) |
+| `krun_runs_transitions_total{function,to}` | scheduler leader | | Counter | P4.6 (PLAN.md:552-556) |
 | `krun_runs_current{function,state}` | scheduler leader | from `countByState` each loop | Gauge | P4.6 |
-| `krun_runs_failed_total{function,reason}` | scheduler leader | `failureReason` values | Counter | P4.8 (PLAN.md:548-549) |
+| `krun_runs_failed_total{function,reason}` | scheduler leader | `failureReason` values | Counter | P4.8 (PLAN.md:562-575) |
 | `krun_queue_wait_seconds{function}` | scheduler leader | created to scheduled | Histogram | P4.6 |
 | `krun_cold_start_seconds{function}` | scheduler leader | scheduled to running | Histogram | P4.6 |
 | `krun_run_duration_seconds{function,state}` | scheduler leader | running to terminal | Histogram | P4.6 |
 | `krun_terminal_detect_seconds{function}` | scheduler leader | container exit to terminal state | Histogram | P4.8 |
-| `krun_job_create_errors_total{function,code}` | scheduler leader | API status on Secret or Job create | Counter | P4.3a (PLAN.md:481) |
+| `krun_job_create_errors_total{function,code}` | scheduler leader | API status on Secret or Job create | Counter | P4.3a (PLAN.md:497) |
 | `krun_quota_rejections_total{function}` | scheduler leader | | Counter | P4.3a |
-| `krun_scheduler_leader` | scheduler | 1 on the leader | Gauge | P4.2 (PLAN.md:472) |
-| `krun_functions_synced` | both | 1 after the Function informer's initial list | Gauge | P2.3 (PLAN.md:322-323) |
+| `krun_scheduler_leader` | scheduler | 1 on the leader | Gauge | P4.2 (PLAN.md:488) |
+| `krun_functions_synced` | both | 1 after the Function informer's initial list | Gauge | P2.3 (PLAN.md:336-345) |
 | `krun_functions{ready}` | both | Function count by readiness | Gauge | P2.3 |
-| `krun_deliveries_total{state}` | scheduler leader | | Counter | P5.3 (PLAN.md:622) |
-| `krun_sweep_deleted_total` | scheduler leader | | Counter | P4.10 (PLAN.md:570) |
+| `krun_deliveries_total{state}` | scheduler leader | | Counter | P5.3 (PLAN.md:638) |
+| `krun_sweep_deleted_total` | scheduler leader | | Counter | P4.10 (PLAN.md:588) |
 
 ## Label values
 
 - `route`: the Fastify route template `request.routeOptions.url`
   (`/v1/functions/:function/runs/:run`), never the raw URL; `unmatched`
   for 404 (SPEC.md:1131). P3.1b asserts a 404 counts under `unmatched`
-  (PLAN.md:362-363).
+  (PLAN.md:381-382).
 - `code`: the HTTP status as a string (`"404"`).
 - `function`: the Function name; bounded by the number of Function
   objects in `KRUN_NAMESPACE`.
@@ -61,16 +61,21 @@ Alert rules in SPEC.md:1391-1401 query `krun_scheduler_leader`,
 chart's PrometheusRule and `promtool` in `make helm-lint`; that is a
 Decisions row, not a refactor.
 
-## prom-client mapping (node-stack-facts.md:726-735)
+## prom-client mapping (prom-client 15.1)
 
-- One `new Registry()` per process, created in `packages/shared/src/health`
-  and passed to every module that registers a metric; never the global
-  default registry (duplicate registration throws across `node --test`
-  files that build several apps).
+- One `new Registry()` per process, held by the `Metrics` service layer
+  (`packages/shared/src/runtime`, PLAN.md:107) and taken from it by every
+  module that registers a metric and by the admin plugin; never the global
+  default registry (duplicate registration throws when one Vitest file
+  builds several apps). Tests provide a fresh `Metrics` layer per test.
+  Effect `Metric` is not used (docs/STACK.md 2.5).
 - `new Counter({ name, help, labelNames, registers: [registry] })`,
   same for `Gauge` and `Histogram`.
 - `GET /metrics`: `reply.type(registry.contentType)` then
   `await registry.metrics()` (async, returns a string).
+- Observe seconds computed from `Clock` (`Clock.currentTimeMillis`
+  differences, or `DateTime` differences for run timestamps), never
+  `Date.now()`, so `TestClock` tests can assert exact values.
 - Default buckets are `[0.005 … 10]` seconds: fine for
   `krun_http_request_seconds`, wrong for queue wait, cold start, run
   duration and terminal detect, whose values run from seconds to hours.

@@ -1,7 +1,7 @@
-# Function resource and CRD shape (SPEC.md:72-128, PLAN.md:178-191)
+# Function resource and CRD shape (SPEC.md:72-128, PLAN.md:198-212)
 
 Everything here derives from `packages/shared/src/functions/schema.ts`.
-Edit the TypeBox schema, run `make generate`; never hand-edit the three
+Edit the Zod schema, run `make generate`; never hand-edit the three
 generated files (SPEC.md:120-128).
 
 ## 1. The Function resource (SPEC.md:80-115, verbatim)
@@ -43,7 +43,7 @@ status:                                    # written by the scheduler leader onl
     - { type: Ready, status: "True", reason: Valid, message: "" }
 ```
 
-## 2. CRD metadata (SPEC.md:74-76, PLAN.md:183-187)
+## 2. CRD metadata (SPEC.md:74-76, PLAN.md:203-208)
 
 | Field | Value | Source |
 |---|---|---|
@@ -52,23 +52,27 @@ status:                                    # written by the scheduler leader onl
 | `spec.scope` | `Namespaced` | SPEC.md:75 |
 | `spec.names` | `kind: Function`, `listKind: FunctionList`, `plural: functions`, `singular: function`, `shortNames: [kfn]` | SPEC.md:74-75, D21 |
 | `spec.versions[0]` | `name: v1alpha1`, `served: true`, `storage: true` | SPEC.md:74, 1413 |
-| `subresources` | `status: {}` | SPEC.md:111, PLAN.md:184 |
-| `additionalPrinterColumns` | see section 5 | SPEC.md:76, PLAN.md:184-185 |
+| `subresources` | `status: {}` | SPEC.md:111, PLAN.md:205 |
+| `additionalPrinterColumns` | see section 5 | SPEC.md:76, PLAN.md:205-206 |
 
 No other versions, no conversion strategy block beyond the default `None`
 (SPEC.md:1412), no webhook configuration anywhere.
 
 ## 3. `spec` properties the generator must emit (SPEC.md:80-118, 132-134)
 
-TypeBox options map 1:1 to OpenAPI v3 keywords. `required` is proposed as
-`[image, inputSchema]` (see SKILL.md Limitations); everything else optional.
+The spec is a `z.strictObject`; Zod checks map to OpenAPI v3 keywords
+(`.min(1)` -> `minLength`/`minimum`, `.int()` -> `type: integer`,
+`.regex(DURATION_PATTERN)` -> `pattern`, `.default(v)` -> `default: v`,
+`.meta({ description })` -> `description`). `required` is proposed as
+`[image, inputSchema]` (see SKILL.md Limitations); everything else
+`.optional()` or `.default(...)`, never `.nullable()`.
 
-| Property | Type / constraints | Default | Notes |
+| Property | Zod / emitted constraints | Default | Notes |
 |---|---|---|---|
-| `image` | `string`, `minLength: 1` | - | CEL rule below; layer two adds the registry prefix check |
-| `inputSchema` | `object`, `x-kubernetes-preserve-unknown-fields: true` | - | opaque to the API server; layer two compiles it (SPEC.md:136-138) |
+| `image` | `z.string().min(1)` -> `string`, `minLength: 1` | - | CEL rule below; layer two adds the registry prefix check |
+| `inputSchema` | emitted node must be exactly `{ type: object, x-kubernetes-preserve-unknown-fields: true }` | - | opaque to the API server; layer two compiles it with Ajv (SPEC.md:136-138) |
 | `serviceAccountName` | `string` | `krun-job-default` | allowlist is layer two (SPEC.md:93, 142-143) |
-| `runAsUser` | `integer`, `minimum: 1` | `65532` | SPEC.md:94, PLAN.md:187 |
+| `runAsUser` | `integer`, `minimum: 1` | `65532` | SPEC.md:94, PLAN.md:208 |
 | `runAsGroup` | `integer`, `minimum: 1` | `65532` | SPEC.md:95 |
 | `resources` | `object` with `requests`/`limits`, each `object` of `cpu`, `memory`, `ephemeral-storage` as quantity strings | - | keep as plain strings; no quantity parsing in krun (SPEC.md:96-98) |
 | `env` | `array` of `{ name: string (required), value: string (required) }` | - | plain values only, no `valueFrom` (SPEC.md:99-100) |
@@ -78,7 +82,7 @@ TypeBox options map 1:1 to OpenAPI v3 keywords. `required` is proposed as
 | `maxQueued` | `integer`, `minimum: 1` | `1000` | ceiling is layer two (SPEC.md:104) |
 | `queueTimeout` | `string`, `pattern: ^\d+(ms\|s\|m\|h)$` | `1h` | SPEC.md:105, 117-118 |
 | `heartbeatTimeout` | `string`, same pattern | - | >= 30 s is layer two (SPEC.md:106, 140-141) |
-| `nodeSelector` | `object`, `additionalProperties: string` | - | SPEC.md:107 |
+| `nodeSelector` | `z.record(z.string(), z.string())` -> `object`, `additionalProperties: { type: string }` | - | SPEC.md:107 |
 | `imagePullSecrets` | `array` of `{ name: string }` | - | SPEC.md:108; shape of `LocalObjectReference` |
 | `callback` | `object` `{ url: string (required), format: uri }` | - | host allowlist is layer two (SPEC.md:109-110, 144) |
 
@@ -86,7 +90,30 @@ TypeBox options map 1:1 to OpenAPI v3 keywords. `required` is proposed as
 re-checks it because `krun validate` runs on files that never met the API
 server (SPEC.md:140, 168-169).
 
-## 4. CEL rule and defaults (SPEC.md:132-134, PLAN.md:186-187)
+Generation details for `scripts/gen-crd.ts` (facts VERIFIED against the
+Zod 4.6.7 source, CRD rules from apiextensions as noted in SKILL.md
+Limitations):
+
+- Call `z.toJSONSchema(FunctionResource, { target: "openapi-3.0", io:
+  "input" })`. With the default `io: "output"` every `.default()` field is
+  listed in `required`, which would make the defaults pointless at apply.
+- `strictObject` emits `additionalProperties: false` next to `properties`;
+  a structural CRD schema does not allow both, so strip it from every
+  object node of the CRD output (the API server prunes unknown fields
+  instead). Keep it in the editor schema.
+- Set the `inputSchema` node, the CEL rule and any other `x-kubernetes-*`
+  key either with `.meta({ "x-kubernetes-...": ... })` (meta keys are
+  copied verbatim; never put `id` in meta, it moves the node to `$defs`) or
+  in the `override` callback / a post-processing walk. Pick one place and
+  keep it in `gen-crd.ts` if the keys would otherwise leak into the editor
+  schema.
+- `openapi-3.0` emits no `$schema` and no `propertyNames`; assert in the
+  test that the CRD output contains no `$ref`, `$defs`, `$schema`,
+  `propertyNames` or `additionalProperties: false`.
+- Keep the spec schema free of `.transform()`; durations stay strings here
+  and become `Duration` in layer two.
+
+## 4. CEL rule and defaults (SPEC.md:132-134, PLAN.md:207-208)
 
 ```yaml
 x-kubernetes-validations:
@@ -100,12 +127,12 @@ x-kubernetes-validations:
   it, keep the TypeScript mirror in `IMAGE_DIGEST_RULE` identical.
 - The rule sits on the `spec` object (`self.image`), so it runs on create
   and every update. `messageExpression` is not needed.
-- Defaults live in the schema (`default:`) so stored objects are complete
-  and `kubectl get -o yaml` shows effective values; code defaults exist only
-  as a fallback for objects created before a default existed (KEDA
-  `scaledobject_types.go:138`, `scale_jobs.go:41-42`).
+- Defaults live in the schema (`.default()` -> `default:`) so stored objects
+  are complete and `kubectl get -o yaml` shows effective values; code
+  defaults exist only as a fallback for objects created before a default
+  existed (KEDA `scaledobject_types.go:138`, `scale_jobs.go:41-42`).
 
-## 5. Printer columns (SPEC.md:76, PLAN.md:184-185)
+## 5. Printer columns (SPEC.md:76, PLAN.md:205-206)
 
 ```yaml
 additionalPrinterColumns:
@@ -142,12 +169,12 @@ status:
           message: { type: string }
 ```
 
-Keep the reason enum in the CRD equal to `READY_REASONS` in `schema.ts`;
-the P0.8 test can assert that equality cheaply. Remember the KEDA lesson:
-adding a reason later is additive (fine); removing one breaks stored
-objects on the next apply.
+Build `reason` as `z.enum(READY_REASONS)` so the CRD enum and the tuple in
+`schema.ts` cannot drift; the P0.8 test can still assert the equality
+cheaply. Remember the KEDA lesson: adding a reason later is additive
+(fine); removing one breaks stored objects on the next apply.
 
-## 7. Chart template wrapper (SPEC.md:123-125, 1366-1369)
+## 7. Chart template wrapper (SPEC.md:123-125, 1365-1369)
 
 ```yaml
 {{- if .Values.crds.install }}
@@ -165,17 +192,18 @@ spec: ... # identical to deploy/crds/functions.krun.io.yaml
 
 Generate the body from the same in-memory object as the plain manifest.
 Chart values (`crds.install`, `crds.keep`) and the rest of the chart belong
-to `krun-helm-chart` (P7.1 completes the P0.8 stub, PLAN.md:660).
+to `krun-helm-chart` (P7.1 completes the P0.8 stub, PLAN.md:680).
 
 ## 8. Editor schema `docs/schemas/function-v1alpha1.json` (SPEC.md:125-126)
 
-A JSON Schema document for the whole resource: `apiVersion` const
-`krun.io/v1alpha1`, `kind` const `Function`, `metadata` with `name`, and
-`spec`/`status` from the same TypeBox objects. Set `$schema` to draft
-2020-12 (TypeBox output is 2020-12 compatible). It is documentation; no
-process reads it (SPEC.md:126-127).
+A JSON Schema document for the whole resource: `apiVersion` literal
+`krun.io/v1alpha1`, `kind` literal `Function`, `metadata` with `name`, and
+`spec`/`status` from the same Zod objects, generated with
+`z.toJSONSchema(..., { target: "draft-2020-12", io: "input" })`, which sets
+`$schema` to draft 2020-12. It is documentation; no process reads it
+(SPEC.md:126-127).
 
-## 9. RBAC the CRD implies (SPEC.md:1038-1044)
+## 9. RBAC the CRD implies (SPEC.md:1038-1047)
 
 | Role | Namespace | Verbs on `functions.krun.io` |
 |---|---|---|
@@ -186,7 +214,10 @@ process reads it (SPEC.md:126-127).
 The chart renders these (`krun-helm-chart`); this skill only requires that
 the status writer never runs in the gateway, whose Role lacks `patch`.
 
-## 10. P0.8 acceptance test outline (PLAN.md:188-191)
+## 10. P0.8 acceptance test outline (PLAN.md:209-212)
+
+An `@effect/vitest` (or plain Vitest; the test does no Effect work) test
+next to `scripts/gen-crd.ts` or in `packages/shared/src/functions`:
 
 1. Load `deploy/crds/functions.krun.io.yaml` with `yaml.parse`.
 2. Load the chart template, strip the `{{- if ... }}`/`{{- end }}` lines
@@ -196,7 +227,10 @@ the status writer never runs in the gateway, whose Role lacks `patch`.
    exists; `spec.properties.inputSchema['x-kubernetes-preserve-unknown-fields'] === true`;
    the `x-kubernetes-validations[0].rule` contains `@sha256:`;
    `runAsUser.default === 65532 && runAsGroup.default === 65532`;
+   `required` lists no defaulted field;
    the READY column `jsonPath` equals `.status.conditions[?(@.type=="Ready")].status`;
-   `queueTimeout.pattern` equals `DURATION_PATTERN.source`.
+   `queueTimeout.pattern` equals `DURATION_PATTERN.source`;
+   no `additionalProperties: false`, `$ref`, `$defs`, `$schema` or
+   `propertyNames` anywhere in the CRD schema.
 4. Separately, in the Makefile/CI: run `make generate` twice and fail on
    `git status --porcelain` output.

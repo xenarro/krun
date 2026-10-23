@@ -1,11 +1,11 @@
 # `test/fake-kube` design
 
 `test/fake-kube/` is an `http.createServer` Kubernetes API over in-memory
-objects for process tests (PLAN.md:109). It is not a mock library: it is a
+objects for process tests (PLAN.md:126). It is not a mock library: it is a
 small server that speaks enough of the real API for `@kubernetes/client-node`
 2.x to list, watch, create, update and delete the objects krun touches, so
 P3.7, P4.6 and P4.11 can start the real `bin/krun.js` with `KUBECONFIG`
-pointing at it (PLAN.md:416-417, 535-536, 576-579). Dapr's integration
+pointing at it (PLAN.md:436-437, 555-556, 596-599). Dapr's integration
 framework does the same with an `http.ServeMux` (dapr
 `tests/integration/framework/process/kubernetes/kubernetes.go:46-70`) and
 is cheaper and more deterministic than kind for informer, Lease and
@@ -24,12 +24,15 @@ test/fake-kube/
   server.test.ts   the fake's own tests (list, watch streaming, 409, 404)
 ```
 
-The fake is TypeScript loaded by `node --test` and by the spawned process
-tests only; it never ships in the image (`.dockerignore` lists `test/`).
+The fake is plain TypeScript (`node:http`, no Effect, no dependency)
+imported by Vitest test files, which compile it; the krun process under
+test only talks to it over HTTP. It never ships in the image
+(`.dockerignore` lists `test/`). `server.test.ts` runs in the root Vitest
+config's project for `test/fake-kube` (SKILL.md "Test layout and runner").
 
 ## Kubeconfig
 
-`loadFromDefault` reads `$KUBECONFIG` first (node-stack-facts.md:208-213).
+`loadFromDefault` reads `$KUBECONFIG` first (docs/research/node-stack-facts.md:208-213).
 Write:
 
 ```yaml
@@ -42,7 +45,7 @@ current-context: fake
 ```
 
 `insecure-skip-tls-verify: true` is required: an `http:` server without it
-throws "HTTP protocol is not allowed" (VERIFIED, node-stack-facts.md:227-228).
+throws "HTTP protocol is not allowed" (VERIFIED, docs/research/node-stack-facts.md:227-228).
 The token is a constant placeholder, not a secret (PLAN.md:33); the fake
 ignores `Authorization`.
 
@@ -70,7 +73,7 @@ Errors are Kubernetes `Status` objects with `code` and `reason` so
 | `/version`, `/api`, `/apis` | GET | client discovery if the client asks | static documents |
 
 `labelSelector` support: `key=value` and `key` (exists), comma separated;
-that is all the informers send (node-stack-facts.md:366-370). Reject any
+that is all the informers send (docs/research/node-stack-facts.md:366-370). Reject any
 other syntax with 400 so a test does not pass by accident.
 
 ## Watch streaming
@@ -83,9 +86,9 @@ other syntax with 400 so a test does not pass by accident.
   event through reflector backoff).
 - `?resourceVersion=N` replays events after `N` from a bounded ring buffer;
   an unknown or too-old version answers an `ERROR` event with `code: 410`
-  so the informer re-lists (node-stack-facts.md:387-389).
+  so the informer re-lists (docs/research/node-stack-facts.md:387-389).
 - The client's 30 s inactivity timeout tears down a quiet watch and
-  reconnects (node-stack-facts.md:350-360); the fake must accept a reconnect
+  reconnects (docs/research/node-stack-facts.md:350-360); the fake must accept a reconnect
   at the last resourceVersion. For a test that needs a non-timeout error,
   `scripts.breakWatch(kind)` closes the response with `ERROR` `code: 500`
   once; the informer then stops and krun's restart logic must call
@@ -97,19 +100,22 @@ other syntax with 400 so a test does not pass by accident.
 - `holdLease({ holderIdentity: 'other', renewEveryMs: 5000 })` seeds the
   Lease held by another pod and keeps bumping `renewTime` and
   `resourceVersion`, so the scheduler under test stays standby and
-  `/readyz` reports 200 with leader false (P4.11, PLAN.md:576-578;
+  `/readyz` reports 200 with leader false (P4.11, PLAN.md:596-598;
   SPEC.md:1161-1164).
 - `releaseLease()` stops renewing; the scheduler must see the Lease
-  unchanged for 15 s on its own clock (SPEC.md:788-790) and acquire. A test
-  that cannot wait 15 s passes a shorter `KRUN_LEASE_*` value only if SPEC
-  defines one; it does not, so the P4.11 standby test waits the real 15 s
-  (the acceptance budget allows it) or asserts standby only.
+  unchanged for 15 s on its own clock (SPEC.md:788-790) and acquire. A
+  spawned process runs on the real clock: `TestClock` cannot reach into
+  it. A test that cannot wait 15 s passes a shorter `KRUN_LEASE_*` value
+  only if SPEC defines one; it does not, so the P4.11 standby test waits
+  the real 15 s (raise that test's Vitest timeout; the acceptance budget
+  allows it) or asserts standby only. The expiry arithmetic itself is
+  proven in the P4.2 unit test under `TestClock`.
 - On SIGTERM the scheduler clears `holderIdentity` (SPEC.md:1171-1173); the
   fake exposes `store.get('leases', 'krun/krun-scheduler')` so the test
   asserts `spec.holderIdentity === ''` or absent within 5 s of the signal
-  (PLAN.md:578-579).
+  (PLAN.md:598-599).
 - P4.11 acceptance names both "200 as standby" and "Lease cleared in the
-  fake" (PLAN.md:576-579): a standby holds no Lease to clear. Read it as
+  fake" (PLAN.md:596-599): a standby holds no Lease to clear. Read it as
   two phases in one test: standby readiness, then `releaseLease()`,
   acquisition, SIGTERM, cleared. If the 15 s wait is unacceptable, record
   the interpretation in the pull request; do not shorten SPEC's constant.
@@ -119,15 +125,16 @@ other syntax with 400 so a test does not pass by accident.
 | Script | Effect | Used by |
 |---|---|---|
 | `establishCrd()` | Function endpoints stop answering 404 | P3.7 retry path |
-| `completeJobs({ afterMs, exitCode = 0 })` | on Job POST: pod `Running` after `afterMs/2`, then terminated with `exitCode`, Job `Complete` or `Failed` | P4.6 metrics after one run (PLAN.md:535-536) |
-| `rejectCreate(resource, code, { retryAfter })` | next POST answers `code` once (403, 422, 429, 503) | process-level check of error classification; unit tests use stubbed API classes instead (PLAN.md:482-484) |
+| `completeJobs({ afterMs, exitCode = 0 })` | on Job POST: pod `Running` after `afterMs/2`, then terminated with `exitCode`, Job `Complete` or `Failed` | P4.6 metrics after one run (PLAN.md:555-556) |
+| `rejectCreate(resource, code, { retryAfter })` | next POST answers `code` once (403, 422, 429, 503) | process-level check of error classification; unit tests use stubbed APIs behind a test `Kube` layer instead (PLAN.md:502-504) |
 | `holdLease`, `releaseLease` | above | P4.11 |
 | `breakWatch(kind)` | one `ERROR` event then close | informer restart |
-| `hang(path, ms)` | delays one response | 10 s `AbortSignal.timeout` paths |
+| `hang(path, ms)` | delays one response | the 10 s per-call `Effect.timeout` path, end to end (unit tests prove it under `TestClock`) |
 
 ## Driving a process against the fake
 
 ```ts
+// apps/scheduler/src/main.process.test.ts (Vitest; real time, real process)
 const kube = await startFakeKube({ namespace: 'krun', jobsNamespace: 'krun-jobs' })
 kube.store.seed('functions', fixtureFunction)            // one Ready-able Function
 const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'krun-'))
@@ -138,6 +145,9 @@ const child = spawn(process.execPath, ['bin/krun.js', 'gateway'], {
 })
 ```
 
+- `bin/krun.js` dispatches to the built `dist/` entrypoints (PLAN.md:152-154):
+  run `pnpm -r build` before the process tests (a Vitest `globalSetup` or
+  the `make test` order), or the test exercises stale code.
 - Scrub `KRUN_*` from a copied env; pass every variable explicitly
   (knative-func `pkg/testing/testing.go:377-385`).
 - Ports: let the process bind `:0` only if the config allows it; otherwise
@@ -149,18 +159,22 @@ const child = spawn(process.execPath, ['bin/krun.js', 'gateway'], {
   `kind-recipe.md` "Wait helpers" so a crash (child `exit` event) fails
   immediately.
 - Exit: `child.kill('SIGTERM')`, await `exit`, assert code 0 within 5 s
-  (PLAN.md:420-421, 578-579); drain stdout and stderr before asserting on
-  log lines so the last lines are captured (dapr `exec.go:159-236`).
+  (PLAN.md:440-441, 598-599). `NodeRuntime.runMain` turns the signal into
+  fiber interruption and runs the scope finalizers (readiness 503, drain,
+  listener close, Lease clear, pool close; docs/STACK.md 4.1); a non-zero
+  code means a finalizer failed or the cause was not interrupt-only.
+  Drain stdout and stderr before asserting on log lines so the last lines
+  are captured (dapr `exec.go:159-236`).
 - Log-line assertions use `logline`-style helpers: collect lines, assert a
   JSON line with `reason` or `msg` exists; never assert on a line that
   would contain a key, token or input (SPEC.md:1149-1154).
-- `after`: close the child if still alive, `kube.close()`, remove the temp
-  dir.
+- `afterAll` (or `onTestFinished` per test): kill the child if still
+  alive, `kube.close()`, remove the temp dir.
 
 ## What the fake deliberately does not do
 
 - No RBAC, no admission, no CEL: the CRD's digest rule and PSA are proven
   on kind (P9.2) and by the CRD file tests (P0.8).
 - No `Foreground` deletion semantics beyond deleting the pods; ordering
-  assertions belong to unit tests with stubbed API classes (PLAN.md:562-563).
+  assertions belong to unit tests with stubbed API classes (PLAN.md:582-583).
 - No persistence across `close()`.

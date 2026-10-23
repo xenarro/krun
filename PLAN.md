@@ -495,7 +495,7 @@ set, Job gone.
       acquire, renew, 409, lose (informers stopped), renew failure exit and
       release. The two-scheduler check runs in P7.6.
 - [ ] P4.3a Kubernetes API plumbing: the `KRUN_K8S_CONCURRENCY` limiter with
-      10 s `AbortSignal.timeout` per call, error classification (transient
+      10 s `Effect.timeout` per call (the request's `AbortSignal` fires on interruption), error classification (transient
       back-off, permanent `job_create_failed` with `error.source` `krun`,
       `details.code` and `details.reason`), 429 with `Retry-After`,
       `krun_quota_rejections_total`, `krun_job_create_errors_total`.

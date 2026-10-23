@@ -2,7 +2,10 @@
 
 Source of truth: SPEC.md:686-729 and docs/INTERNAL-API.md sections 3-5 and
 7 (lines 106-263, 291-306). Same behaviour in `packages/sdk-node` and
-`sdk/python/krun`; language notes at the end.
+`sdk/python/krun`; language notes at the end. Both SDKs are plain code with
+no runtime dependencies and no Effect (docs/STACK.md principle 6): the
+Effect `Clock`/`Schedule` rules for krun's processes do not apply inside
+them, but the timings below are exactly the contract's.
 
 ## 1. Environment (SPEC.md:687-690)
 
@@ -24,7 +27,7 @@ exit 1; there is nothing to report to.
 - `Authorization: Bearer <KRUN_TOKEN>` (SPEC.md:628-629).
 - `User-Agent: krun-sdk-node/<version>` or `krun-sdk-python/<version>`
   (SPEC.md:729). Version comes from the package's own metadata, stamped by
-  `release.yml` (PLAN.md:196-198).
+  `release.yml` (PLAN.md:217-218).
 - `Content-Type: application/json` on POST/PUT (415 otherwise,
   docs/INTERNAL-API.md:283).
 - Never on the presigned upload: no `Authorization`
@@ -34,9 +37,10 @@ exit 1; there is nothing to report to.
 
 ```
 S0  read env; local mode → section 6
-S1  GET input            10 s/attempt, retry 3 (1 s, 2 s, 4 s) on connect error, timeout, 5xx
-                         401 → exit 1; other 4xx → log, PUT error? no: log and exit 1 (caller bug)
-S2  start heartbeat      only if KRUN_HEARTBEAT_TIMEOUT set; interval = window/3 s; unref/daemon
+S1  start heartbeat      only if KRUN_HEARTBEAT_TIMEOUT set; interval = window/3 s; unref/daemon
+                         (from the start of run, SPEC.md:694-697: start-up work counts)
+S2  GET input            10 s/attempt, retry 3 (1 s, 2 s, 4 s) on connect error, timeout, 5xx
+                         401 → exit 1; other 4xx → log and exit 1 (caller bug, no PUT error)
 S3  call handler(input, ctx)
       ctx.status(m, p?, d?) → latest = truncate({message:m, progress:p, data:d}); gate.kick()
       ctx.log(obj)          → one JSON line on stdout
@@ -47,11 +51,13 @@ S4b handler returned v → bytes = compactJSON(v)
                                             → exhausted/other → S5(ResultWriteError)
       bytes.length >  KRUN_MAX_RESULT_BYTES → no upload URL → S5(ResultWriteError)
                                             → PUT upload URL (300 s; retry 3 on connect/5xx; 4xx no retry)
-                                              → 200 → S6 ; else → S5(ResultWriteError)
+                                              → 200 → S6 (no SetResult after an upload)
+                                              → else → S5(ResultWriteError)
 S4c handler threw e → S5(e)
-S5  PUT error {type, message, details:{stack}} truncated (limits.md), 10 s, retry 3; then exit 1
+S5  PUT error {type, message, details:{stack}} truncated (limits.md), 10 s, retry 3;
+    heartbeat keeps running until this call returned; then close(), exit 1
     (whatever the PUT outcome; log it)
-S6  stop heartbeat, drop status gate, exit 0
+S6  close(): stop heartbeat, drop status gate; exit 0
 Any SIGTERM → exit 1 immediately (SPEC.md:718). Any 401 → exit 1 (docs/INTERNAL-API.md:258-262).
 ```
 
@@ -97,9 +103,14 @@ close()          → closed = true; clear timers
   Node it returns a promise that always resolves; in Python it returns
   `None` and swallows every exception.
 - A tick while a send is in flight sets `pending` and does nothing else.
-- Unit-test with fake timers (`mock.timers` with `Date` enabled); the
-  subprocess conformance scenarios use `KRUN_HEARTBEAT_TIMEOUT=3` (1 s
-  ticks) and real time with tolerance (conformance.md).
+- `now` in the gate is a monotonic clock (`performance.now()` in Node,
+  `time.monotonic()` in Python), injected so tests can replace it; never the
+  wall clock, which jumps.
+- Unit-test with fake timers (Vitest `vi.useFakeTimers()` plus the injected
+  `now` driven by the same test; pytest with a fake clock and an `Event`
+  you control); the subprocess conformance scenarios use
+  `KRUN_HEARTBEAT_TIMEOUT=3` (1 s ticks) and real time with tolerance
+  (conformance.md).
 
 ## 5. Exit codes
 
@@ -114,7 +125,8 @@ close()          → closed = true; clear timers
 | local mode | same codes | SPEC.md:726 |
 
 The process must exit without waiting for the heartbeat timer
-(PLAN.md:784-785): `unref()` / daemon thread, and `close()` before exit.
+(PLAN.md:804-805): `unref()` / daemon thread, and `close()` before exit.
+Prove it with a child process and a deadline on its exit, not in-process.
 
 ## 6. Local mode (SPEC.md:723-726)
 
@@ -133,9 +145,10 @@ The process must exit without waiting for the heartbeat timer
 
 ## 7. Node specifics (`packages/sdk-node`)
 
-- ESM, `"type": "module"`, built to `dist/` for publishing
-  (node-stack-facts.md:99-104); tests `*.test.ts` next to the source run on
-  the sources with `node --test`.
+- ESM, `"type": "module"`, built to `dist/` by `tsc` for publishing; tests
+  `*.test.ts` next to the source run under Vitest
+  (`pnpm exec vitest run packages/sdk-node`), with `vitest` as the only
+  `devDependency` that matters and no `dependencies` at all.
 - HTTP: global `fetch` with `signal: AbortSignal.timeout(ms)`; a timeout is
   a `DOMException` named `TimeoutError`; connection failures are
   `TypeError: fetch failed` with a `cause`. Classify both as retryable.
@@ -151,17 +164,19 @@ The process must exit without waiting for the heartbeat timer
   `await`.
 - `ctx.log(obj)`: `process.stdout.write(JSON.stringify(obj) + "\n")` in the
   pod, `process.stderr.write` locally.
-- Node 20+ API surface only (SPEC.md:660).
+- Node 20+ API surface only (SPEC.md:660), although the test runner itself
+  needs Node 22.12 or 24.
 
 ## 8. Python specifics (`sdk/python/krun`)
 
 - Package `krun`, module `krun/__init__.py` exporting `run`; layout
-  `sdk/python/krun/` (PLAN.md:97); `requires-python = ">=3.11"`
-  (SPEC.md:661); tooling `uv`, `ruff`, `pytest` (PLAN.md:45); stdlib only.
+  `sdk/python/krun/` (PLAN.md:114); `requires-python = ">=3.11"`
+  (SPEC.md:661); tooling `uv`, `ruff`, `pytest`, `mypy --strict`
+  (PLAN.md:55, docs/STACK.md section 3); stdlib only.
 - HTTP: `urllib.request.Request(url, data=body, method="PUT", headers=h)`,
   `urllib.request.urlopen(req, timeout=10)`. `HTTPError` first (has
   `.code`), then `URLError`/`TimeoutError` as connection failures
-  (node-stack-facts.md:815-821, UNVERIFIED in that report, stdlib-stable).
+  (UNVERIFIED by execution, stdlib-stable).
 - Body: `json.dumps(value, separators=(",", ":"), ensure_ascii=False).encode()`;
   the byte length is `len(body)`. `urllib` sets `Content-Length` for a
   `bytes` body; set `Content-Type` yourself.
@@ -175,5 +190,5 @@ The process must exit without waiting for the heartbeat timer
 - `ctx.log(obj)`: `sys.stdout.write(json.dumps(obj) + "\n"); sys.stdout.flush()`
   in the pod, stderr locally. Flush: the pod's log tail is read after exit
   (SPEC.md:720-721 "so logTail stays readable").
-- `if __name__ == "__main__": run(handle)` in the template; importing the
-  module executes nothing (PLAN.md:790).
+- `if __name__ == "__main__": run(handle)` in the template, a plain call,
+  never a decorator; importing the module executes nothing (PLAN.md:807-810).

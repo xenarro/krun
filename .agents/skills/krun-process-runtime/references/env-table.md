@@ -20,15 +20,26 @@ before quoting; SPEC.md is edited concurrently.
   5. A CIDR that does not parse (SPEC.md:1183).
 - An empty value is unset: the default applies and no validation runs on
   it (SPEC.md:1183-1184). P0.5 acceptance tests `KRUN_S3_PRESIGN_TTL=""`
-  yielding the default (PLAN.md:163-166).
+  yielding the default (PLAN.md:185-186).
 - P0.5 acceptance covers: defaults, one invalid duration, one invalid
   CIDR, DSN empty in postgres mode, webhook hosts without secret, a size
-  above 1 MiB, and the empty-value case (PLAN.md:160-166).
+  above 1 MiB, and the empty-value case (PLAN.md:183-186).
 
 `kind` legend: `enum`, `string`, `path`, `addr` (`host:port`, empty host =
 all interfaces), `url`, `int` (non-negative integer, plain digits), `dur`
 (duration grammar), `csv` (comma-separated strings), `cidrs`
 (comma-separated CIDRs), `level` (pino level name).
+
+Each kind is one small Zod 4 schema in `packages/shared/src/config`, all
+wrapped by the same empty-is-unset preprocess and composed into
+`GatewayEnv` and `SchedulerEnv` (PLAN.md:179-186): `enum` → `z.enum`;
+`int` → digits regex then `Number`, with `.max(1048576)` on the two byte
+limits; `dur` → the `^\d+(ms|s|m|h)$` regex refined into an Effect
+`Duration` (the same refinement the Function schema uses); `cidrs` →
+transform through `ipaddr.js` `parseCIDR`; `level` → `z.enum` of pino
+level names. Defaults with `.default(...)` after the preprocess. The
+result is the value of the `Config` service; nothing else reads
+`process.env`.
 
 ## Table (SPEC.md:1186-1217)
 
@@ -89,4 +100,6 @@ developer machine only (SPEC.md:1219-1221); they are not process config.
   the chart because both processes share one pod (SPEC.md:1194).
 - The chart renders section 12 tunables from `config.*` camelCase keys on
   both processes (SPEC.md:1240-1249); unknown variables to a process are
-  ignored, not rejected.
+  ignored, not rejected. So the env schema is a plain `z.object` (unknown
+  keys stripped), never `z.strictObject`: `process.env` always carries
+  `PATH`, `HOME` and the other process's `KRUN_*` variables.
