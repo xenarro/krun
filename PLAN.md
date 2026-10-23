@@ -192,7 +192,7 @@ Gate: `make check` green in CI on an empty but wired repository.
       order, `make check` before every commit, no non-goals, no
       Co-Authored-By trailer, TypeScript on Node.js 26; edit only on drift.
       Acceptance: the rules match.
-- [ ] P0.7 Admin listener plugin in `packages/shared/src/health`:
+- [x] P0.7 Admin listener plugin in `packages/shared/src/health`:
       `/healthz`, `/readyz`, `/metrics` on `KRUN_ADMIN_LISTEN_ADDR` for both
       processes (a readiness route over an Effect `Ref`; the OpenTelemetry
       Prometheus exporter serving `/metrics`; the `Telemetry` layer with OTLP
@@ -951,6 +951,10 @@ Gate: all e2e scenarios green; README states measured numbers and the
 2026-10-23 P0.5 d07922c 95 config tests and independent boundary/layer reviews passed; full make check green.
 2026-10-23 P0.6 d07922c CLAUDE rules match required PLAN/SPEC constraints; no rule edit needed.
 
-Delivery: implementation commit d07922c is pushed in PR #2; hosted CI is green.
-Merge to protected main awaits the required independent repository approval.
-Next task: P0.7. Full Phase 0 and v1 acceptance remain incomplete.
+2026-10-23 P0.7 afc0375308920b271dd44340db6523a15ac120cc Scoped admin health and real Prometheus/conditional OTLP; P07-C1/C2 repaired. 43 health/runtime tests and make check (162 TypeScript/one Python) pass. Reconciled head 9f870d460898ac63e9221b497a9ce5887611e006 passed hosted CI https://github.com/xenarro/krun/actions/runs/40019565091 in PR #3; protected-main approval remains pending.
+
+Delivery: bootstrap PR #2 merged to main as 3952108982b2fea4b37c9d9677da60ad22c17ca6.
+P0.7 is pushed and green in https://github.com/xenarro/krun/pull/3 (base main), not merged.
+Its required independent repository approval is pending; the stack continues without bypass or auto-merge.
+Next task: P0.8, on feat/function-schema-crd forked from the committed, verified P0.7 head.
+Full Phase 0 and v1 acceptance remain incomplete.
