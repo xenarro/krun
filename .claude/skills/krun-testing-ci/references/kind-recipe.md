@@ -4,17 +4,24 @@ Everything here lands under `test/e2e/` and the Makefile targets `kind-up`,
 `kind-down`, `e2e` (PLAN.md:135-136). The recipe follows P4.12
 (PLAN.md:600-612). Upstream sources re-verified on 2026-10-23: kind's
 `site/static/examples/kind-with-registry.sh` (main branch), the kind
-v0.24.0 and v0.33.0 release notes, and the `helm/kind-action` `action.yml`
+v0.31.0 and v0.33.0 release notes, and the `helm/kind-action` `action.yml`
 (main).
 
 ## Tool versions
 
-- `kind` 0.24 or newer (PLAN.md:52-53, 600): 0.24.0 added out-of-the-box
-  NetworkPolicy via `sigs.k8s.io/kube-network-policies` in kindnetd
-  (VERIFIED, release notes). Older kind ignores policies and the
-  enforcement probe fails. Latest on 2026-10-23 is v0.33.0 (default node
-  `kindest/node:v1.37.0`); pin node images by `@sha256`, as the release
-  notes require.
+- `kind` 0.31 or newer (PLAN.md:52-53, 610): kindnetd enforces
+  NetworkPolicy via `sigs.k8s.io/kube-network-policies` (VERIFIED, release
+  notes); without enforcement the probe fails. Latest on 2026-10-23 is
+  v0.33.0 (default node `kindest/node:v1.37.0`); pin node images by
+  `@sha256`, as the release notes require.
+- kind node image of Kubernetes 1.33 or newer (PLAN.md:55, SPEC.md
+  section 14, D36): native sidecars (Litestream), ValidatingAdmissionPolicy
+  (P7.4d) and the `DisruptionTarget` condition need it. Node images are
+  built per kind release; use a 1.33-or-newer image listed in the pinned
+  kind release's notes.
+- User namespaces (`hostUsers: false`, P7.4d) need 1.36, or the feature
+  gate on 1.33 to 1.35, and kernel support on the runner; e2e checks only
+  that the field renders, not that the pod runs in a user namespace.
 - `helm/kind-action` in `ci.yml` pinned to the same kind version
   (PLAN.md:56-57, 609-610). The action has `version` and `version_file`
   inputs (VERIFIED, `action.yml`; default `v0.33.0`): keep the version in
@@ -32,7 +39,7 @@ v0.24.0 and v0.33.0 release notes, and the `helm/kind-action` `action.yml`
 1. Start the registry if not running:
    `docker run -d --restart=always -p "127.0.0.1:5001:5000" --network bridge --name kind-registry registry:2`
    (PLAN.md:601-602). Pin it by digest in the Makefile. Upstream's script
-   now uses `registry:3`; PLAN names `registry:2`, so keep it unless a
+   uses `registry:3`; PLAN names `registry:2`, so keep it unless a
    Decisions row changes it.
 2. Create the cluster with the containerd config patch (PLAN.md:603):
 
@@ -46,7 +53,8 @@ v0.24.0 and v0.33.0 release notes, and the `helm/kind-action` `action.yml`
    ```
 
    Upstream notes the patch is unnecessary with node images from kind
-   0.27.0+; it is harmless and PLAN requires it, so keep it.
+   0.27.0 or newer, which covers every supported kind; it is harmless and
+   PLAN requires it, so keep it.
 3. For every node (`kind get nodes`) write the mirror `hosts.toml`:
    `docker exec <node> mkdir -p /etc/containerd/certs.d/localhost:5001`,
    then pipe `[host."http://kind-registry:5000"]` into

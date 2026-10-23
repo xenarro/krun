@@ -6,11 +6,14 @@ description: Use when writing krun tests, e2e, Docker or CI workflows. Vitest + 
 # krun testing, e2e, Docker, CI and release
 
 Owns the test harness of krun: Vitest 5 with `@effect/vitest` over the
-TypeScript packages, `pytest` plus `mypy --strict` over `sdk/python`, the
+TypeScript packages, `pytest` with `hypothesis` plus `mypy --strict` over
+`sdk/python`, `knip` in `make check`, the
 test doubles (a fake `Kube` service layer, in-memory `Store` layer,
 `test/fake-kube`, local HTTP receivers), `TestClock`, fast-check property
 tests, testcontainers, the phase gates, the kind e2e recipe and scenario
-catalogue, the Dockerfile, `ci.yml` and `release.yml`. Serves PLAN tasks
+catalogue, the Dockerfile (Node.js 26, no native addons), `ci.yml` and
+`release.yml` (`publint` and `attw --pack` before npm publish). Serves PLAN
+tasks
 P0.1-P0.4, P0.7, P0.9, P4.11-P4.13, P5.4, P6.3, P7.6, P8.6, P9.1-P9.6 and
 the test half of every other task. Behaviour under test is owned by the
 sibling skill of that task; this skill says how to prove it.
@@ -45,11 +48,16 @@ sibling skill of that task; this skill says how to prove it.
   (tests line PLAN.md:49-51, dev dependencies PLAN.md:76-78, Python tools
   PLAN.md:55, CI tools PLAN.md:56-57); PLAN.md:92-140 layout, `*.test.ts`
   next to code (PLAN.md:133), make targets (PLAN.md:135-140).
-- docs/STACK.md section 3 (dev dependencies and tsconfig, STACK.md:102-132),
-  section 4 (process shape, errors, SPEC-to-Effect map, time,
-  STACK.md:134-199), section 6 (upgrade policy, STACK.md:231-238).
-- SPEC.md:1476 D35 (Vitest with `@effect/vitest`, TypeScript 7, `node:test`
-  dropped); CLAUDE.md rules 6-8.
+- docs/STACK.md section 3 (dev dependencies and tsconfig, STACK.md:154-187),
+  section 2.6 (OpenTelemetry packages, STACK.md:99-113), section 4
+  (process shape, errors, SPEC-to-Effect map, time, STACK.md:189-260),
+  section 6 (upgrade policy, STACK.md:293-300). Line numbers drift; search
+  by heading.
+- SPEC D15 (TypeScript 7 on Node.js 26), D35 (Vitest with
+  `@effect/vitest`) and D36 (`node:sqlite`, OpenTelemetry, Kubernetes
+  1.33, Postgres 16 floor with CI on 18), SPEC.md section 15; SPEC.md
+  section 14 (supported versions: Node 26 for krun, Node 22 or newer for
+  the Node SDK); CLAUDE.md rules 6-8.
 - Phase gates: PLAN.md:146, 226-229, 317, 365-367, 469-481, 618-623,
   653-655, 674-678, 780-782, 849-850; definition of done PLAN.md:899-904
   (verbatim in `references/phase-gates.md`).
@@ -72,8 +80,10 @@ sibling skill of that task; this skill says how to prove it.
 2. Every krun TypeScript package tests with Vitest 5; Effect code is
    tested with `@effect/vitest` (`it.effect`, `layer(...)`), never with
    `Effect.runPromise` in a plain `it` when a test service such as
-   `TestClock` matters (STACK.md:107-108, SPEC.md:1476). `node:test` and
-   `node --test` are gone for krun's own code (STACK.md:100).
+   `TestClock` matters (STACK.md section 3, SPEC D35). The one exception
+   is the generated Node template's own test, which runs with
+   `node --test` because it belongs to the function author's project
+   (`krun-sdk-cli`, `references/properties-and-sdk.md`).
 3. No test sleeps (STACK.md:199). Time moves only through
    `TestClock.adjust` / `TestClock.setTime`, never `vi.useFakeTimers` on
    Effect code; real waiting is allowed only against a real external
@@ -135,7 +145,9 @@ sibling skill of that task; this skill says how to prove it.
 | one package | `pnpm --filter <pkg> exec vitest run` | |
 | Python SDK | `uv run --directory sdk/python pytest` | part of `make test` (PLAN.md:137-138) |
 | lint | `biome check` + `tsc --noEmit` per package | `make lint` (PLAN.md:161-162) |
-| Python lint | `ruff check` and `mypy --strict` under `uv run --directory sdk/python` | STACK.md:127-128; wire into `make lint` in P0.1, enforce from P8.2 |
+| unused code | `pnpm exec knip` | part of `make check` from P0.4 (PLAN.md:176-178, STACK.md section 3); test files, `scripts/`, `test/fake-kube` and `test/e2e` are entry points in `knip.json` or knip reports them as unused |
+| Python lint | `ruff check` and `mypy --strict` under `uv run --directory sdk/python` | STACK.md section 3; wire into `make lint` in P0.1, enforce from P8.2 |
+| Python properties | `hypothesis` tests inside the pytest run | STACK.md section 3, the fast-check counterpart; `references/properties-and-sdk.md` |
 | e2e | `pnpm exec vitest run --config test/e2e/vitest.config.ts` from `make e2e` | real time, `references/kind-recipe.md` "Harness" |
 
 - Vitest 5 defaults (verified in the 5.0.5 tarball,
@@ -153,7 +165,7 @@ sibling skill of that task; this skill says how to prove it.
   per-platform `@typescript/typescript-<os>-<arch>` optional dependency;
   never install with `--no-optional`). tsconfig flags are STACK.md:120-125
   (`strict`, `exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`,
-  `verbatimModuleSyntax`, `nodenext`, `es2024`, erasable syntax only).
+  `verbatimModuleSyntax`, `nodenext`, `es2025`, erasable syntax only).
 - A test importing another workspace package by name resolves through the
   `workspace:` link to that package's `exports`; if those point at `dist/`,
   `make test` must build first or the test runs stale code. Decide in P0.1.
@@ -161,7 +173,7 @@ sibling skill of that task; this skill says how to prove it.
   found"). Until a package has its first test, set `passWithNoTests: true`
   in its config; P4.12's "`make e2e` with zero scenarios" needs the same,
   or the enforcement probe as the first e2e file.
-- Vitest 5 removed `test.sequential`; use `{ concurrent: false }` on
+- Vitest 5 has no `test.sequential`; use `{ concurrent: false }` on
   suites sharing state (`@effect/vitest` README "Migrating to Vitest 5").
 
 ## Effect 4 test idioms
@@ -193,7 +205,7 @@ Verified against the `@effect/vitest` 4.0.6 and `effect` 4.0.6 tarballs.
 - `it.prop` / `it.effect.prop` take Effect `Schema` or `effect/Arbitrary`
   (unstable): do not use them; krun has one schema language (Zod,
   STACK.md:15-20). Property tests use fast-check directly.
-- All `@effect/vitest` exports are `@stability unstable`; STACK.md:108 pins
+- All `@effect/vitest` exports are `@stability unstable`; STACK.md section 3 pins
   `~4.0.6` with `effect` in lockstep (STACK.md:233-234).
 - `NodeRuntime.runMain` turns SIGTERM into interruption and runs the
   finalizers (STACK.md:43); that an interrupt-only exit yields code 0 is
@@ -214,7 +226,8 @@ for `sdk/python`, `test/sdk-conformance`): `references/properties-and-sdk.md`.
 | fake `Kube` layer | P2.3, P4.2, P4.3a-c, P4.4, P4.5, P4.7-P4.10 (PLAN's "stubbed `CoordinationV1Api`/`BatchV1Api`/`CoreV1Api`/`pods/log`") | `Layer` over a `Ref` of objects plus an ordered action log; scripted failures as `KubeApiError` with `status`; informers as `Stream`s the test feeds; table-driven rows, `references/fake-kube.md` part 1 |
 | in-memory `Store` layer | P3.x handler tests, P5.1 | implements the `Store` service from `krun-store`; a stalled method is `Effect.never`, then `TestClock.adjust("5 seconds")` for 503 `NOT_READY` (PLAN.md:452, 458-459) |
 | fake object store layer | P3.6, P4.4, P6.2 | `{ exists, presignPut, presignGet }` recording calls; scripted `ObjectStoreError` |
-| `test/fake-kube` | P3.7, P4.6, P4.11 process tests (PLAN.md:436-441, 555-556, 596-599) | `http.createServer` Kubernetes API over in-memory objects, kubeconfig per test (`references/fake-kube.md` part 2) |
+| `test/fake-kube` | P3.7, P4.6, P4.11 process tests (PLAN.md:436-441, 558-566, 596-599) | `http.createServer` Kubernetes API over in-memory objects, kubeconfig per test (`references/fake-kube.md` part 2) |
+| in-memory span exporter | P4.6 (PLAN.md:558-566), P0.7 | `InMemorySpanExporter` with a `SimpleSpanProcessor` (both `@opentelemetry/sdk-trace-base` 2.x, STACK.md 2.6) in a test `Telemetry` layer; assert span names, that the create request, the iteration's per-run span and the Kubernetes calls all carry the same `krun.run_id` attribute, and that a `traceparent` sent with `CreateRun` becomes the parent of the request span. v1 does not join a run's spans into one trace, so never assert a shared `traceId` across gateway and scheduler. The `@effect/opentelemetry` 4.0.6 config shape for a custom span processor is UNVERIFIED; read its `NodeSdk` `.d.ts` in P0.7 |
 | local HTTP receiver | P5.3, P8.1-P8.3 | `http.createServer` on port 0 with scripted responses (500 then 200, 302, 429, hang) (PLAN.md:642-645, 793-803) |
 | Fastify `inject` | P0.7, P3.x, P5.x | the listener layer builds the app; tests call `app.inject` inside `it.effect` via `Effect.promise` |
 
@@ -232,10 +245,12 @@ for `sdk/python`, `test/sdk-conformance`): `references/properties-and-sdk.md`.
   password `minioadmin`, `withUsername`/`withPassword`; verified in the
   12.2.1 tarballs). Acquire with `Effect.acquireRelease(Effect.promise(()
   => new PostgreSqlContainer(IMAGES.postgres).start()), (c) =>
-  Effect.promise(() => c.stop()))` inside `Layer.effect` (v4 renamed
-  `Layer.scoped` to `Layer.effect`) and share it with `layer(...)`. Pin
+  Effect.promise(() => c.stop()))` inside `Layer.effect` (scoped in
+  Effect 4; there is no `Layer.scoped`) and share it with `layer(...)`. Pin
   image tags or digests in one constants file so Renovate can bump them.
-  testcontainers 12 needs Node >= 22.22.
+  `IMAGES.postgres` is `postgres:18` by digest (PLAN Phase 1 gate); 16 is
+  only the supported floor (SPEC.md section 14) and is not run in CI.
+  testcontainers 12 needs Node >= 22.22; krun runs on Node 26.
 - CI without a privileged Ryuk: `TESTCONTAINERS_RYUK_DISABLED=true` (the
   variable exists in testcontainers 12.2.1) plus a `docker rm` cleanup step.
 
@@ -277,8 +292,17 @@ for `sdk/python`, `test/sdk-conformance`): `references/properties-and-sdk.md`.
   VERIFIED.
 - `@kubernetes/client-node` 2.0.1 facts (`ApiException`, the `http:`
   kubeconfig rule, informer stop-on-error, per-call signal):
-  `references/fake-kube.md` "client-node facts". better-sqlite3 prebuilds
+  `references/fake-kube.md` "client-node facts". No native addons (D36)
   and pnpm `allowBuilds`: `references/ci-release.md` "Build facts".
+- P4.6 asserts exact metric names on `/metrics` as served by the
+  OpenTelemetry Prometheus exporter (no doubled `_total`, histograms in
+  seconds); instrument naming belongs to `krun-process-runtime`. Compare
+  against the SPEC section 11 table as a literal list, not a regex.
+- An in-memory span exporter sees only spans of its own process: a P4.6
+  test that spawns `bin/krun.js` cannot read it. Build the gateway and
+  scheduler layers in the test process against `test/fake-kube`, or point
+  `OTEL_EXPORTER_OTLP_ENDPOINT` at a local `http.createServer` receiver;
+  decide in P4.6.
 
 ## Lessons from KEDA, Knative and Dapr
 
@@ -305,7 +329,14 @@ streaming fake apiserver) and their krun form: `references/lessons.md`.
 - `pnpm audit --prod --audit-level=critical` fails on a transitive critical
   with no fix; do not suppress, open a Decisions row or pin (PLAN.md:174).
 - Trivy with `--ignore-unfixed` still fails on fixable criticals in the
-  distroless base: bump the digest, never widen `--severity` (PLAN.md:175).
+  distroless base: bump the digest, never widen `--severity` (PLAN.md:180).
+- A kind node image older than 1.33 fails the P7.4d admission-policy and
+  Litestream native-sidecar scenarios in ways that look like krun bugs;
+  pin `kindest/node` 1.33 or newer (PLAN.md:55, `references/kind-recipe.md`).
+- `node:sqlite` and the Node 26 runtime are covered by `make test` only if
+  CI runs Node 26: read the version from `.node-version` in every job, never
+  a hard-coded `node-version`; the one exception is the `sdk-node` matrix
+  job (Node 22 and 26, `references/ci-release.md`).
 - `helm/kind-action` and the local `kind` must be the same version
   (PLAN.md:56-57, 609-610) or the enforcement probe passes locally and
   fails in CI.
@@ -331,9 +362,9 @@ streaming fake apiserver) and their krun form: `references/lessons.md`.
 
 - This skill does not define behaviour; the app skill of the task under
   test does. Conflicts resolve in favour of SPEC.md, then docs/STACK.md.
-- docs/STACK.md:108 lists `it.scoped`, which `@effect/vitest` 4.0.6 does
-  not export; `it.effect` covers it. PLAN.md:497-504 (P4.3a) and
-  SPEC.md:795-796 still say `AbortSignal.timeout`; STACK.md:180 maps it to
-  `Effect.timeout` with the signal threaded to client-node.
+- Vitest 5 supports Node 22.12 or newer (engines `^22.12.0 || ^24.0.0 ||
+  >=26.0.0`), which covers both krun's Node 26 and the Node SDK's Node 22
+  floor; CI runs the SDK suite on Node 22 and 26
+  (`references/properties-and-sdk.md`, `references/ci-release.md`).
 - Benchmark numbers (P9.3) are measured on kind on the CI runner; the
   README must say so.

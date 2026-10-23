@@ -1,6 +1,6 @@
 ---
 name: krun-scheduler-k8s
-description: Use when building the krun scheduler or Job lifecycle. Lease, main loop, informers, jobStatus, failure detection, heartbeat, sweep.
+description: Use when building the krun scheduler or Job lifecycle. Lease, main loop, informers, Job manifest (hostUsers), Kube call spans, jobStatus, failure detection, heartbeat, sweep.
 ---
 
 # krun scheduler and Kubernetes Job lifecycle
@@ -28,18 +28,22 @@ below names the Effect construct docs/STACK.md section 4.3 maps it to.
   `effect-core-patterns`, `effect-concurrency`, `effect-resource-management`,
   `effect-error-handling`, `effect-dependency-injection`, `effect-testing`,
   `kubernetes-operator` (vocabulary only), `kubernetes-skill`. Effect's
-  `MIGRATION.md` overrides any skill text written for Effect 3:
-  `Context.Tag` is `Context.Service`, `Runtime<R>` is gone, `FiberRef` is
-  `Context.Reference` (CLAUDE.md rule 7).
+  `MIGRATION.md` overrides any skill text written for Effect 3: use
+  `Context.Service` (not `Context.Tag`) and `Context.Reference` (not
+  `FiberRef`); Effect 4 has no `Runtime<R>` (CLAUDE.md rule 7).
 
 ## Read first
 
 - SPEC.md:564-656 Job contract; SPEC.md:774-932 Scheduler; SPEC.md:320-381
   lifecycle table and rules; SPEC.md:1034-1039 RBAC; SPEC.md:1098-1123
   backpressure constants; SPEC.md:1125-1174 metrics, logs, readiness,
-  shutdown; D18, D19, D23, D27, D28, D33, D35 (SPEC.md:1459-1476).
-- docs/STACK.md section 2.4 (`Kube` service rules), 4.1 (process shape),
-  4.2 (tagged errors), 4.3 (SPEC rule to Effect construct), 4.4 (time).
+  shutdown; SPEC.md:1139-1152 telemetry (spans on iterations and
+  Kubernetes calls); SPEC.md:1022-1027 and 1236 user namespaces
+  (`KRUN_JOB_HOST_USERS`); D18, D19, D23, D27, D28, D33, D35, D36
+  (section 15). Kubernetes 1.33 is the minimum (SPEC section 14).
+- docs/STACK.md section 2.4 (`Kube` service rules), 2.6 (OpenTelemetry
+  packages), 4.1 (process shape), 4.2 (tagged errors), 4.3 (SPEC rule to
+  Effect construct, including spans), 4.4 (time).
 - PLAN.md:467-481 phase 4 gate; PLAN.md:483-551 P4.1-P4.5; PLAN.md:562-599
   P4.8-P4.11; PLAN.md:662-667 P6.2; PLAN.md:36-91 dependencies and the
   in-house list.
@@ -161,7 +165,20 @@ below names the Effect construct docs/STACK.md section 4.3 maps it to.
     (SPEC.md:1170-1174). This order is the reverse acquisition order of
     scope finalizers under `NodeRuntime.runMain`; no signal handler of
     our own (`references/lease.md`).
-26. Time comes from `Clock` and `DateTime` only: Lease observation times,
+26. Every `Kube` method body is wrapped in `Effect.withSpan` inside the
+    service (span name `kube.<verb> <resource>`, for example `kube.create
+    jobs`), and every main-loop iteration, reconcile pass, heartbeat pass
+    and sweep is a span too (SPEC.md:1145-1152, docs/STACK.md 4.3). Span
+    attributes: namespace, object name, function, HTTP status, and on
+    every span about a run the attribute `krun.run_id`; never the
+    manifest, env, token, presigned URL, input or result
+    (SPEC.md:1150-1156). No `@opentelemetry/instrumentation-*` package:
+    spans are written by hand where SPEC names them.
+27. `hostUsers: false` goes into the Job pod template only when
+    `KRUN_JOB_HOST_USERS` is `false`; otherwise the field is omitted, not
+    set to `true` (SPEC.md:592, 1236), so the default golden file is
+    unchanged on clusters without user namespaces.
+28. Time comes from `Clock` and `DateTime` only: Lease observation times,
     renew deadline, first-absent times, staleness cut-offs, backoff
     deadlines, `observedAt`. Never `Date.now()` or `new Date()` (CLAUDE.md
     rule 8); tests drive time with `TestClock.adjust`.
@@ -183,6 +200,7 @@ timer. Loss closes the leader scope; SIGTERM runs the finalizers in reverse.
 |---|---|
 | service | `Kube` is a `Context.Service` wrapping `BatchV1Api`, `CoreV1Api`, `CoordinationV1Api`, `CustomObjectsApi`; every method returns an `Effect` failing with `KubeApiError`; tests swap it with a stub layer |
 | limiter | one `Semaphore` of `KRUN_K8S_CONCURRENCY` permits taken around every client call (docs/STACK.md 2.4); test: at most 8 in flight |
+| span | `Effect.withSpan` around permit wait, call and timeout, so a call queued behind the semaphore shows its wait; the error tag and status are recorded on the span; check @effect/opentelemetry docs for how Effect 4 sets span status from a failure |
 | timeout | `Effect.timeout("10 seconds")` per call; the `Effect.tryPromise` `try` receives an `AbortSignal` that fires on interruption, passed per call through a middleware calling `ctx.setSignal(signal)` (docs/research/node-stack-facts.md:314-345); a timeout is transient |
 | classification | `catch` maps `ApiException` to `KubeApiError { status: code, reason: body.reason, message: body.message, retryAfter: headers['retry-after'] }`; any other rejection is `KubeApiError` with no status (network, transient) |
 | 403 split | `reason === 'Forbidden'` with a quota message (`exceeded quota`) -> transient + `krun_quota_rejections_total{function}`; RBAC 403 -> permanent |
@@ -206,14 +224,17 @@ above (P4.3a) -> `main-loop.md` (P4.3b, P4.3c, P4.5) -> `informers.md`
 | `krun_terminal_detect_seconds{function}` | container `terminated.finishedAt` -> terminal CAS (CAS time from `Clock`) |
 | `krun_scheduler_leader` | 1 while leading, 0 otherwise, on every replica |
 
-`prom-client` only, one registry per process; Effect `Metric` is not used
-(docs/STACK.md 2.5); histogram labels stay `function` (and `state`) only.
-Alert rules reading them are fixed in SPEC.md:1373-1385
-(`krun-helm-chart`).
+Effect `Metric`s exported by the OpenTelemetry Prometheus exporter on
+the admin listener (SPEC.md:1139-1147, docs/STACK.md 2.6, D36). Choose
+instrument names so the exporter's `_total` and unit suffixes yield exactly the table above, and
+P4.6 (owned by `krun-process-runtime`) asserts them on `/metrics`.
+Histogram labels stay `function` (and `state`) only. Alert rules reading
+them are fixed in SPEC section 13 (`krun-helm-chart`).
 
 ## Library facts (`@kubernetes/client-node` 2.0.1, docs/research/node-stack-facts.md)
 
-- ESM only, undici-backed, Node 24 supported; `setDefaultAuthentication`
+- ESM only, undici-backed; krun runs it on Node 26 (D15), and the P4.3a
+  spike confirms the facts below on Node 26; `setDefaultAuthentication`
   does not exist (VERIFIED). A new undici Agent per request, no dispatcher
   cache (VERIFIED by absence): the 8-permit semaphore also bounds sockets.
 - Object-parameter API: `batch.createNamespacedJob({ namespace, body })`,
@@ -247,9 +268,17 @@ Alert rules reading them are fixed in SPEC.md:1373-1385
   moved with `TestClock.adjust`. Fork the program under test first, then
   adjust: a fiber sleeping on `Schedule.spaced` wakes only when the test
   clock passes its deadline. No real sleeps, no Vitest fake timers.
-- `@types/node ^26` arrives as a runtime dependency; a duplicate
-  `@types/node` next to krun's 24 pin may need a pnpm override
-  (UNVERIFIED consequence).
+- `@types/node ^26` arrives as a runtime dependency of client-node and
+  matches krun's Node 26 line, so no override is expected (UNVERIFIED
+  until the first install).
+- `V1PodSpec.hostUsers` is an optional boolean in the client-node model;
+  set it only when false (rule 27). Failure modes are UNVERIFIED and
+  outside the scheduler's control: with the feature gate off, the API
+  server may drop the field silently; on a node whose runtime or kernel
+  lacks ID-mapped mounts the pod fails to start. Either way the run is
+  classified by the normal pod-signal rules (`failure-matrix.md`), not as
+  `job_create_failed`; the operator opts in only when every node
+  supports it (docs/OPERATIONS.md, Security operations).
 
 ## Lessons from KEDA, Knative Serving, Dapr
 
@@ -281,8 +310,8 @@ Alert rules reading them are fixed in SPEC.md:1373-1385
   `reconcile_resources.go:103-131`); krun's deadline is
   `activeDeadlineSeconds`.
 - Never adopt a stranger's object on `AlreadyExists` (serving
-  `reconcile_resources.go:75-79`): see SPEC RISK below; SPEC today says
-  `AlreadyExists` counts as success without a label check.
+  `reconcile_resources.go:75-79`): see SPEC RISK below; SPEC counts
+  `AlreadyExists` as success without a label check.
 - Keep lease renew on its own fiber, never behind the loop's effects; a
   blocked leadership path once made Dapr's cron exit silently (dapr
   `cron.go:180-195`). Shutdown: readiness first, bounded drain, forced
@@ -306,9 +335,22 @@ Alert rules reading them are fixed in SPEC.md:1373-1385
 - Foreground vs background propagation differs per path (table in
   `informers.md`); mixing them either deletes pods before the log fetch or
   records `failed` while the pod still runs.
-- `DisruptionTarget` needs Kubernetes 1.29+ (SPEC.md:1433-1434); on older
-  clusters a drained pod shows as `disrupted` through the "Failed with no
-  terminated state" rule, not the condition.
+- `DisruptionTarget` is always present on the supported Kubernetes 1.33+
+  (SPEC section 14); the "Failed with no terminated state" fallback rule
+  still covers a pod deleted before the condition is written.
+- The jobs namespace may carry the `krun-jobs-digest`
+  ValidatingAdmissionPolicy (SPEC.md:1017-1021). A Job whose image lost
+  its digest is then rejected with 422 or 403 by the API server: a
+  permanent `job_create_failed` per rule 6, which is correct; never
+  retry it as transient.
+- Run correlation is by attribute, not by trace (SPEC section 11): every
+  span about a run carries `krun.run_id` (the per-run step 4 span, the
+  terminal-path, heartbeat and `job_lost` spans, and the `Kube` calls made
+  for that run). v1 does not join a run's spans into one trace across
+  processes: there is no trace column on `runs` and no trace context is
+  passed to the pod (no `TRACEPARENT` env, no Job annotation). P4.6
+  asserts that the create request, the iteration's per-run span and the
+  Kubernetes calls share the same `krun.run_id`, not the same trace id.
 - Identity is the downward-API pod name (SPEC.md:785); a StatefulSet
   restart in embedded mode reuses the name, so never trust a matching
   `holderIdentity` on the first read.
@@ -373,4 +415,5 @@ Alert rules reading them are fixed in SPEC.md:1373-1385
   RBAC and NetworkPolicy rendering (`krun-helm-chart`).
 - `test/fake-kube` and the kind e2e harness are `krun-testing-ci`.
 - Line numbers were verified on 2026-10-23 against a working tree that
-  another agent edits; re-verify before citing in a PR.
+  another agent edits; some citations from SPEC section 9 onwards may be
+  a few lines off. Re-verify before citing in a PR.

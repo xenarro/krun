@@ -1,7 +1,7 @@
 # krun technology stack
 
 Status: normative, 2026-10-23. Versions verified against the npm registry
-on that date. PLAN.md section 2 is the dependency allowlist and points
+on that date. Runtime: Node.js 26 (LTS to April 2029). PLAN.md section 2 is the dependency allowlist and points
 here for the reasons; SPEC.md D35 records the decision. A library not in
 this file needs a Decisions row before it is added.
 
@@ -23,7 +23,16 @@ this file needs a Decisions row before it is added.
    execute it. Ajv compiles it; nothing else uses Ajv.
 4. **No date library.** Effect's `DateTime`, `Duration` and `Clock` cover
    every need (RFC 3339 UTC with milliseconds, the duration grammar, leases,
-   deadlines) and make every timer testable with `TestClock`.
+   deadlines) and make every timer testable with `TestClock`. Node 26 ships
+   `Temporal` natively; krun code does not use it, because it bypasses
+   `Clock`. date-fns, Day.js and Luxon are rejected (section 2.7).
+7. **Effect before a utility package.** Retries, concurrency limits,
+   caches, pattern matching, `Option`/`Result`, array and record helpers
+   come from Effect. A utility package is added only for a job Effect does
+   not do (section 2.7).
+8. **No native addons.** Every runtime dependency is pure JavaScript or
+   built into Node, so the image needs no build toolchain and no ABI
+   rebuild on a Node upgrade.
 5. **Stable APIs only in the core path.** Effect 4 marks some modules
    `@stability unstable` (may break in minor releases). krun uses them only
    where this file says so, pinned to an exact minor.
@@ -56,11 +65,12 @@ exact versions.
 
 | Package | Range | Use | Rules |
 |---|---|---|---|
-| `kysely` | `^0.29` | typed SQL for both dialects, `Migrator` with `FileMigrationProvider` | Wrapped in an Effect `Database` service; every query runs through `Effect.tryPromise` and maps failures to tagged errors. Requires Node 22 or newer. |
+| `kysely` | `^0.29` | typed SQL for both dialects, `Migrator` with `FileMigrationProvider` | Wrapped in an Effect `Database` service; every query runs through `Effect.tryPromise` and maps failures to tagged errors. Requires Node 22 or newer. Postgres 16 or newer; CI runs against 18. |
 | `pg` | `^8.23` | Postgres driver for Kysely's `PostgresDialect`; a dedicated client for `LISTEN` | Pool size 5 plus the `LISTEN` client; `query_timeout` 10000. |
-| `better-sqlite3` | `^13.0` | SQLite for Kysely's `SqliteDialect` in embedded mode | Synchronous; `begin immediate` through a `SqliteDriver` subclass. Native addon: glibc base image, prebuilt binary for Node 24. |
+| `node:sqlite` | built into Node 26 | SQLite in embedded mode | Release candidate in Node 26. Kysely reaches it through an in-house `SqliteDialect`-compatible adapter (`packages/shared/src/store/sqlite/dialect.ts`, about 40 lines over `Database.prepare`); synchronous; transactions open with `begin immediate`. |
 
-Considered and rejected: `@effect/sql-kysely` (supports Effect 3 and
+Alternatives not used: `better-sqlite3` (native addon); Drizzle ORM (1.0 still a release candidate; its Effect
+integration is beta); `@effect/sql-kysely` (supports Effect 3 and
 Kysely 0.28 only); `@effect/sql-pg` with `@effect/sql-sqlite-node` (Effect
 4 native, but `effect/sql` is marked unstable and models rows with Effect
 Schema, against principle 2). Revisit when `effect/sql` is stable.
@@ -83,36 +93,81 @@ Schema, against principle 2). Revisit when `effect/sql` is stable.
 | `canonicalize` | `^5.1` | RFC 8785 (JCS) serialisation for `request_hash` | Reference implementation by the RFC's author. |
 | `yaml` | `^2.9` | `keys.yaml`, Function documents for `krun validate` | Parsed value goes straight into a Zod schema. |
 | `ipaddr.js` | `^2.5` | webhook address classification and CIDR allowlist | |
-| `prom-client` | `^15.1` | Prometheus metrics on the admin listener | Effect `Metric` is not used; one registry per process. |
-| `pino` | bundled with Fastify | JSON logs | The Effect `Logger` is replaced by one that writes to the Fastify pino instance, so every line has one format and the redaction rules apply everywhere. |
+| `picomatch` | `^4.0` | API key function globs (`report-*`) and webhook host globs | Never a hand-written glob regex; `picomatch(pattern, { nocase: false, dot: true })`, compiled once per reload. |
+| `pino` | bundled with Fastify | JSON logs | The Effect `Logger` writes to the Fastify pino instance, so every line has one format and the redaction rules apply everywhere; lines inside a span carry `traceId` and `spanId`. |
+
+### 2.6 Observability
+
+| Package | Range | Use | Rules |
+|---|---|---|---|
+| `@effect/opentelemetry` | `~4.0.6` | Effect spans and metrics to OpenTelemetry (`NodeSdk.layer`) | Same version as `effect`. |
+| `@opentelemetry/api` | `^1.10` | | peer of the above |
+| `@opentelemetry/sdk-trace-node`, `@opentelemetry/sdk-trace-base` | `^2.12` | tracer provider, batch span processor | Stay on 2.x: `@effect/opentelemetry` 4.0.6 peers on `<3`. |
+| `@opentelemetry/sdk-metrics`, `@opentelemetry/resources` | `^2.12` | meter provider, service resource | 2.x, same reason. |
+| `@opentelemetry/exporter-prometheus` | `~0.223` | `/metrics` on the admin listener | 0.2xx line (peer `<0.300`); mounted on the admin Fastify instance, not its own port. |
+| `@opentelemetry/exporter-trace-otlp-http` | `~0.223` | OTLP/HTTP traces when `OTEL_EXPORTER_OTLP_ENDPOINT` is set | |
+| `@opentelemetry/api-logs`, `@opentelemetry/sdk-logs`, `@opentelemetry/semantic-conventions` | `~0.223`, `~0.223`, `^1.43` | peers of `@effect/opentelemetry` | logs stay in pino; OpenTelemetry logs are not exported in v1 |
+
+Metrics are Effect `Metric`s (counters, gauges, histograms). Instrument
+names are chosen so the Prometheus exporter's suffixes yield exactly the
+names in SPEC.md section 11; PLAN P4.6 asserts them on `/metrics`.
+
+### 2.7 CLI only (`packages/cli`)
+
+| Package | Range | Use |
+|---|---|---|
+| `@clack/prompts` | `^1.8` | interactive `krun init` when `--lang` is missing on a TTY; spinners for `krun deploy` steps |
+| `picocolors` | `^1.1` | coloured status lines; respects `NO_COLOR` |
+| `tinyexec` | `^1.3` | runs `docker` and `kubectl` from `krun deploy`, wrapped in Effect |
+
+Arguments are parsed with `node:util` `parseArgs`. `krun init --name`
+defaults to the target directory's name; a missing `--lang` prompts on a
+TTY and fails with a usage message otherwise. Non-TTY runs never prompt.
+
+### 2.8 Utility libraries considered
+
+Weekly npm downloads on 2026-10-23 in parentheses.
+
+| Need | Chosen | Rejected, and why |
+|---|---|---|
+| validation | Zod 4 (207M) | Valibot (13M), ArkType (1.3M): smaller or faster, but Zod has the Fastify type provider and `z.toJSONSchema` targets krun needs; Effect Schema: second schema language |
+| dates and times | Effect `DateTime`, `Duration`, `Clock` | date-fns (56M), Day.js (44M), Luxon (24M), `temporal-polyfill`, native `Temporal`: none integrates with `TestClock` |
+| collection helpers | Effect `Array`, `Record`, `Struct`, `String` | es-toolkit (34M), lodash-es (30M), Remeda (7M): duplicate Effect |
+| pattern matching, results | Effect `Match`, `Option`, `Result` | ts-pattern (3.8M), neverthrow (1.9M) |
+| retries, timeouts, circuit breaking | Effect `Schedule`, `Effect.timeout` | p-retry (32M), cockatiel (1.2M) |
+| concurrency limits | Effect `Semaphore`, `Effect.forEach({ concurrency })` | p-limit (202M) |
+| caching | a `Map` keyed by uid and generation; Effect `Cache` if eviction is ever needed | lru-cache (349M) |
+| ids | `uuid` v7 (174M) | nanoid (167M), ULID (6.8M), cuid2: not time-ordered UUIDs, D9 |
+| globs | `picomatch` (316M) | minimatch (427M): slower, larger; hand-written regex: error-prone at a trust boundary |
+| environment | a Zod schema over `process.env` | `@t3-oss/env-core` (2.9M), envalid (0.4M): wrappers over the same idea |
+| HTTP client | `undici` (133M) and global `fetch` | ky (4M), ofetch (16M): no pinned-address dispatcher |
+| child processes | `tinyexec` (100M), CLI only | execa (100M): larger, more features than `krun deploy` needs |
+| CLI arguments | `node:util` `parseArgs` | commander (314M), citty (21M), cac (30M): three subcommands do not need them |
+| CLI prompts and colour | `@clack/prompts` (18M), `picocolors` (151M) | ora (55M), consola (33M) |
+| canonical JSON | `canonicalize` (3M), RFC 8785 reference implementation | `safe-stable-stringify` (39M): not RFC 8785 |
+| YAML | `yaml` (133M) | js-yaml: no CST, weaker errors |
+| HTTP mocking in tests | local `http.createServer` and undici `MockAgent` | msw (13M): browser-oriented, not needed for server tests |
 
 Node built-ins: `node:crypto` (SHA-256, HMAC, `timingSafeEqual`,
 `randomBytes`), `node:dns/promises`, `node:fs`, `node:util` `parseArgs`
 for the CLI.
-
-### 2.6 Removed from the earlier plan
-
-| Package | Replaced by |
-|---|---|
-| `@sinclair/typebox`, `@fastify/type-provider-typebox`, `json-schema-to-ts` | Zod 4 with `fastify-type-provider-zod` and `z.toJSONSchema` |
-| `@fastify/under-pressure` | a five-line readiness route on the admin listener |
-| `close-with-grace` | `NodeRuntime.runMain` and scope finalizers |
-| `node:test` | Vitest with `@effect/vitest` |
 
 ## 3. Development dependencies
 
 | Package | Range | Use |
 |---|---|---|
 | `typescript` | `^7.0` | `tsc` (native compiler) for type-checking and emitting `dist/` |
-| `vitest` | `^5.0` | test runner for every TypeScript package; requires Node 22.12 or 24 |
+| `vitest` | `^5.0` | test runner for every TypeScript package; requires Node 22.12, 24 or 26 |
 | `@effect/vitest` | `~4.0.6` | `it.effect` (already scoped; there is no `it.scoped` in 4.x), `layer(...)`, `TestClock` for every Effect test |
 | `fast-check` | `^4.10` | property tests: request fingerprint, filter parser, duration grammar, address checks |
 | `testcontainers` | `^12.2` | Postgres and MinIO in integration tests |
 | `@testcontainers/postgresql` | `^12.2` | |
 | `@testcontainers/minio` | `^12.2` | |
 | `@biomejs/biome` | `^2.6` | lint and format |
-| `@types/node` | `^24` | |
-| `@types/better-sqlite3`, `@types/pg` | latest | |
+| `@types/node` | `^26` | |
+| `@types/pg` | latest | |
+| `knip` | `^6.42` | unused files, exports and dependencies; runs in `make check` |
+| `publint`, `@arethetypeswrong/cli` | `^0.3`, `^0.18` | package export checks for `@krun/sdk` and `@krun/cli` before publish (P9.5) |
 
 Editor only, never in CI: `@effect/tsgo` (Effect diagnostics on the
 TypeScript 7 language server; alpha).
@@ -120,15 +175,16 @@ TypeScript 7 language server; alpha).
 TypeScript settings in `tsconfig.base.json`: `strict`,
 `exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`,
 `verbatimModuleSyntax`, `module` and `moduleResolution` `nodenext`,
-`target` `es2024`. Erasable syntax only (no enums, no parameter
+`target` `es2025`. Erasable syntax only (no enums, no parameter
 properties), so sources stay runnable under Node's type stripping for
 quick scripts.
 
 Python SDK (`sdk/python`): Python 3.11 or newer, standard library only at
-runtime; `uv`, `ruff`, `pytest`, `mypy --strict` for development.
+runtime; `uv`, `ruff`, `pytest`, `hypothesis` (property tests, the
+counterpart of fast-check), `mypy --strict` for development.
 
-Tools on the agent machine (PLAN.md section 2): Node 24, pnpm, uv, Docker,
-Helm 4, kind 0.24 or newer, kubectl, actionlint, gh, helm-docs, promtool;
+Tools on the agent machine (PLAN.md section 2): Node 26, pnpm, uv, Docker,
+Helm 4, kind 0.31 or newer, kubectl, actionlint, gh, helm-docs, promtool;
 in CI also Trivy, cosign, syft.
 
 ## 4. How the pieces fit
@@ -141,7 +197,8 @@ import { NodeRuntime } from "@effect/platform-node"
 import { Layer } from "effect"
 
 const Main = Layer.mergeAll(PublicServer, InternalServer, AdminServer).pipe(
-  Layer.provide(AppLayer), // Config, Logger, Database, Store, Functions, Keys, Metrics
+  Layer.provide(AppLayer), // Config, Logger, Database, Store, Functions, Keys
+  Layer.provide(Telemetry), // @effect/opentelemetry NodeSdk: tracer, meter, Prometheus reader
 )
 NodeRuntime.runMain(Layer.launch(Main))
 ```
@@ -179,6 +236,9 @@ NodeRuntime.runMain(Layer.launch(Main))
 | SPEC rule | Effect construct |
 |---|---|
 | `KRUN_K8S_CONCURRENCY` cap | `Semaphore` around every Kubernetes call |
+| metrics in SPEC section 11 | Effect `Metric`, exported by the OpenTelemetry Prometheus exporter |
+| spans for requests, iterations, store and Kubernetes calls | `Effect.withSpan`, exported over OTLP when configured |
+| API key and webhook host globs | `picomatch` matchers compiled at load |
 | 10 s per API call, 5 s per internal store call, 2 s readiness check | `Effect.timeout` |
 | retries with backoff | `Effect.retry` with `Schedule.exponential` and `Schedule.recurs` |
 | main loop every second, sweep every 10 minutes, heartbeat every 10 s | `Effect.repeat` with `Schedule.spaced` |
@@ -211,7 +271,7 @@ another machine without them works from this file and the libraries' own
 documentation. Load the ones for the task before writing code (`Skill`
 tool). Where a skill predates Effect 4,
 Effect's `MIGRATION.md` and this file win: `Context.Tag` is
-`Context.Service`, `Runtime<R>` is gone, `FiberRef` is
+`Context.Service`, there is no `Runtime<R>`, `FiberRef` is
 `Context.Reference`.
 
 | Area | Skills | Phases |
@@ -219,6 +279,7 @@ Effect's `MIGRATION.md` and this file win: `Context.Tag` is
 | Effect | `effect-core-patterns`, `effect-error-handling`, `effect-dependency-injection`, `effect-resource-management`, `effect-concurrency`, `effect-testing` | all |
 | Fastify | `fastify-best-practices` | 0, 3, 5 |
 | Data | `kysely`, `using-relational-databases` | 1 |
+| Observability | `observability-and-instrumentation`, `agent-observability` (span and redaction rules only) | 0, 4 |
 | Node and workspace | `node`, `pnpm`, `typescript-project-contracts` | 0, all |
 | Kubernetes | `kubernetes-operator` (informers, reconcile), `kubernetes-skill`, `operating-kubernetes`, `kubernetes-hardening` | 4, 7, 9 |
 | Chart | `helm-chart-scaffolding` | 7 |

@@ -1,11 +1,11 @@
-# Pod template contract (SPEC.md:1319-1364)
+# Pod template contract (SPEC.md:1363-1412)
 
 One `_helpers.tpl` partial per concern (`krun.podSecurityContext`,
 `krun.containerSecurityContext`, `krun.probes`, `krun.configEnv`,
 `krun.labels`), included from every pod template, so a fix lands in all
 of them. Every pod means: gateway Deployment, scheduler Deployment,
 embedded StatefulSet, migrate hook Job, every init container and the
-Litestream sidecar (SPEC.md:1319-1320).
+Litestream native sidecar, itself an init container (SPEC.md:1363-1365).
 
 ## Labels (SPEC.md:990-994)
 
@@ -35,7 +35,7 @@ securityContext:
   fsGroupChangePolicy: OnRootMismatch
 ```
 
-Every container, init container and sidecar:
+Every container, init container and native sidecar:
 
 ```yaml
 securityContext:
@@ -92,7 +92,7 @@ rendered with `toYaml .Values.gateway.resources` / `.scheduler.resources`.
 No CPU limit by default: throttling a Node event loop under a CPU limit
 inflates every latency metric and makes probes flap. The migrate hook
 and init containers reuse the scheduler resources; the Litestream
-sidecar gets the same block (SPEC fixes no separate value and no task
+native sidecar gets the same block (SPEC fixes no separate value and no task
 asks for one, PLAN.md:31-32).
 
 ## Scheduling and lifecycle
@@ -126,7 +126,22 @@ uses `valueFrom.secretKeyRef`, never a value:
 | `KRUN_DB_DSN` | `{{ .Values.db.postgres.existingSecret }}` key `dsn` | gateway, scheduler, migrate hook (postgres mode) |
 | `KRUN_S3_ACCESS_KEY`, `KRUN_S3_SECRET_KEY` | `objectStorage.existingSecret` keys `accessKey`, `secretKey` | gateway and scheduler when `objectStorage.enabled` |
 | `KRUN_WEBHOOK_SECRET` | `webhooks.existingSecret` key `secret` | scheduler (both modes) when `webhooks.allowedHosts` non-empty |
-| `LITESTREAM_ACCESS_KEY_ID`, `LITESTREAM_SECRET_ACCESS_KEY` | `envFrom.secretRef` `db.embedded.litestream.existingSecret` | Litestream restore init and sidecar |
+| `LITESTREAM_ACCESS_KEY_ID`, `LITESTREAM_SECRET_ACCESS_KEY` | `envFrom.secretRef` `db.embedded.litestream.existingSecret` | Litestream restore init container and native sidecar |
+
+Optional env, each rendered only when its value enables it (P7.4d,
+PLAN P7.4d; references/values.md):
+
+| Env | Value | Containers | Gate |
+|---|---|---|---|
+| `KRUN_JOB_HOST_USERS` | `"false"` | scheduler (embedded: the scheduler container) | `jobsNamespace.userNamespaces` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `observability.otlpEndpoint` | gateway and scheduler (both embedded containers) | `otlpEndpoint` non-empty |
+| `OTEL_TRACES_SAMPLER` | `parentbased_traceidratio` | same | same |
+| `OTEL_TRACES_SAMPLER_ARG` | `observability.tracesSampleRatio`, quoted | same | same |
+| `OTEL_SERVICE_NAME` | `krun-gateway` or `krun-scheduler`, per container, not per pod | same | same |
+
+The migrate hook, the `migrate` init container and the Litestream
+containers get none of these. A `krun.otelEnv` partial taking the
+service name keeps the four in one place.
 
 The API keys are a volume, not env: `secret.secretName: {{ .Values.apiKeys.existingSecret }}`
 mounted `readOnly: true` at `/etc/krun` with no `subPath`, so the kubelet
@@ -203,7 +218,7 @@ long-running operator); the hook pattern here follows the Helm docs and
 the `helm-chart-scaffolding` reference `chart-structure.md:438-451`, with
 krun's weights and bounds from SPEC.
 
-## Embedded mode (SPEC.md:1349-1364)
+## Embedded mode (SPEC.md:1393-1412)
 
 One StatefulSet `<fullname>`, `replicas: 1`, `serviceName` = a headless
 Service (`clusterIP: None`, no `ports`, selector name+instance,
@@ -228,6 +243,14 @@ spec:
       envFrom: [{ secretRef: { name: {{ .Values.db.embedded.litestream.existingSecret }} } }]
       volumeMounts: [{ name: data, mountPath: /data }, { name: tmp, mountPath: /tmp }]
       securityContext: ...container partial
+    - name: litestream              # native sidecar: runs for the pod's lifetime
+      image: {{ .Values.db.embedded.litestream.image }}
+      restartPolicy: Always         # this field is what makes an init container a sidecar
+      args: [replicate, /data/krun.db, {{ .Values.db.embedded.litestream.url }}]   # assumes the image entrypoint is litestream
+      envFrom: [{ secretRef: { name: {{ .Values.db.embedded.litestream.existingSecret }} } }]
+      volumeMounts: [{ name: data, mountPath: /data }, { name: tmp, mountPath: /tmp }]
+      securityContext: ...container partial
+      resources: ...scheduler resources
     {{- end }}
     - name: migrate
       image: krun
@@ -237,9 +260,7 @@ spec:
   containers:
     - name: gateway      # ports http 8080, internal 8081, admin 9090; probes on admin
     - name: scheduler    # KRUN_ADMIN_LISTEN_ADDR=:9091; port admin-sched 9091; probes on admin-sched
-    {{- if .Values.db.embedded.litestream.enabled }}
-    - name: litestream   # litestream replicate /data/krun.db <url>; envFrom the same Secret
-    {{- end }}
+    # no Litestream entry here: it is the native sidecar above
   volumes: [{ name: tmp, emptyDir: {} }]
 volumeClaimTemplates:
   - metadata: { name: data }
@@ -251,9 +272,20 @@ volumeClaimTemplates:
       resources: { requests: { storage: {{ .Values.db.embedded.storage }} } }
 ```
 
-Order matters: restore before migrate, because `krun migrate` on an empty
+Order matters (SPEC.md:1403-1410): restore, then the sidecar, then
+migrate. Restore before migrate, because `krun migrate` on an empty
 `/data` would create a fresh database and `-if-db-not-exists` would then
-skip the restore (SPEC.md:1358-1361). Orphan `-wal`/`-shm` removal first:
+skip the restore. The sidecar after restore, so it replicates the
+restored database instead of starting a new generation from an empty
+file; before migrate, so migration writes are streamed too. The kubelet
+starts a native sidecar and moves to the next init container once it is
+started (no startup probe needed, SPEC sets none), keeps it running
+beside the app containers, and on termination stops it only after the
+gateway and scheduler containers exited, so their last WAL writes are
+shipped (D36). It shares the pod's `terminationGracePeriodSeconds`; the
+30 s budget covers both drains and Litestream's final sync. The sidecar
+has no krun probes: it is not a krun container (SPEC.md:1371-1374 names
+krun containers only). Orphan `-wal`/`-shm` removal first:
 a stale WAL next to a restored database corrupts it (docs/OPERATIONS.md:99-105
 is the drill that exercises this). The Litestream image must contain
 `/bin/sh` for the two-step script; if the chosen image is distroless,
@@ -271,11 +303,11 @@ SQLite WAL mode supports the two processes on one local volume; network
 filesystems are unsupported, so the README must say so (SPEC.md:1362-1364).
 
 `updateStrategy` is the StatefulSet default `RollingUpdate`; with one
-replica an upgrade is a brief downtime (SPEC.md:1364, docs/OPERATIONS.md:33-34).
+replica an upgrade is a brief downtime (SPEC.md:1412, docs/OPERATIONS.md:33-34).
 Keep that downtime, and any scheduler outage, below
 `config.ttlAfterFinished` (SPEC.md:1416-1417).
 
-## Services (SPEC.md:1370-1371)
+## Services (SPEC.md:1418-1419)
 
 | Service | Type | Selector | Port | Target |
 |---|---|---|---|---|
@@ -287,3 +319,38 @@ The internal Service name is fixed by SPEC: `KRUN_GATEWAY_INTERNAL_URL`
 is `http://krun-gateway-internal.<ns>.svc:8081` and the chart sets it
 from the rendered name and port (SPEC.md:1195). No Service exposes 9090
 or 9091 (SPEC.md:1371); the PodMonitor scrapes pods directly.
+
+## HTTPRoute (SPEC.md:1329-1333, 1423-1424; PLAN P7.4d)
+
+Rendered only when `gatewayApi.httpRoute.enabled`:
+
+```yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "krun.fullname" . }}
+  labels: ...chart labels
+spec:
+  parentRefs: {{- toYaml .Values.gatewayApi.httpRoute.parentRefs | nindent 4 }}
+  {{- with .Values.gatewayApi.httpRoute.hostnames }}
+  hostnames: {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    - backendRefs:
+        - name: {{ include "krun.fullname" . }}-gateway   # the public Service
+          port: 8080
+```
+
+- One rule, one backend: the public Service. Never `krun-gateway-internal`
+  (8081 is reachable only from the jobs namespace) and never an admin port.
+- The backend is in the route's own namespace, so no ReferenceGrant. A
+  Gateway in another namespace must admit routes from the krun namespace
+  through its `allowedRoutes`; that is the platform team's Gateway, not
+  the chart.
+- `krun-allow-public` already admits 8080 from anywhere, so the Gateway's
+  data plane reaches the pods without a new NetworkPolicy.
+- `:wait` holds a request up to `KRUN_MAX_WAIT` (60 s) and `:watch` is a
+  long-lived SSE stream; a Gateway implementation's default request
+  timeout may cut them. The chart adds no `timeouts` value (no task asks);
+  the README tells operators to raise the Gateway's timeout above
+  `config.maxWait`.

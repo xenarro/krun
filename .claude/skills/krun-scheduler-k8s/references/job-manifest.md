@@ -1,6 +1,6 @@
-# Job and Secret manifests (SPEC.md section 7, lines 564-626)
+# Job and Secret manifests (SPEC.md section 7, lines 567-630)
 
-Serves PLAN P4.1 (PLAN.md:483-487) and P6.2 (PLAN.md:662-667). The
+Serves PLAN P4.1 and P6.2 (PLAN.md:662-667). The
 builders live in `apps/scheduler/src/k8s`; the acceptance test is a
 golden-file comparison of the rendered Job and Secret for one function.
 Line numbers verified against the working tree on 2026-10-23.
@@ -31,7 +31,7 @@ Token: `randomBytes(32).toString('base64url')`; hash
 before `jobs.create` (SPEC.md:820-822, D27 SPEC.md:1468). The token is
 never logged (SPEC.md:1149-1154).
 
-## Job (SPEC.md:574-626, verbatim)
+## Job (SPEC.md:577-630, verbatim)
 
 > Job `krun-<run id>` (41 characters, within the 63 limit):
 
@@ -48,6 +48,7 @@ spec:
     spec:
       restartPolicy: Never
       terminationGracePeriodSeconds: 30
+      hostUsers: <false when KRUN_JOB_HOST_USERS is false; omitted otherwise>
       serviceAccountName: <function value>
       automountServiceAccountToken: false
       imagePullSecrets: <function value>
@@ -122,6 +123,13 @@ reference to the Function would GC in-flight runs on re-apply).
 - Deterministic names make create idempotent after a timed-out call: a
   retry hits `409 AlreadyExists`, which counts as success (SPEC.md:822-823;
   keda `scale_jobs.go:205` uses `generateName` and cannot retry safely).
+- `hostUsers: false` only when the config value `KRUN_JOB_HOST_USERS`
+  is `false` (chart value `jobsNamespace.userNamespaces`, SPEC.md:592,
+  1022-1027, 1236); when `true` (the default) the key is absent, never
+  `hostUsers: true`. The builder takes it as a boolean argument from
+  config, like the other config values. With user namespaces the
+  container's UID 65532 maps to an unprivileged host UID; nothing else in
+  the manifest changes (PSA `restricted` accepts it).
 - Defaults `runAsUser`/`runAsGroup` 65532 when the Function sets none;
   `imagePullSecrets`, `nodeSelector`, `resources` copied from the Function,
   omitted when unset (do not emit empty objects into the golden file).
@@ -130,12 +138,14 @@ reference to the Function would GC in-flight runs on re-apply).
 - The manifest is exact. Fields that a competitor adds and SPEC does not
   (`terminationMessagePolicy: FallbackToLogsOnError`, `enableServiceLinks:
   false`, `krun.io/function-generation` labels) need a Decisions row before
-  they enter the builder; see SKILL.md "SPEC RISK".
+  they enter the builder; see SKILL.md "SPEC RISK (manifest extras)".
 
 ## Golden-file test (PLAN.md:486-487)
 
 Render one Function with `secretRefs`, `heartbeatTimeout`, `nodeSelector`,
-custom `runAsUser`, object storage on and off; compare the JSON in Vitest
+custom `runAsUser`, object storage on and off, `KRUN_JOB_HOST_USERS`
+true (no `hostUsers` key) and false (`hostUsers: false` under
+`template.spec`); compare the JSON in Vitest
 with `expect(rendered).toEqual(fixture)` against a checked-in fixture, or
 `await expect(JSON.stringify(rendered, null, 2)).toMatchFileSnapshot(path)`
 (never auto-updated in CI: a diff must fail). Assert

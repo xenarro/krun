@@ -331,6 +331,7 @@ afterAll(async () => { child.kill("SIGKILL"); await kube.close(); await fs.rm(di
   into a generated API call is UNVERIFIED: spike in P4.3a. The fake `Kube`
   layer cannot prove it, so add one `test/fake-kube` test where a hung
   request is interrupted and the server sees the connection close.
-- `@types/node ^26` is a runtime dependency of client-node 2.0.1 while
-  krun pins `^24`; duplicate global types are likely (UNVERIFIED); fix
-  with pnpm `overrides`.
+- `@types/node ^26` is a runtime dependency of client-node 2.0.1, and
+  krun pins `@types/node` `^26` too (STACK.md section 3), so one copy
+  should resolve; if `pnpm why @types/node` shows two, dedupe with pnpm
+  `overrides`.

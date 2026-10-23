@@ -1,8 +1,8 @@
 # krun specification
 
-Status: v1 draft, 2026-10-22. This file is the source of truth for behavior.
-PLAN.md holds the build order. Change this file only together with a new
-entry in section 15 (Decisions).
+Status: v1 draft, 2026-10-23. This file is the source of truth for behavior.
+PLAN.md holds the build order. Change this file only together with the
+matching row in section 15 (Decisions), which holds decisions in force.
 
 ## 1. Purpose
 
@@ -558,8 +558,11 @@ foreign_keys = ON
 auto_vacuum  = INCREMENTAL
 ```
 
-One synchronous connection per process (`better-sqlite3`), no pool.
-Transactions open with `begin immediate` through a `SqliteDriver` subclass.
+One synchronous connection per process (Node's built-in `node:sqlite`
+`Database`), no pool, no native addon. Kysely reaches it through an
+in-house dialect adapter (`packages/shared/src/store/sqlite/dialect.ts`):
+a `SqliteDialect`-compatible database object over `node:sqlite` prepared
+statements, with transactions opened as `begin immediate`.
 
 ## 7. Job contract
 
@@ -586,6 +589,7 @@ spec:
     spec:
       restartPolicy: Never
       terminationGracePeriodSeconds: 30
+      hostUsers: <false when KRUN_JOB_HOST_USERS is false; omitted otherwise>
       serviceAccountName: <function value>
       automountServiceAccountToken: false
       imagePullSecrets: <function value>
@@ -657,7 +661,7 @@ working at the terminal transition.
 
 ### 7.1 Function SDKs
 
-Two SDKs implement docs/INTERNAL-API.md: `@krun/sdk` for Node.js 20 or
+Two SDKs implement docs/INTERNAL-API.md: `@krun/sdk` for Node.js 22 or
 newer (`packages/sdk-node`, npm) and `krun` for Python 3.11 or newer
 (`sdk/python`, PyPI). Neither has runtime dependencies beyond the standard
 library. Both are optional: the contract is plain HTTP.
@@ -730,7 +734,9 @@ SDK major versions track the internal API version: SDK 1.x speaks
 
 ### 7.2 `krun init` and `krun deploy`
 
-`krun init --lang node|python [--name <function>] <dir>` scaffolds a
+`krun init --lang node|python [--name <function>] <dir>` (`--name`
+defaults to the directory's name; a missing `--lang` prompts on a TTY and
+fails with a usage message otherwise) scaffolds a
 function project from `packages/cli/templates/<lang>`:
 
 - handler file with the function above and tests: Node, one subprocess
@@ -1009,7 +1015,17 @@ with defaults and `max`, and a ResourceQuota whose `pods` is at least
 
 - Pod Security Admission labels `enforce`, `warn` and `audit` set to
   `restricted`, each with `-version` from `jobsNamespace.podSecurityVersion`
-  (default `v1.29`).
+  (default `v1.33`).
+- ValidatingAdmissionPolicy `krun-jobs-digest` and its binding, scoped to
+  the jobs namespace when `jobsNamespace.admissionPolicy` is true (default):
+  denies a Job or Pod whose containers or init containers carry an image
+  without `@sha256:`, so a digest-pinned image is enforced by the API
+  server even for objects krun did not create.
+- When `jobsNamespace.userNamespaces` is true, function pods run with
+  `hostUsers: false`: container root maps to an unprivileged host UID.
+  Requires Kubernetes 1.36 (GA) or 1.33 to 1.35 with the feature enabled,
+  and a node runtime and kernel that support ID-mapped mounts; default
+  false.
 - NetworkPolicy: default deny ingress and egress, then allow egress (1) UDP
   and TCP 53 to the peers in `jobsNamespace.dnsEgress` (default: namespace
   `kubernetes.io/metadata.name: kube-system`, pods `k8s-app: kube-dns`;
@@ -1124,7 +1140,23 @@ are signed with cosign keyless and carry a syft SPDX SBOM attestation
 
 ## 11. Observability
 
-Prometheus metrics on the admin listener of each process:
+Telemetry is OpenTelemetry through `@effect/opentelemetry`. Metrics are
+Effect `Metric`s exported by the OpenTelemetry Prometheus exporter on the
+admin listener's `/metrics`; the exposed names are exactly those in the
+table below (instrument names are chosen so the exporter's `_total` and
+unit suffixes produce them). Traces: every `/v1` and `/internal/v1`
+request, every scheduler loop iteration, every store call and every
+Kubernetes API call is an Effect span (`Effect.withSpan`); spans are
+exported over OTLP/HTTP only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set,
+else dropped. An incoming W3C `traceparent` on the public or internal API
+is honoured; webhook deliveries send one. Every log line inside a span
+carries `traceId` and `spanId`. Every span about a run carries the
+attribute `krun.run_id`, which correlates a run's spans across the
+gateway, the scheduler and the pod's internal calls; v1 does not join
+them into one trace. Span attributes never contain input, results, tokens
+or keys (the section 9 redaction list applies).
+
+Metrics on the admin listener of each process:
 
 | Metric | Owner | Meaning |
 |---|---|---|
@@ -1206,6 +1238,7 @@ is unset: the default applies and no validation runs on it.
 | `KRUN_MAX_ACTIVE_DEADLINE` | `86400` | both, Function validation |
 | `KRUN_ALLOWED_SERVICE_ACCOUNTS` | `krun-job-default` | both, Function validation; comma-separated |
 | `KRUN_K8S_CONCURRENCY` | `8` | scheduler |
+| `KRUN_JOB_HOST_USERS` | `true` | scheduler; `false` sets `hostUsers: false` on function pods (chart value `jobsNamespace.userNamespaces`) |
 | `KRUN_TTL_AFTER_FINISHED` | `86400` | scheduler |
 | `KRUN_RETENTION` | `720h` | scheduler |
 | `KRUN_ALLOWED_REGISTRIES` | empty, any | both |
@@ -1215,6 +1248,9 @@ is unset: the default applies and no validation runs on it.
 | `KRUN_WEBHOOK_ALLOWED_CIDRS` | empty | both; comma-separated CIDRs that pass the address check |
 | `KRUN_WEBHOOK_SECRET` | | scheduler; comma-separated secrets, one signature each |
 | `KRUN_LOG_LEVEL` | `info` | both |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | empty, traces dropped | both; standard OpenTelemetry variable, OTLP/HTTP |
+| `OTEL_SERVICE_NAME` | `krun-gateway` or `krun-scheduler` | both |
+| `OTEL_TRACES_SAMPLER`, `OTEL_TRACES_SAMPLER_ARG` | `parentbased_traceidratio`, `0.1` | both |
 
 `KRUN_API_URL`, `KRUN_API_KEY`, `KRUN_REGISTRY` are read by the CLI on a
 developer machine only (section 7.2); `krun validate` and `krun deploy` also
@@ -1267,6 +1303,7 @@ db:
       image: ""         # pinned by digest; required when enabled
       url: s3://bucket/krun
       existingSecret: ""   # keys: LITESTREAM_ACCESS_KEY_ID, LITESTREAM_SECRET_ACCESS_KEY; required when enabled
+      # rendered as a native sidecar: an init container with restartPolicy: Always
 
 crds:
   install: true         # CRD templated into the release
@@ -1278,7 +1315,9 @@ jobsNamespace:
   name: krun-jobs
   create: true
   keep: true            # helm.sh/resource-policy: keep on the Namespace
-  podSecurityVersion: v1.29
+  podSecurityVersion: v1.33
+  admissionPolicy: true # ValidatingAdmissionPolicy requiring digest-pinned images
+  userNamespaces: false # hostUsers: false on function pods; see section 9
   quota: { pods: "200", requests.cpu: "50", requests.memory: 100Gi, requests.ephemeral-storage: 100Gi }
   limitRange:
     defaultRequest: { cpu: 100m, memory: 128Mi, ephemeral-storage: 256Mi }
@@ -1291,6 +1330,16 @@ jobsNamespace:
 
 networkPolicy:
   metricsFrom: {}       # namespaceSelector allowed to scrape the admin ports; empty allows all
+
+gatewayApi:
+  httpRoute:            # Gateway API HTTPRoute for the public API (port 8080)
+    enabled: false
+    parentRefs: []      # Gateway references
+    hostnames: []
+
+observability:
+  otlpEndpoint: ""      # OTEL_EXPORTER_OTLP_ENDPOINT on both processes; empty drops traces
+  tracesSampleRatio: "0.1"
 
 metrics:
   podMonitor: { enabled: false, labels: {} }
@@ -1358,8 +1407,12 @@ name and instance) is the `serviceName`. The scheduler container runs with
 declares its ports and probes on its own admin port. Init containers run
 in order: Litestream restore (removes orphan `-wal` and `-shm` files when
 `krun.db` is absent, then `-if-replica-exists -if-db-not-exists`, when
-enabled) then `krun migrate`. With Litestream enabled, a sidecar from
-`db.embedded.litestream.image` streams the WAL to object storage. SQLite in
+enabled) then `krun migrate`. With Litestream enabled, a native sidecar
+(an init container with `restartPolicy: Always`, placed after the restore
+init container and before `krun migrate`) from
+`db.embedded.litestream.image` streams the WAL to object storage; the
+kubelet starts it before the app containers and stops it after them, so no
+WAL write is missed at shutdown. SQLite in
 WAL mode supports two processes on one local volume. Network filesystems
 are not supported. One replica means an upgrade is a brief downtime.
 
@@ -1371,7 +1424,9 @@ apply `deploy/crds/functions.krun.io.yaml` by hand before every
 internal port; no Service exposes the admin ports); the krun namespace
 NetworkPolicies from section 9; ServiceAccounts, Roles and RoleBindings for
 the gateway, the scheduler and the migrate hook; the Roles
-`krun-function-author` and `krun-job-viewer`; a PodMonitor (one endpoint
+`krun-function-author` and `krun-job-viewer`; the ValidatingAdmissionPolicy
+and binding when `jobsNamespace.admissionPolicy` is true; an HTTPRoute to
+the public Service when `gatewayApi.httpRoute.enabled`; a PodMonitor (one endpoint
 per admin port name) and a PrometheusRule when enabled under `metrics`;
 and the jobs namespace resources per the section 9 rendering rule, the
 Namespace kept on uninstall when `jobsNamespace.keep` is true. The chart
@@ -1430,47 +1485,56 @@ downtime must stay below `KRUN_TTL_AFTER_FINISHED`.
   64 KiB.
 - Run history: retention window, default 30 days. Export for longer history
   is out of scope.
-- Kubernetes 1.29 or newer: CEL validation rules in the CRD, Pod Security
-  Admission labels, `DisruptionTarget` pod condition. A CNI that enforces
-  NetworkPolicy; the isolation in section 9 is void without one.
+- Kubernetes 1.33 or newer: CEL validation rules in the CRD, Pod Security
+  Admission labels, `DisruptionTarget` pod condition, native sidecar
+  containers, ValidatingAdmissionPolicy. User namespaces for function pods
+  need 1.36, or the feature enabled on 1.33 to 1.35. A CNI that enforces
+  NetworkPolicy; the isolation in section 9 is void without one. Gateway
+  API CRDs only when the HTTPRoute is enabled.
+- Postgres 16 or newer; CI runs the contract suite against Postgres 18.
+- Node.js 26 for krun's own image; the Node SDK supports Node 22 or newer
+  (Node 20 reached end of life in April 2026).
 - One trust domain per installation for function authors.
 
 ## 15. Decisions
 
+Each row is the decision in force. Ids are stable references; a gap means
+the number is unused.
+
 | Id | Decision | Why |
 |---|---|---|
-| D1 | Implementation language: see D15 | superseded on 2026-10-22 before any code existed; the original choice and its reasoning are in git history |
-| D2 | No CRD, no operator pattern | a custom database was chosen for history and queries; Kubernetes is the execution engine only. Amended by D17: a CRD for function definitions only; runs stay in the database |
-| D3 | Postgres as system of record, SQLite as `db.mode: embedded` | every krun need maps to a built-in feature, shared SQL across both, Litestream for embedded backups |
+| D2 | Runs live in krun's database; Kubernetes is the execution engine. The only custom resource is the `Function` definition (D17); there is no operator for runs | a database gives run history, filtering and pagination that etcd objects cannot |
+| D3 | Postgres is the system of record; SQLite is `db.mode: embedded` | every krun need maps to a built-in database feature; one SQL shape for both; Litestream backs up embedded mode |
 | D4 | No Kafka, Redis, RocksDB, LevelDB or other KV engines | Kafka has no lookup or update by id; Redis is not a system of record; KV engines mean hand-built indexes with no gain at this write rate |
-| D5 | Gateway and scheduler are separate containers and Deployments; the only contract is the database | independent scaling, no RPC coupling, gateway keeps accepting when the scheduler is down |
-| D6 | Job pods never hold database or krun credentials; input via per-run Secret, output via termination message or presigned URL | one compromised function image must not read other tenants' data; no SDK inside function images. Amended by D16. |
-| D7 | API keys in a mounted Secret file, not in the database | no key management API needed in v1; the Secret is the protection boundary |
-| D8 | No automatic retries, `backoffLimit: 0` | retries with side effects must be visible and chosen by the client |
+| D5 | Gateway and scheduler are separate processes and Deployments; the only contract between them is the database | independent scaling, no RPC coupling, the gateway keeps accepting runs when the scheduler is down |
+| D6 | Job pods never hold database or API-key credentials; they reach krun only through the internal API with a per-run token (D16) | one compromised function image must not read other runs' data |
+| D7 | API keys live in a mounted Secret file, not in the database | no key management API in v1; the Secret is the protection boundary |
+| D8 | No automatic retries; Jobs run with `backoffLimit: 0` | retries with side effects must be visible and chosen by the client |
 | D9 | Run ids are UUIDv7 | time-ordered ids give stable cursor pagination and match `created_at` order |
 | D10 | No table partitioning in v1 | Postgres requires the partition key inside unique constraints, which breaks the idempotency index; batched delete suffices |
-| D11 | Per-run Secret has no owner reference; scheduler deletes it on terminal transition plus orphan sweep | avoids a create-patch dance against the Job UID |
-| D12 | Registry and keys reload by 30 second polling, not file watchers | ConfigMap mounts update via symlink swap; polling is enough and needs no dependency. Amended by D17: functions come from an informer; keys still poll |
-| D13 | Failure error holds a log tail, success stores no logs | enough to debug a failed run without a log pipeline; archiving is v2 |
-| D14 | Target workload stated as tens of seconds to hours | Job-per-run cold start and API server load make sub-second or high-rate functions a poor fit |
-| D15 | Supersedes D1 (amended by D35): Node.js 24 LTS, TypeScript, ES modules, pnpm workspace (`packages/shared`, `apps/gateway`, `apps/scheduler`), Fastify with TypeBox route schemas, `pg` plus Kysely, `better-sqlite3`, `@kubernetes/client-node` 2.x, pino, prom-client, single image | owner preference, 2026-10-22. Fastify validates request bodies with ajv, the same library compiles function input schemas; Kysely gives typed SQL and migrations for both dialects; `better-sqlite3` is the driver Kysely's SQLite dialect targets and ships prebuilt binaries; `@kubernetes/client-node` covers Jobs, Secrets, informers and the Lease API. Amended by D17: functions come from a CRD informer. Cost: Lease leader election is written in house, about 40 lines. |
-| D16 | Amends D6: job pods fetch input, report status and write results through the gateway's internal API with a per-run token delivered by a per-run Secret; no input volume, no termination message | owner decision 2026-10-22. Input and result sizes are no longer bound by the Secret or the 4 KB termination message; runtime status becomes visible to consumers; pods still hold no database or API-key credentials, the token is scoped to one run and dies at the terminal transition. Cost: job pods get egress to one gateway port; function images need an HTTP client. |
-| D17 | Supersedes D2 for function definitions and D12 for the registry: functions are a CRD (`functions.krun.io`, `v1alpha1`) read by an informer in the gateway and the scheduler; no registry ConfigMap; runs stay in the database | owner decision 2026-10-22. One ConfigMap caps all functions at 1 MiB; a CRD gives one etcd object per function, per-team RBAC, apply-time validation through OpenAPI and CEL, status on the resource, and propagation within a second. Costs: the CRD install is mandatory, the gateway gains read-only RBAC on one resource type, and gateway readiness needs the API server at startup. |
-| D18 | Run `state` and `jobStatus` derive from Job and Pod informers only; `running` means the pod phase is `Running`; `runtimeStatus` from the function is optional and never drives state | owner decision 2026-10-22. A function that ignores the contract is still tracked accurately; a pod stuck in `ImagePullBackOff` or `Unschedulable` is visible on the run instead of showing as running; cold start is measured to the container actually running. |
-| D19 | Failure truth comes from Kubernetes: `failureReason` enum on every failed run, log tail captured on the first terminating pod event, and an opt-in per-function `heartbeatTimeout` that kills and fails a run whose status reports stop | owner decision 2026-10-22. A function that crashes without reporting is classified within seconds; a hung function is bounded by its own promise instead of by `activeDeadlineSeconds`; the opt-in keeps long silent computations safe. Rejected: flagging stale runs without killing, which burns capacity and leaves the client without an outcome. |
-| D20 | Node.js and Python SDKs plus `krun init` templates implement the HTTP contract; SDKs have no runtime dependencies and a local mode; the contract itself stays plain HTTP; functions report application errors through `PUT error` | owner decision 2026-10-22, after reviewing Knative Functions (`func create -l <lang>`, per-language templates, local `func run`) and Argo Workflows (self-reported progress through a side channel, 256 KB inline result cap, SDKs per language). Template plus SDK is the golden path, curl the escape hatch. Two languages first; Go and Java are v2. |
-| D21 | The custom resource is `Function` (`functions.krun.io`, short name `kfn`), and the whole vocabulary follows: `/v1/functions`, `functions:read`, `KRUN_FUNCTION`, `krun.io/function`, `function_name`, metric label `function`, `error.source` `function` | owner decision 2026-10-22: the thing registered is an HTTP-triggered function, not a task; one word everywhere keeps the agent and the docs consistent. Name clash with OpenFaaS and Fission `functions` is accepted; the short name and the fully qualified name resolve it. |
-| D22 | The platform chart templates the CRD (`crds.install`, `crds.keep`) and renders no Function resources; functions deploy by `kubectl apply -f function.yaml`, through `krun deploy` or GitOps; a Role `krun-function-author` is rendered without a binding | owner decision 2026-10-22. Two lifecycles, two owners: the platform team owns the type, function teams own instances. Templating the CRD gives upgrades through `helm upgrade`, which `crds/` never does; a CRD-only chart adds an install step and an ordering rule for no gain while there is one API version. A chart per function is ceremony around 25 lines of YAML. |
-| D23 | Secret and Job create errors are classified by status: 403 quota, 429, 5xx and network errors back off; any other 4xx fails the run with `job_create_failed` | a persistent admission or RBAC rejection must surface on the run within seconds; a control-plane blip must not fail runs |
-| D24 | The internal API is versioned at `/internal/v1`, independent of `/v1`; SDK major N speaks `/internal/vN`; OpenAPI documents for both APIs are generated from the Zod route schemas | SDKs and gateway evolve separately; curl stays allowed, so no User-Agent gating |
-| D25 | `priority` is 0 to 9 and needs scope `runs:priority` above 0; keys carry an optional per-key `maxQueued`; Jobs carry `krun.io/created-by` | fairness between keys sharing a function and cost attribution; the scheduler never reads keys.yaml |
-| D26 | One trust domain per installation for function authors; `KRUN_ALLOWED_SERVICE_ACCOUNTS` and the `krun-*` `secretRefs` rule bound what a Function may reference; `LimitRange.max` caps one function | D6 isolates pods from krun, not authors from each other; per-tenant namespaces are a non-goal |
-| D27 | The per-run token is persisted before the Job exists and accepted while the run is `queued` with a token; Secrets are immutable; `markScheduled` returning false deletes Job and Secret | no 401 window at pod start, no stranded tokens on reclaim, no orphan Jobs |
-| D28 | The scheduler deletes Jobs after recording the terminal state; `ttlSecondsAfterFinished` defaults to 86400 as a safety net; `job_lost` keeps a written result | a scheduler outage longer than five minutes must not turn successes into failures |
+| D11 | The per-run Secret has no owner reference; the scheduler deletes it at the terminal transition, an orphan sweep catches the rest | avoids a create-then-patch dance against the Job UID |
+| D12 | API keys reload by a 30 second poll on the mounted file's content hash, not a file watcher | Secret mounts update through a symlink swap; polling is enough and needs no dependency |
+| D13 | A failed run stores a log tail; a successful run stores no logs | enough to debug a failure without a log pipeline |
+| D14 | Target workload: runs of tens of seconds to hours | Job-per-run cold start and API server load make sub-second or high-rate functions a poor fit |
+| D15 | TypeScript 7 on Node.js 26, ES modules, one pnpm workspace (`packages/shared`, `packages/sdk-node`, `packages/cli`, `apps/gateway`, `apps/scheduler`), one container image with the `gateway`, `scheduler`, `migrate` and `validate` entrypoints. docs/STACK.md is the normative list of libraries | one language across services, CLI and SDK; Node 26 is LTS to April 2029 |
+| D16 | Job pods fetch input, report status and write results or errors through the gateway's internal API with a per-run token from a per-run Secret (docs/INTERNAL-API.md) | input and result sizes are not bound by Secret or termination-message limits; runtime status reaches callers; the token is scoped to one run and dies at its end |
+| D17 | Function definitions are a CRD (`functions.krun.io`, `v1alpha1`) read by an informer in the gateway and the scheduler | one etcd object per function with no aggregate size cap, per-team RBAC, apply-time validation through OpenAPI and CEL, status on the resource, propagation within a second |
+| D18 | Run `state` and `jobStatus` derive from Job and Pod informers only; `running` means the pod phase is `Running`; `runtimeStatus` never drives state | a function that ignores the contract is still tracked; a pod stuck before start is visible on the run |
+| D19 | Failure truth comes from Kubernetes: a `failureReason` on every failed run, a log tail captured on the first terminating pod event, and an opt-in per-function `heartbeatTimeout` that kills and fails a silent run | crashes are classified within seconds; a hung function is bounded by its own promise; long silent computations stay safe |
+| D20 | Node.js and Python SDKs and the `krun init` templates implement the internal API; the SDKs have no runtime dependencies and a local mode; the contract stays plain HTTP | template plus SDK is the golden path, curl the escape hatch |
+| D21 | The custom resource is `Function` (short name `kfn`) and the whole vocabulary follows it: `/v1/functions`, `functions:read`, `KRUN_FUNCTION`, `krun.io/function`, `function_name` | one word everywhere; the short name and the qualified name resolve clashes with other `functions` CRDs |
+| D22 | The platform chart templates the CRD (`crds.install`, `crds.keep`) and renders no Function resources; functions deploy by `kubectl apply`, `krun deploy` or GitOps; Role `krun-function-author` is rendered without a binding | the platform team owns the type, function teams own instances; `helm upgrade` upgrades the CRD |
+| D23 | Secret and Job create errors are classified by status: 403 quota, 429, 5xx and network errors back off; any other 4xx fails the run with `job_create_failed` | a persistent admission or RBAC rejection surfaces within seconds; a control-plane blip fails nothing |
+| D24 | The internal API is versioned at `/internal/v1`, independent of `/v1`; SDK major N speaks `/internal/vN`; OpenAPI documents for both APIs are generated from the Zod route schemas | SDKs and gateway evolve separately; curl stays allowed |
+| D25 | `priority` is 0 to 9 and needs scope `runs:priority` above 0; keys carry an optional per-key `maxQueued`; Jobs carry `krun.io/created-by` | fairness between keys sharing a function, cost attribution |
+| D26 | One trust domain per installation for function authors; `KRUN_ALLOWED_SERVICE_ACCOUNTS` and the `krun-*` `secretRefs` rule bound what a Function may reference; `LimitRange.max` caps one function | pods are isolated from krun; authors are not isolated from each other, and per-tenant namespaces are a non-goal |
+| D27 | The per-run token is persisted before the Job exists and accepted while the run is `queued` with a token; Secrets are immutable; `markScheduled` returning false deletes Job and Secret | no 401 window at pod start, no stranded tokens, no orphan Jobs |
+| D28 | The scheduler deletes Jobs after recording the terminal state; `ttlSecondsAfterFinished` defaults to 86400 as a safety net; `job_lost` keeps a written result | a scheduler outage must not turn successes into failures |
 | D29 | Deliveries are inserted in the terminal transaction; webhook signatures carry a timestamp and one signature per secret; receivers reject skew over 300 seconds | no lost deliveries on a crash, no replay, secret rotation without downtime |
-| D30 | Probes and metrics live on a third admin listener (`:9090`), never on the public port; the krun namespace gets per-pod ingress NetworkPolicies; every chart pod satisfies PSA `restricted`; the gateway drains for `KRUN_SHUTDOWN_DELAY` before closing | unauthenticated endpoints stay inside the cluster; rollouts without 502s |
-| D31 | Webhook targets pass the address check when inside `KRUN_WEBHOOK_ALLOWED_CIDRS` or when their range is `unicast`; private ranges are rejected unless listed | in-cluster receivers (pod and Service CIDRs) are a real use and the e2e receiver is one; an explicit allowlist keeps the SSRF guard as the default |
-| D32 | The jobs namespace is kept on `helm uninstall` (`jobsNamespace.keep`), like the CRD; `egressCIDRs` are `ipBlock` objects with `except`; LimitRange and ResourceQuota bound ephemeral-storage | the platform team's Secrets and in-flight Jobs must survive a release removal; a bare `0.0.0.0/0` would expose cloud metadata; one function must not fill a node disk |
-| D33 | `@kubernetes/client-node` informers have no resync, so a leader reconcile timer re-runs the handlers over the caches every 5 minutes; the heartbeat loop and the `job_lost` check start only after the informers' initial sync and defer to the informer path for runs whose cached Job is terminal | without this a completed run could be killed as `heartbeat_timeout` during startup or an object-store outage, and `job_lost` and object-store retries would never fire |
-| D34 | The public API is resource-oriented per the Google AIPs, normative in docs/API.md: resource names `functions/{function}/runs/{run}`, standard and custom methods (`:wait`, `:cancel`, `:getResult`, `:watch`), AIP-193 errors with `ErrorInfo.reason`, AIP-158 pagination, an AIP-160 filter subset, BASIC and FULL views, `requestId` idempotency, 201 on create | one well-known convention instead of a bespoke one: client generators, filters and error handling work the same way as against any AIP service; deviations are listed and justified in docs/API.md section 11 |
-| D35 | Amends D15: Effect 4 is the foundation of every process (services, layers, typed errors, scopes, schedules, streams, clock) with Fastify 5 as the HTTP engine inside it; Zod 4 is the only schema language for krun's own schemas and generates the CRD and OpenAPI; Ajv only for user `inputSchema`; time from Effect `Clock`, `DateTime`, `Duration`; Vitest with `@effect/vitest`; TypeScript 7; Kysely stays. TypeBox, `@fastify/under-pressure`, `close-with-grace` and `node:test` are dropped. docs/STACK.md is normative | owner decision 2026-10-23. Every concurrency rule in section 8 maps to an Effect primitive and every timer becomes testable with `TestClock`; Zod gives one schema source for routes, CRD, config and OpenAPI. Kysely stays because `@effect/sql-kysely` supports Effect 3 only and `effect/sql` is unstable and Effect Schema based. The SDKs stay dependency-free |
+| D30 | Probes and metrics live on an admin listener (`:9090`), never on the public port; per-pod ingress NetworkPolicies in the krun namespace; every chart pod satisfies PSA `restricted`; the gateway drains for `KRUN_SHUTDOWN_DELAY` before closing | unauthenticated endpoints stay inside the cluster; rollouts without 502s |
+| D31 | Webhook targets pass the address check when inside `KRUN_WEBHOOK_ALLOWED_CIDRS` or when their range is `unicast` | in-cluster receivers are a real use; an explicit allowlist keeps the SSRF guard as the default |
+| D32 | The jobs namespace is kept on `helm uninstall` (`jobsNamespace.keep`); `egressCIDRs` are `ipBlock` objects with `except`; LimitRange and ResourceQuota bound ephemeral-storage | the platform team's Secrets and in-flight Jobs survive a release removal; cloud metadata stays unreachable; one function cannot fill a node disk |
+| D33 | A leader reconcile timer re-runs the Job and Pod handlers over the informer caches every 5 minutes; the heartbeat loop and the `job_lost` check start only after the informers' initial sync and defer to the informer path for runs whose cached Job is terminal | `@kubernetes/client-node` informers have no resync; a completed run is never killed as `heartbeat_timeout` |
+| D34 | The public API is resource-oriented per the Google AIPs, normative in docs/API.md | one well-known convention for clients, filters, pagination and errors; deviations are listed in docs/API.md section 11 |
+| D35 | Effect 4 is the foundation of every process (services, layers, typed errors, scopes, schedules, streams, clock) with Fastify 5 as the HTTP engine inside it; Zod 4 is the only schema language for krun's own schemas and generates the CRD and OpenAPI; Ajv compiles only user `inputSchema`; time comes from Effect `Clock`, `DateTime`, `Duration`; tests run on Vitest with `@effect/vitest` | every concurrency rule in section 8 maps to an Effect primitive and every timer is testable with `TestClock`; one schema source for routes, CRD, config and OpenAPI |
+| D36 | Data through Kysely on `pg` and Node's built-in `node:sqlite`; telemetry through OpenTelemetry (`@effect/opentelemetry`: Prometheus `/metrics`, OTLP traces when configured); Kubernetes 1.33 minimum with Litestream as a native sidecar, a digest ValidatingAdmissionPolicy, optional user namespaces and an optional Gateway API HTTPRoute; Postgres 16 minimum, CI on 18 | no native addons in the image; a run is traceable across gateway, store and Kubernetes; image policy enforced by the API server |

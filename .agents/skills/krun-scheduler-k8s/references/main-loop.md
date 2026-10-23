@@ -28,11 +28,18 @@ yield* store.subscribe.pipe(                            // notifies, kind state 
   Stream.runForEach(() => Queue.offer(wake, undefined)), Effect.forkIn(leaderScope))
 yield* Queue.take(wake).pipe(                           // the one loop fiber
   Effect.zipRight(iteration.pipe(
+    Effect.withSpan("scheduler.iteration"),             // one span per iteration (SPEC section 11)
     Effect.timeout("10 seconds"),                       // iteration deadline
     Effect.ensuring(releaseUnprocessedClaims),          // leases of claimed, not yet scheduled runs
     Effect.catchAll(logIterationFailure))),             // a failed iteration never ends the loop
   Effect.forever, Effect.forkIn(leaderScope))
 ```
+
+Spans: the iteration span is the parent of the step spans and of every
+`Kube` and store call made inside it; give step 4 a child span per run
+(`scheduler.schedule_run`, attributes `krun.run_id`, `krun.function`) so
+one run's Secret and Job creates group together. Attributes never carry
+the token, env or manifest (SPEC section 11).
 
 Two notifies during one iteration yield one extra iteration, not two
 (acceptance in PLAN.md:518-519): the sliding queue holds at most one wake.

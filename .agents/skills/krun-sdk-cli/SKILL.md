@@ -1,6 +1,6 @@
 ---
 name: krun-sdk-cli
-description: Use when building krun SDKs, krun init or krun deploy. Zero-dependency run(), heartbeat, local mode, conformance table, templates.
+description: Use when building krun SDKs, krun init or krun deploy. Zero-dependency run(), heartbeat, local mode, conformance table, templates, CLI prompts (clack), colour (picocolors), docker and kubectl via tinyexec, publint and attw before publish.
 ---
 
 # krun SDKs and CLI (`@krun/sdk`, Python `krun`, `krun init`, `krun deploy`)
@@ -17,7 +17,7 @@ Three different worlds, three different stacks:
 |---|---|---|
 | `packages/sdk-node` | plain TypeScript, no runtime dependencies, no Effect; Vitest as a dev dependency | runs inside other teams' images (docs/STACK.md principle 6) |
 | `sdk/python/krun` | Python 3.11+ standard library; `uv`, `ruff`, `pytest`, `mypy --strict` for development | same reason (SPEC.md:660-663) |
-| `packages/cli` | an Effect 4 program (`NodeRuntime.runMain`, services, layers, `Clock`), `node:util` `parseArgs`, Zod Function schema | krun's own process (docs/STACK.md principle 1, D35) |
+| `packages/cli` | an Effect 4 program (`NodeRuntime.runMain`, services, layers, `Clock`) on Node 26, `node:util` `parseArgs`, Zod Function schema, `@clack/prompts`, `picocolors`, `tinyexec` | krun's own process (docs/STACK.md principle 1 and section 2.7, D35, D36) |
 | `packages/cli/templates/*` | the function author's project: dependency-free apart from the SDK; Node test with `node --test`, Python test with pytest | not krun code; intentional, see `references/templates.md` |
 
 ## When to use
@@ -45,8 +45,12 @@ For the CLI, also load the Effect skills docs/STACK.md section 5 lists and
   order 686-721, local mode 723-726, versioning 728-729); SPEC.md:731-772
   section 7.2 (`init` 733-750, `deploy` 752-763, packaging 770-772).
 - docs/STACK.md principles 1, 2, 3 and 6, sections 2.5 (`yaml`, `ajv`,
-  `parseArgs`), 3 (Vitest, `@effect/vitest`, fast-check) and 4 (process
-  shape, errors, time).
+  `parseArgs`), 2.7 (CLI only: `@clack/prompts`, `picocolors`,
+  `tinyexec`; non-TTY never prompts), 2.8 (why not commander, execa, ora),
+  3 (Vitest, `@effect/vitest`, fast-check, `publint`,
+  `@arethetypeswrong/cli`) and 4 (process shape, errors, time).
+- SPEC section 14: Node.js 26 for krun's own image, the Node SDK supports
+  Node 22 or newer (SPEC.md:664, 1495-1496).
 - SPEC.md:299-318 internal API summary; SPEC.md:126-127 and 166-173 (the Zod
   schema and `krun validate` ceilings).
 - SPEC.md:19-24 non-goals (no SDKs beyond Node and Python, no local gateway
@@ -146,7 +150,13 @@ For the CLI, also load the Effect skills docs/STACK.md section 5 lists and
     version.
 21. `krun init` writes exactly the files in SPEC.md:736-750; `krun deploy`
     does exactly the steps in SPEC.md:752-763. No extra flags (PLAN.md:31-32):
-    there is no `--image`, `--no-build` or interactive prompt.
+    there is no `--image` or `--no-build`. `--name` defaults to the
+    basename of `<dir>` and is never prompted for (SPEC.md:737-739). The
+    only interactive surface is `krun init` on a TTY when `--lang` is
+    missing (clack `select` for the language), plus spinners for `krun
+    deploy` steps on a TTY (docs/STACK.md 2.7). A non-TTY run never
+    prompts: a missing `--lang` fails with a usage message naming the
+    flag, exit 1.
 22. The CLI never reads `KRUN_GATEWAY_URL` (SPEC.md:762-763): that variable
     switches SDKs out of local mode and the templates' subprocess tests
     rely on it being unset.
@@ -163,10 +173,11 @@ For the CLI, also load the Effect skills docs/STACK.md section 5 lists and
     or status bodies from the SDK (SPEC.md:1151-1153 lists them as redacted).
 26. The CLI is an Effect program: entry `NodeRuntime.runMain`, argv parsed
     with `node:util` `parseArgs` (no `effect/cli`, no commander), `docker`,
-    `kubectl`, the filesystem, env and output behind small services provided
-    by layers, failures as `Data.TaggedError`s mapped to exit codes and
-    "Try this:" blocks at the edge, time from `Clock` (CLAUDE.md rules 6 and
-    8, docs/STACK.md section 4).
+    `kubectl`, the filesystem, env, the terminal (TTY check, prompts,
+    spinners) and output behind small services provided by layers,
+    failures as `Data.TaggedError`s mapped to exit codes and "Try this:"
+    blocks at the edge, time from `Clock` (CLAUDE.md rules 6 and 8,
+    docs/STACK.md section 4).
 27. `krun validate` (in-process, also from `deploy`) parses YAML with
     `yaml`, runs the Zod Function schema from
     `packages/shared/src/functions/schema.ts`, then the shared second-layer
@@ -175,6 +186,20 @@ For the CLI, also load the Effect skills docs/STACK.md section 5 lists and
     `KRUN_ALLOWED_SERVICE_ACCOUNTS`, `KRUN_WEBHOOK_ALLOWED_HOSTS` at the
     SPEC section 12 defaults, values printed on stderr (SPEC.md:166-173,
     PLAN.md:351-361). It never reads the generated CRD or editor JSON.
+28. Child processes go through `tinyexec` only, wrapped in the `Docker` and
+    `Kubectl` services with `Effect.tryPromise`, the interruption signal
+    passed to the child so Ctrl-C or a timeout kills it; never
+    `node:child_process` directly, never execa (docs/STACK.md 2.7, 2.8).
+29. Prompts and spinners are `@clack/prompts` behind a `Prompt` service;
+    colour is `picocolors` on human status lines only (stderr), never on
+    the stdout commands users paste; `NO_COLOR` disables it
+    (docs/STACK.md 2.7). A cancelled prompt (clack's cancel symbol) is a
+    tagged `Cancelled` failure, exit 130 like Ctrl-C elsewhere.
+30. Before publishing, `@krun/sdk` and `@krun/cli` pass `publint` and
+    `attw --pack` (PLAN P9.5, docs/STACK.md section 3): `exports` with
+    `types` and `import` conditions pointing into `dist/`, `files`
+    covering `dist/` (and `templates/` for the CLI), no `src/` paths in
+    the published manifest.
 
 ## `run()` in one screen
 
@@ -232,8 +257,10 @@ extraction and "Try this" hints in `references/deploy.md`. Order
 → `krun validate` → `kubectl apply -f function.yaml -n <ns>` → wait
 `Ready=True` (120 s cap) → print curl, `kubectl logs -f`, `GetRun` curl.
 `--no-apply` stops after writing the digest. Shell out to `docker` and
-`kubectl`; the CLI holds no Kubernetes client and must not pull the server
-packages' runtime (SPEC.md:126-127 says `validate` imports the schema only).
+`kubectl` through `tinyexec`; the CLI holds no Kubernetes client and must
+not pull the server packages' runtime (SPEC.md:126-127 says `validate`
+imports the schema only). On a TTY each step runs under a clack spinner;
+off a TTY plain progress lines go to stderr.
 
 ## Library facts
 
@@ -246,12 +273,35 @@ confirm in a REPL before relying on them.
 - Node never strips TS under `node_modules`: `@krun/sdk` and `@krun/cli`
   publish built `.js` from `dist/`; the templates and `npx @krun/cli` consume
   `dist/`.
-- `@krun/sdk` targets Node 20+ (SPEC.md:660): global `fetch` and
-  `AbortSignal.timeout` exist there; do not use Node 22+ only APIs in
-  `src/`. Its tests run under Vitest 5 on Node 24 (Vitest needs 22.12 or
-  24); that is a dev-time requirement, not the SDK's floor. The SDK does not
-  need `undici`: global fetch is enough, and mixing the package with the
-  bundled fetch is a known trap.
+- `@krun/sdk` targets Node 22 or newer (SPEC.md:664, section 14): global
+  `fetch` and `AbortSignal.timeout` exist there; use no API that Node 22
+  lacks in `src/`. CI runs the SDK's Vitest 5 suite on Node 22 and on
+  Node 26 (Vitest 5 supports Node 22.12 or newer), so a Node 22 gap fails
+  CI. The SDK does not need `undici`: global fetch is enough, and mixing
+  the package with the bundled fetch is a known trap.
+  `"engines": { "node": ">=22" }`.
+- `@clack/prompts` 1.x: `intro`, `outro`, `select`, `text`, `spinner()`
+  (`start`, `stop`), `isCancel`, `cancel`. Prompts return a value or the
+  cancel symbol; test `isCancel` on every answer. Whether 1.x prompts and
+  spinners accept an output stream (so they can write to stderr) is
+  UNVERIFIED; check its README. If they cannot, use them only when stdout
+  is a TTY and stop the spinner before writing the stdout commands.
+- `picocolors`: `createColors(enabled)` returns a colour set; compute
+  `enabled` from the stderr TTY and `NO_COLOR` / `FORCE_COLOR` yourself,
+  because the default export decides from stdout. UNVERIFIED in detail
+  against 1.1; check its README.
+- `tinyexec` 1.x: `x(command, args, options)` returns a promise-like
+  process with `stdout`, `stderr`, `exitCode` and async iteration over
+  output lines; options include `throwOnError`, `timeout`, `signal` and
+  `nodeOptions` (`cwd`, `env`). Option names UNVERIFIED against the
+  installed README. Pass `throwOnError: false` and classify the exit code
+  in the service, so every failure is a tagged error with the stderr
+  tail, never a thrown `NonZeroExitError`.
+- `publint` and `attw --pack` (`@arethetypeswrong/cli`): an ESM-only
+  package makes attw report the CommonJS resolution modes; either accept
+  that with attw's ESM-only profile or ship a CJS build. Krun ships ESM
+  only (PLAN section 2), so use the profile; check the attw README for
+  its exact flag name.
 - Gate and heartbeat unit tests: `vi.useFakeTimers()` and
   `vi.advanceTimersByTimeAsync`. The gate takes an injected monotonic
   `now: () => number` (default `performance.now`, never the wall clock) so
@@ -261,8 +311,11 @@ confirm in a REPL before relying on them.
   a real child process with a deadline on its exit; an in-process test
   cannot see a non-unref'd timer, and Vitest's own teardown would hide it.
 - CLI tests use `@effect/vitest`: `it.effect` with fake `Docker`,
-  `Kubectl`, `Fs` layers and `TestClock` for the 1 s / 120 s Ready poll
-  (`Schedule.spaced("1 second")` under `Effect.timeout("120 seconds")`).
+  `Kubectl`, `Fs`, `Prompt` and `Terminal` layers (TTY forced on or off,
+  scripted prompt answers including a cancel) and `TestClock` for the
+  1 s / 120 s Ready poll (`Schedule.spaced("1 second")` under
+  `Effect.timeout("120 seconds")`). No test drives real clack or a real
+  `docker`.
 - Python (UNVERIFIED, stdlib-stable): `urllib.request.Request(url,
   data=bytes, method='PUT', headers=...)`, `urlopen(req, timeout=10)`;
   `HTTPError` is a subclass of `URLError`, catch it first and read `.code`;
@@ -298,10 +351,11 @@ confirm in a REPL before relying on them.
   previous apply is func's old-ReplicaSet problem (`pkg/k8s/wait.go:22-146`).
   Fail fast on `Ready=False` with one of the SPEC.md:154-157 reasons rather
   than burning the cap (`pkg/knative/deployer.go:257-293`).
-- Progress on stderr, machine results on stdout; print a heartbeat line
-  every 10 s during a silent `docker build`/`push` (a forked fiber on
-  `Schedule.spaced("10 seconds")`, interrupted when the child exits); users
-  kill quiet CLIs (`pkg/functions/client.go:742-746`, `:812-836`).
+- Progress on stderr, machine results on stdout; on a TTY a clack spinner
+  shows that a silent `docker build`/`push` is alive; off a TTY print a
+  heartbeat line every 10 s (a forked fiber on `Schedule.spaced("10
+  seconds")`, interrupted when the child exits); users kill quiet CLIs
+  (`pkg/functions/client.go:742-746`, `:812-836`).
 - Wrap errors at the CLI boundary with a "Try this:" block per tagged error;
   keep core messages terse (`cmd/errors.go`, `pkg/functions/errors.go:29-31`).
 - Bind every flag to `KRUN_<FLAG>` and say `($KRUN_REGISTRY)` in its help;
@@ -348,10 +402,15 @@ confirm in a REPL before relying on them.
 - SPEC RISK: `@krun/cli` needs the Function schema and second-layer
   validator from `packages/shared` (SPEC.md:126-127), which legitimately
   bring `effect`, `zod`, `ajv`, `ajv-formats` and `yaml`, but `npx @krun/cli`
-  must not pull `pg`, `kysely`, `better-sqlite3`, `fastify`,
-  `@kubernetes/client-node`, `@aws-sdk/*` along. SPEC and PLAN do not say how
+  must not pull `pg`, `kysely`, `fastify`, `@kubernetes/client-node`,
+  `@aws-sdk/*` or the `@opentelemetry/*` packages along. SPEC and PLAN do not say how
   (subpath export, a schema-only package, or bundling). Add a Decisions row
   or write BLOCKED; do not silently add a dependency (PLAN.md:29-30).
+- `krun init` without `--name` uses the directory's basename on a TTY
+  and off it alike (SPEC.md:737-739, docs/STACK.md 2.7); only a missing
+  `--lang` behaves differently (prompt on a TTY, usage error otherwise).
+  Test both: `krun init --lang node t` off a TTY names the function `t`;
+  `krun init t` off a TTY exits 1 naming `--lang`.
 - SPEC RISK: SPEC.md:758 prints `kubectl logs -f -n <jobs namespace>` but
   the CLI reads only `KRUN_NAMESPACE`, `KRUN_API_URL`, `KRUN_API_KEY`,
   `KRUN_REGISTRY` and the five validation ceilings (SPEC.md:752-762,
@@ -365,6 +424,9 @@ confirm in a REPL before relying on them.
 
 ## Before marking a task done
 
+- Before a release (P9.5) and whenever `package.json` `exports`, `files`
+  or the build output changes: `pnpm --filter @krun/sdk exec publint`,
+  the same for `@krun/cli`, and `attw --pack` in each package directory.
 - Run the task's acceptance verbatim: P8.1 `pnpm exec vitest run
   packages/sdk-node` with the unit matrix against the local fake
   (PLAN.md:793-805); P8.2 `uv run --directory sdk/python pytest`

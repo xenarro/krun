@@ -1,12 +1,12 @@
 # Chart values (SPEC.md section 13)
 
-Values shape verbatim from SPEC.md:1228-1306, then the meaning of every
+Values shape verbatim from SPEC.md:1259-1350, then the meaning of every
 key and the env variable or resource it drives. Keep `values.yaml` in
 this shape: the P7.5 README is generated from it by `helm-docs`
 (PLAN.md:753-757), and `config.*` must stay one camelCase key per
-section 12 tunable (SPEC.md:1240).
+section 12 tunable (SPEC.md:1271).
 
-## values.yaml (verbatim, SPEC.md:1228-1306)
+## values.yaml (verbatim, SPEC.md:1259-1350)
 
 ```yaml
 image: { repository: ghcr.io/xenarro/krun, tag: "" }   # tag defaults to appVersion
@@ -50,6 +50,7 @@ db:
       image: ""         # pinned by digest; required when enabled
       url: s3://bucket/krun
       existingSecret: ""   # keys: LITESTREAM_ACCESS_KEY_ID, LITESTREAM_SECRET_ACCESS_KEY; required when enabled
+      # rendered as a native sidecar: an init container with restartPolicy: Always
 
 crds:
   install: true         # CRD templated into the release
@@ -61,7 +62,9 @@ jobsNamespace:
   name: krun-jobs
   create: true
   keep: true            # helm.sh/resource-policy: keep on the Namespace
-  podSecurityVersion: v1.29
+  podSecurityVersion: v1.33
+  admissionPolicy: true # ValidatingAdmissionPolicy requiring digest-pinned images
+  userNamespaces: false # hostUsers: false on function pods; see section 9
   quota: { pods: "200", requests.cpu: "50", requests.memory: 100Gi, requests.ephemeral-storage: 100Gi }
   limitRange:
     defaultRequest: { cpu: 100m, memory: 128Mi, ephemeral-storage: 256Mi }
@@ -74,6 +77,16 @@ jobsNamespace:
 
 networkPolicy:
   metricsFrom: {}       # namespaceSelector allowed to scrape the admin ports; empty allows all
+
+gatewayApi:
+  httpRoute:            # Gateway API HTTPRoute for the public API (port 8080)
+    enabled: false
+    parentRefs: []      # Gateway references
+    hostnames: []
+
+observability:
+  otlpEndpoint: ""      # OTEL_EXPORTER_OTLP_ENDPOINT on both processes; empty drops traces
+  tracesSampleRatio: "0.1"
 
 metrics:
   podMonitor: { enabled: false, labels: {} }
@@ -121,7 +134,7 @@ The two trailing `#` comment lines sit under their map in SPEC prose; in
 | `db.postgres.existingSecret` | `KRUN_DB_DSN` via `secretKeyRef` key `dsn` on gateway, scheduler and the migrate hook | `fail` when empty in postgres mode (SPEC.md:1308-1310) |
 | `db.embedded.storage` | `volumeClaimTemplates[0].spec.resources.requests.storage` | SPEC.md:1263 |
 | `db.embedded.storageClass` | `storageClassName` only when non-empty | an empty string disables dynamic provisioning (SPEC.md:1264, 1351-1352) |
-| `db.embedded.litestream.enabled` | restore init container and replicate sidecar | SPEC.md:1358-1362 |
+| `db.embedded.litestream.enabled` | restore init container and the replicate native sidecar (init container with `restartPolicy: Always`, between restore and `migrate`) | SPEC.md:1403-1410 |
 | `db.embedded.litestream.image` | both Litestream containers | digest-pinned; `fail` when empty while enabled (SPEC.md:1267, 1312-1313) |
 | `db.embedded.litestream.url` | replica URL for restore and replicate | SPEC.md:1268 |
 | `db.embedded.litestream.existingSecret` | `envFrom.secretRef` on both Litestream containers | keys `LITESTREAM_ACCESS_KEY_ID`, `LITESTREAM_SECRET_ACCESS_KEY`; `fail` when empty while enabled (SPEC.md:1269, 1312-1313) |
@@ -131,12 +144,19 @@ The two trailing `#` comment lines sit under their map in SPEC prose; in
 | `jobsNamespace.name` | `KRUN_JOBS_NAMESPACE`; `metadata.namespace` of every jobs-namespace resource | SPEC.md:1196, 998-999 |
 | `jobsNamespace.create` | gates Namespace, NetworkPolicies, LimitRange, ResourceQuota and the quota `fail` | SPEC.md:999-1008 |
 | `jobsNamespace.keep` | `helm.sh/resource-policy: keep` on the Namespace | SPEC.md:1001-1003, D32 SPEC.md:1473 |
-| `jobsNamespace.podSecurityVersion` | the three `pod-security.kubernetes.io/*-version` labels | SPEC.md:1010-1012 |
+| `jobsNamespace.podSecurityVersion` | the three `pod-security.kubernetes.io/*-version` labels | default `v1.33`, the minimum supported Kubernetes (SPEC.md:1014-1016, 1483) |
+| `jobsNamespace.admissionPolicy` | ValidatingAdmissionPolicy `krun-jobs-digest` and its binding, scoped to `jobsNamespace.name` | default true; rendered whether or not `create` is true (SPEC.md:1017-1021, PLAN P7.4a); references/networkpolicies.md |
+| `jobsNamespace.userNamespaces` | `KRUN_JOB_HOST_USERS: "false"` on the scheduler container when true; nothing when false | the scheduler sets `hostUsers: false` on function pods (SPEC.md:1022-1027, 1236, section 7); needs 1.36, or 1.33-1.35 with the feature enabled |
 | `jobsNamespace.quota` | ResourceQuota `spec.hard` | dotted keys: read with `index` (see Pitfalls in SKILL.md); SPEC.md:1029-1030 |
 | `jobsNamespace.limitRange` | LimitRange `type: Container` `defaultRequest`, `default`, `max` | SPEC.md:1027-1029 |
 | `jobsNamespace.dnsEgress` | `to:` peers of the DNS egress rule, rendered verbatim with `toYaml` | NodeLocal DNSCache appends an `ipBlock` (SPEC.md:1013-1016, docs/OPERATIONS.md:127-129) |
 | `jobsNamespace.egressCIDRs` | one `- ipBlock:` peer per entry, `cidr` plus optional `except` | NOTES.txt warning (SPEC.md:1021-1025) |
 | `networkPolicy.metricsFrom` | `from[0].namespaceSelector` on the admin-port ingress policy; empty omits `from` | SPEC.md:1054-1056 |
+| `gatewayApi.httpRoute.enabled` | one HTTPRoute to the public Service, port 8080 | default false; references/pod-template.md "HTTPRoute" (SPEC.md:1329-1333, 1423-1424) |
+| `gatewayApi.httpRoute.parentRefs` | `spec.parentRefs`, rendered verbatim with `toYaml` | the platform team's Gateway references |
+| `gatewayApi.httpRoute.hostnames` | `spec.hostnames`, verbatim; omitted when empty | |
+| `observability.otlpEndpoint` | `OTEL_EXPORTER_OTLP_ENDPOINT` on gateway and scheduler containers; also gates the other three `OTEL_*` variables | empty renders no `OTEL_*` env: traces are dropped (SPEC.md:1246-1248, 1335-1337, docs/OPERATIONS.md:109-117) |
+| `observability.tracesSampleRatio` | `OTEL_TRACES_SAMPLER_ARG`, quoted, beside `OTEL_TRACES_SAMPLER=parentbased_traceidratio` | a string in `values.yaml`; `quote` it anyway for `--set` |
 | `metrics.podMonitor.enabled`, `.labels` | PodMonitor, one endpoint per admin port name, labels merged into `metadata.labels` | SPEC.md:1374-1375 |
 | `metrics.prometheusRule.enabled`, `.labels`, `.thresholds` | PrometheusRule with the seven rules; thresholds substituted into four expressions | SPEC.md:1391-1401, references/alerts.md |
 | `objectStorage.enabled` | renders `KRUN_S3_*` env and NetworkPolicy rule 3 | SPEC.md:1018-1021, 1212 |
@@ -156,8 +176,11 @@ The two trailing `#` comment lines sit under their map in SPEC prose; in
 | `KRUN_DB_PATH` | leave unset (`/data/krun.db`) and mount the PVC at `/data` | SPEC.md:1190 |
 | `KRUN_NAMESPACE` | leave unset | read from the ServiceAccount `namespace` file; gateway and scheduler automount their SA token (SPEC.md:1197, 1324) |
 | `KRUN_API_KEYS_PATH` | leave unset (`/etc/krun/keys.yaml`); mount the Secret at `/etc/krun` | SPEC.md:1191, 954-956 |
+| `KRUN_JOB_HOST_USERS` | `"false"` on the scheduler container only when `jobsNamespace.userNamespaces`; otherwise not rendered (process default `true`) | P7.4d "renders only when enabled" |
+| `OTEL_SERVICE_NAME` | `krun-gateway` on gateway containers, `krun-scheduler` on scheduler containers, only when `observability.otlpEndpoint` is set | equals the process default, so leaving it out otherwise changes nothing (SPEC.md:1247) |
+| `OTEL_TRACES_SAMPLER` | `parentbased_traceidratio`, same gate | SPEC.md:1248 |
 
-Render every `config.*` key on both processes (SPEC.md:1240) even where
+Render every `config.*` key on both processes (SPEC.md:1271) even where
 section 12 says one process reads it; the process ignores what it does
 not use and the P7.2/P7.3 acceptance asserts "every `config` key as env"
 (PLAN.md:704, 720-721).

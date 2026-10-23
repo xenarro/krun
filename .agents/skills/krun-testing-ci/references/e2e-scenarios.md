@@ -22,7 +22,7 @@ API form.
 | `exit_code.e2e.ts` | `exit 1` | `FAILED` within 10 s of the pod ending; `failureReason: exit_code`; `logTail` non-empty |
 | `image_pull_backoff.e2e.ts` | unpullable digest, `activeDeadlineSeconds` 60 | while `SCHEDULED`, `jobStatus.reason === 'ImagePullBackOff'`; then `FAILED` with `deadline_exceeded` |
 | `exit_code_status.e2e.ts` | posts two statuses, `exit 3` | `FAILED` with `exit_code`, `jobStatus.exitCode === 3`, `logTail` set, within 10 s |
-| `heartbeat_timeout.e2e.ts` | `heartbeatTimeout: 30s`, posts one status, sleeps | `FAILED` with `heartbeat_timeout` within 60 s; `logTail` set; the Job is gone (`kubectl get job` 404) |
+| `heartbeat_timeout.e2e.ts` | `heartbeatTimeout: 30s`, posts one status, sleeps | `FAILED` with `heartbeat_timeout` within 60 s; `logTail` set; the Job is deleted (`kubectl get job` 404) |
 
 Also in Phase 4, from the kind recipe: `enforcement_probe` runs inside
 `make kind-up` and is not a scenario file (PLAN.md:605-606); for "`make e2e`
@@ -60,6 +60,7 @@ Run the matrix in both modes, each a fresh namespace with PSA `restricted`.
 | `leader_election.e2e.ts` | postgres mode, `scheduler.replicas=2`: exactly one pod reports leader on `/readyz`, `krun_scheduler_leader` is 1 on one pod; delete the holder pod; a queued run still gets exactly one Job within 15 s + 2 s and `holderIdentity` moved (PLAN.md:763-764; knative-serving `test/ha/controller_test.go:48-76`) |
 | `upgrade_rollback.e2e.ts` | `helm upgrade --set config.logLevel=debug` then `helm rollback <release> 1`; after each: pods Ready, a run succeeds; postgres mode: the migrate hook Job ran; a run submitted during the rollout succeeds; `holderIdentity` and `krun_scheduler_leader` moved to the new pod; embedded mode: a run created before the upgrade is readable after it (PLAN.md:764-771); scheduler gap < `KRUN_TTL_AFTER_FINISHED` (SPEC.md:1416-1417) |
 | `crds_install_false.e2e.ts` | with `crds.install=false` and the plain manifest applied first, the install succeeds and a Function becomes Ready |
+| `admission_policy.e2e.ts` (P7.4d) | with `jobsNamespace.admissionPolicy` on, `kubectl create` of a Job whose image is a tag without `@sha256:` in the jobs namespace is rejected by the ValidatingAdmissionPolicy (assert the denial message names the policy); a digest-pinned Job is admitted (PLAN.md:766-771; needs a kind node image 1.33 or newer) |
 
 ## Phase 8 (PLAN.md:780-782, 830-837, P8.6)
 

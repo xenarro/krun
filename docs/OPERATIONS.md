@@ -10,8 +10,8 @@ P9.3.
   values for `db`, `apiKeys.existingSecret` and, when webhooks are used,
   `webhooks`. The CRD is part of the release (`crds.install`). With
   `crds.install=false`, apply `deploy/crds/functions.krun.io.yaml` first.
-- Prerequisites: Kubernetes 1.29 or newer and a CNI that enforces
-  NetworkPolicy. Without enforcement the jobs namespace isolation is void;
+- Prerequisites: Kubernetes 1.33 or newer, Postgres 16 or newer in
+  postgres mode, and a CNI that enforces NetworkPolicy. Without enforcement the jobs namespace isolation is void;
   verify once with a default-deny policy in a scratch namespace.
 - Before `helm install`, label the krun namespace
   `pod-security.kubernetes.io/enforce=restricted`; the chart does not
@@ -95,7 +95,7 @@ in-flight case.
 
 - Postgres mode: backups belong to the managed service. The `runs` table
   is the only state; `deliveries` and `run_events` cascade from it.
-- Embedded mode with Litestream: the sidecar streams the WAL to object
+- Embedded mode with Litestream: the native sidecar streams the WAL to object
   storage continuously. Restore drill: scale the StatefulSet to 0; from a
   throwaway pod mounting the PVC delete `krun.db`, `krun.db-wal` and
   `krun.db-shm` (or delete the PVC for the corrupt-volume case); scale back
@@ -106,7 +106,26 @@ in-flight case.
 - Embedded mode without Litestream: the PVC is the only copy; snapshot it
   with the storage class or enable Litestream.
 
+## Telemetry
+
+- Set `observability.otlpEndpoint` to an OpenTelemetry collector's
+  OTLP/HTTP endpoint to export traces; empty drops them. Sampling is
+  parent-based at 10 percent by default (`observability.tracesSampleRatio`).
+- Every span about a run carries `krun.run_id`: search the tracing backend
+  for it to see the `CreateRun` request, the scheduler iteration that
+  created the Job and the pod's internal API calls. Log lines inside a span
+  carry `traceId`.
+- Metrics stay on the admin port in Prometheus format; scrape as before.
+
 ## Security operations
+
+- User namespaces: set `jobsNamespace.userNamespaces=true` only when every
+  node supports them (Kubernetes 1.36, or the feature gate on 1.33 to
+  1.35, plus a runtime and kernel with ID-mapped mounts). Test one function
+  first: images that chown files at start-up can fail.
+- The digest admission policy (`jobsNamespace.admissionPolicy`) rejects any
+  Job or Pod in the jobs namespace whose image has no `@sha256:`, including
+  ones created by hand.
 
 - API key rotation: add the new secret to the key's `key` list in the
   Secret, wait one 30 second reload, switch clients, remove the old one.

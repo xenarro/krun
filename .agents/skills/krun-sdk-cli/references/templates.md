@@ -12,12 +12,18 @@ Python template's uses pytest importing `handle`. The krun stack rules
 
 ## Command
 
-`krun init --lang node|python [--name <function>] <dir>` (SPEC.md:733).
-No other flags (PLAN.md:31-32). `--name` defaults to the basename of `<dir>`.
+`krun init --lang node|python [--name <function>] <dir>` (SPEC.md:737-739).
+No other flags (PLAN.md:31-32). `--name` defaults to the basename of
+`<dir>`, on a TTY and off it, and is never prompted for. On a TTY a
+missing `--lang` is asked with a clack `select` (node, python). Off a TTY
+nothing is asked: a missing `--lang` fails with a usage message naming
+it, exit 1 (docs/STACK.md 2.7).
 
 Order (lessons from knative/func `pkg/functions/client.go:647-716`):
 
-1. Validate `--lang` (only `node`, `python`).
+1. Resolve `--lang` (flag, else a prompt on a TTY, else a usage error)
+   and `--name` (flag, else the basename of `<dir>`); validate `--lang`
+   (only `node`, `python`).
 2. Validate the name as a DNS-1123 label with the name regex exported next
    to the Zod schema in `packages/shared/src/functions/schema.ts` (one
    constant, imported, never copied); reject a leading `-` with a specific
@@ -33,8 +39,10 @@ Order (lessons from knative/func `pkg/functions/client.go:647-716`):
    optional `--json` result if a later task asks for one (none does today).
 
 `init` is an Effect program like the rest of the CLI: argv from
-`node:util` `parseArgs`, file writes through the CLI's `Fs` service, each
-failure a tagged error rendered as a "Try this:" block.
+`node:util` `parseArgs`, prompts through the `Prompt` service over
+`@clack/prompts`, file writes through the CLI's `Fs` service, each
+failure a tagged error rendered as a "Try this:" block. A cancelled
+prompt writes nothing and exits 130.
 
 Never resolve templates relative to `process.cwd()`; use
 `new URL("../templates/", import.meta.url)` from the built `dist/` file and
@@ -49,7 +57,7 @@ check the published `@krun/cli` tarball contains `templates/` (`files` in
 |---|---|
 | `handler.js` (or `.mjs`) | `import { run } from "@krun/sdk"; export async function handle(input, ctx) { ... }` plus `if (import.meta.url === pathToFileURL(process.argv[1]).href) run(handle)` so tests can import `handle` without executing (SPEC.md:686-687) |
 | `handler.test.js` | ONE subprocess local-mode test (SPEC.md:736-737): spawn `node handler.js` with `KRUN_GATEWAY_URL` deleted from the env, pipe a JSON input on stdin, assert exit 0 and `JSON.parse(stdout)` deep-equals the expected result, assert stderr is not parsed as result |
-| `package.json` | `"type": "module"`, `"dependencies": { "@krun/sdk": "^<cli version>" }` (SPEC.md:740-742), `"scripts": { "test": "node --test", "start": "node handler.js" }` (the generated project's own runner, intentionally not Vitest), `"engines": { "node": ">=20" }`, no `devDependencies` |
+| `package.json` | `"type": "module"`, `"dependencies": { "@krun/sdk": "^<cli version>" }` (SPEC.md:740-742), `"scripts": { "test": "node --test", "start": "node handler.js" }` (the generated project's own runner, intentionally not Vitest), `"engines": { "node": ">=22" }` (the SDK floor, SPEC section 14), no `devDependencies` |
 | `Dockerfile` | see Dockerfile rules |
 | `.dockerignore` | `node_modules`, `.git`; never `vendor/` (SPEC.md:745) |
 | `.gitignore` | `node_modules/` |
@@ -83,9 +91,12 @@ proves it by importing and asserting no request was made.
   dependency spec points at the file (the acceptance does `npm install
   ./vendor/krun-sdk-*.tgz` / `uv add ./vendor/krun-*.whl` before building).
 - Base: distroless or slim (SPEC.md:746), pinned by digest in the template.
-  Node: `node:24-slim` build, distroless `nodejs24-debian12:nonroot` or slim
-  runtime. Python: `python:3.13-slim` (func uses the same,
-  `pkg/oci/python_builder.go:19-38`).
+  Node: `node:26-slim` build (Node 26 is LTS from late October 2026, the
+  line krun itself runs on), distroless Node 26 `:nonroot` or slim
+  runtime; the distroless tag name for Node 26 is UNVERIFIED, check the
+  distroless registry before pinning. The SDK itself supports Node 22 or
+  newer, so authors may pick a Node 22 or 24 LTS base. Python: `python:3.13-slim` (func
+  uses the same, `pkg/oci/python_builder.go:19-38`).
 - Numeric `USER 65532:65532` (SPEC.md:745): PSA `restricted` and
   `runAsNonRoot` need a numeric UID; the Job also sets 65532 (SPEC.md section 7).
 - Read-only root filesystem safe: write only under `/tmp`; the Job sets
@@ -155,7 +166,11 @@ files for the generated project).
   `fs.mkdtemp` dir; run `init` with `it.effect`.
 - Cases: valid node, valid python, existing `function.yaml`, visible file
   present, hidden file present (allowed), name with uppercase, leading `-`,
-  name too long for `krun-<name>-...` labels if a length cap applies.
+  name too long for `krun-<name>-...` labels if a length cap applies;
+  TTY with `--lang` missing answered by the `Prompt` fake; TTY with a
+  cancelled prompt (nothing written, exit 130); non-TTY with `--lang`
+  missing (usage error, no prompt call); `--name` missing on a TTY and off
+  it (the function is named after `<dir>`, no prompt call).
 - After init, assert the rendered `function.yaml` parses with the Zod
   schema, its `metadata.name` equals the requested name and the SDK pin
   equals the workspace version.

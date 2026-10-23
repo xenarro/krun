@@ -9,9 +9,17 @@ re-check a fact against the installed version before relying on it.
 ## Library facts (verified 2026-10-23)
 
 - effect 4.0.6, @effect/platform-node 4.0.6, @effect/vitest 4.0.6, zod
-  4.6.7, fastify 5.12.7, pino 10.4.0, prom-client 15.1.3, vitest 5.0.5
-  (`npm view`; tarballs in `~/.hermes/cache/scratch/krun-skills/pkgs/`,
-  probes in `.../probe-runtime/`).
+  4.6.7, fastify 5.12.7, pino 10.4.0, vitest 5.0.5 (`npm view`; tarballs
+  in `~/.hermes/cache/scratch/krun-skills/pkgs/`, probes in
+  `.../probe-runtime/`). Runtime: Node.js 26 (SPEC D15).
+- Telemetry (read from `npm pack` sources 2026-10-23, not probed):
+  @effect/opentelemetry 4.0.6, @opentelemetry/exporter-prometheus 0.223.0,
+  @opentelemetry/exporter-trace-otlp-http 0.223.0,
+  @opentelemetry/sdk-trace-base 2.12.0, @opentelemetry/sdk-metrics 2.12.0.
+  `@effect/opentelemetry` 4.0.6 peers on the 2.x SDK lines and
+  `<0.300` for the 0.2xx lines, hence the pins in docs/STACK.md 2.6. The
+  facts that matter (`NodeSdk.layer` options, exporter naming and
+  `preventServerStart`, sampler default, OTLP path): `telemetry.md`.
 - Fastify 5.12: `requestIdHeader` default `false`; with a header name set,
   the header value is used unchecked and `genReqId` is skipped; `trustProxy`
   accepts `true`, CIDR strings or a function, hop counts disabled.
@@ -22,9 +30,9 @@ re-check a fact against the installed version before relying on it.
   on kept-alive sockets) → `preClose` → connection draining per
   `forceCloseConnections` (default `"idle"`) → `server.close()` →
   `onClose` (`fastify.js:384-430`).
-- `prom-client` 15.1: `Registry`, `Counter/Gauge/Histogram` with
-  `registers: [registry]`, `await registry.metrics()`,
-  `registry.contentType`, ESM named imports work.
+- Metrics are Effect `Metric`s, and `/metrics` is the OpenTelemetry
+  Prometheus exporter's output (SPEC D36; `telemetry.md`,
+  `metrics-table.md`).
 - `onListen` hooks do not run under `inject()`; do not put readiness
   wiring there if the P0.7 test uses `inject`.
 - Effect 4: services are `Context.Service`; references are
@@ -32,12 +40,37 @@ re-check a fact against the installed version before relying on it.
   `Effect.acquireRelease` or `Effect.addFinalizer` inside `Layer.effect`
   or `Layer.effectDiscard` (there is no separate `Layer.scoped`);
   `Layer.launch` keeps a layer alive until interruption;
-  `Logger.layer([...])` replaces the logger set; `Effect.runPromiseWith(ctx)`
-  runs an Effect from a Fastify handler with an optional `{ signal }`.
+  `Logger.layer([...])` replaces the logger set (including the default
+  `Logger.tracerLogger`, which would copy log lines into span events);
+  `Effect.runPromiseWith(ctx)` runs an Effect from a Fastify handler with
+  an optional `{ signal }`.
+- Effect 4 tracing (source read, `effect` 4.0.6 `Tracer.ts`,
+  `Effect.ts`): `Effect.withSpan`, `Effect.makeSpan`,
+  `Effect.withParentSpan`, `Effect.currentSpan`,
+  `Effect.annotateCurrentSpan`; `Tracer.externalSpan({ traceId, spanId,
+  sampled })`; `Tracer.ParentSpan` holds the current span in the fiber
+  context; built-in spans get random ids even with no OpenTelemetry tracer
+  installed.
 - `TestClock` lives at `effect/testing` (`import { TestClock } from
   "effect/testing"`); `it.effect` provides it, `it.live` uses the real
   clock. There is no `it.scoped` in @effect/vitest 4.0.6: `it.effect`
   already supplies a `Scope`.
+- `NodeRuntime.runMain` (`@stability unstable`): SIGINT/SIGTERM interrupt
+  the main fiber; the default teardown exits 0 on success, 130 on an
+  interrupt-only exit, 1 otherwise. Details and the krun teardown:
+  `shutdown.md`.
+- `Layer.mergeAll` builds and releases its members concurrently (a
+  `"parallel"` child scope); `Layer.provide` releases the provided layer
+  after its dependants.
+- `References.MinimumLogLevel` defaults to `Info`: `Effect.logDebug` is
+  dropped unless it is lowered (probe).
+- Fastify 5.12.7: the top-level `disableRequestLogging` and
+  `requestIdLogLabel` options emit FSTDEP023/FSTDEP024 and are removed in
+  Fastify 6; use `logController: new LogController({ ... })`.
+- Zod 4.6.7: `.default(value)` shallow-clones object values (a `Duration`
+  becomes a plain object); `.prefault(raw)` runs the raw input through
+  the schema. An object `superRefine` still runs after a field fails, and
+  its issues come after the field issues.
 
 ## Lessons from Dapr, Knative Serving and KEDA
 

@@ -1,12 +1,12 @@
-# SIGTERM shutdown sequences (SPEC.md:1166-1174)
+# SIGTERM shutdown sequences (SPEC.md:1198-1206)
 
 Line numbers from the working tree 2026-10-23; re-check before quoting.
-Both sequences must fit the 30 second grace period (SPEC.md:1174); the
-chart sets `terminationGracePeriodSeconds: 30` (SPEC.md:1238) and the
-gateway drains for `KRUN_SHUTDOWN_DELAY` before closing (D30,
-SPEC.md:1471). The mechanism comes from D35 (SPEC.md:1476): `NodeRuntime.runMain`
+Both sequences must fit the 30 second grace period (SPEC.md:1206); the
+chart sets `terminationGracePeriodSeconds: 30` (SPEC.md:1274) and the
+gateway drains for `KRUN_SHUTDOWN_DELAY` before closing (D30). The
+mechanism comes from D35: `NodeRuntime.runMain`
 plus scope finalizers (docs/STACK.md 2.1, 2.6, 4.1, and 4.3 "SIGTERM order |
-scope finalizers"). `close-with-grace` is gone (docs/STACK.md:99).
+scope finalizers"). No graceful-close package: docs/STACK.md lists none.
 
 ## Mechanism (verified: effect 4.0.6, @effect/platform-node 4.0.6)
 
@@ -19,7 +19,7 @@ programs on Node 26 and Fastify 5.12.7 in
    listeners that interrupt the main fiber, and calls `process.exit(code)`
    once that fiber has ended (`@effect/platform-node-shared`
    `src/NodeRuntime.ts`). The module is marked `@stability unstable`, so
-   pin the exact minor (docs/STACK.md:27-29, 43).
+   pin the exact minor (docs/STACK.md:36-38, 52).
 2. The default teardown (`effect` `Runtime.defaultTeardown`) maps success
    to 0, an interrupt-only cause to **130**, and any other failure to 1 (or
    to the error's `Runtime.errorExitCode`). SPEC says "exits 0" after
@@ -56,7 +56,7 @@ programs on Node 26 and Fastify 5.12.7 in
    Skip the drain delay on failure:
    `Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause)`.
 
-The grace budget no longer comes from a library timeout. Bound each step,
+The grace budget comes from krun's own bounds, not a library timeout. Bound each step,
 and arm one last-resort watchdog as the first finalizer starts:
 
 ```ts
@@ -82,15 +82,16 @@ Keep that behaviour, and log the step in progress at `fatal`.
 const Listeners = Layer.mergeAll(PublicServer, InternalServer, AdminServer)
 const Main = Drain.pipe(              // released first: flip readiness, wait the delay
   Layer.provideMerge(Listeners),       // released next, concurrently
-  Layer.provide(AppLayer),             // Config, Logger, Metrics, Readiness, Functions, Keys, Store
-)                                      // Store released last
+  Layer.provide(AppLayer),             // Config, Logger, Readiness, Functions, Keys, Store
+  Layer.provide(Telemetry("krun-gateway")), // NodeSdk: tracer, Prometheus reader (docs/STACK.md 4.1)
+)                                      // Store released, then Telemetry flushes last
 NodeRuntime.runMain(Layer.launch(Main), { teardown, disableErrorReporting: true })
 ```
 
 `Drain` is a `Layer.effectDiscard` over an `Effect.acquireRelease`. Its
 release sets `Readiness.draining` and then sleeps `KRUN_SHUTDOWN_DELAY`.
 It depends on the listeners, so it is released before them and every
-listener keeps serving through the delay. docs/STACK.md:149-153 words
+listener keeps serving through the delay. docs/STACK.md:206-210 words
 this as "each listener's release flips readiness, waits, closes". One
 `Drain` above the merged listeners gives the same order with one timer
 instead of three. If you put the drain inside each listener release
@@ -112,24 +113,28 @@ Effect.acquireRelease(
 constructor. Route handlers run `Effect.runPromiseWith(ctx)(effect, { signal })`,
 so a client disconnect interrupts the handler fiber (probe: aborting
 `signal` ran the fiber's `onInterrupt`). Effect 4 has no `Runtime<R>`;
-use this, or a `ManagedRuntime`, to embed Effect (docs/STACK.md:154-158).
+use this, or a `ManagedRuntime`, to embed Effect (docs/STACK.md:211-215).
 
-## Gateway (SPEC.md:1166-1170, P3.7 PLAN.md:432-441)
+## Gateway (SPEC.md:1198-1202, P3.7 PLAN.md:438-447)
 
-Budget: `KRUN_SHUTDOWN_DELAY` (default 5 s) + listener close + pool close,
-well under 30 s. P3.7 acceptance runs with `KRUN_SHUTDOWN_DELAY=2s` and
-expects exit 0 within 5 seconds of SIGTERM.
+Budget: `KRUN_SHUTDOWN_DELAY` (default 5 s) + listener close + pool close
++ span flush (at most `shutdownTimeout`, 3 s by default, and only when
+`OTEL_EXPORTER_OTLP_ENDPOINT` is set), well under 30 s. P3.7 acceptance
+runs with `KRUN_SHUTDOWN_DELAY=2s` and no OTLP endpoint and expects exit 0
+within 5 seconds of SIGTERM; a process test that sets an unreachable
+endpoint would spend up to 3 s more in the flush.
 
 | Step | Effect construct | Why / citation |
 |---|---|---|
-| 0 | `runMain` interrupts the main fiber; the `Layer.launch` scope starts closing. | docs/STACK.md:43 |
-| 1 | `Drain` release, first effect: `Ref.set(readiness.draining, true)`, then arm the watchdog. `/readyz` now returns 503; nothing is closed yet. | SPEC.md:1166 "first makes `/readyz` return 503"; kube-proxy and the endpoints controller need the probe failures to stop routing (D30) |
-| 2 | `Drain` release: `Effect.sleep(config.shutdownDelay)` (skipped on a failure exit). Every listener keeps serving; `/v1` answers normally and never `NOT_READY`. | SPEC.md:1167-1168; docs/API.md:342; P3.7 asserts a `/v1` request after `/readyz` turned 503 still answers 200 (PLAN.md:438-440) |
+| 0 | `runMain` interrupts the main fiber; the `Layer.launch` scope starts closing. | docs/STACK.md:52 |
+| 1 | `Drain` release, first effect: `Ref.set(readiness.draining, true)`, then arm the watchdog. `/readyz` now returns 503; nothing is closed yet. | SPEC.md:1198 "first makes `/readyz` return 503"; kube-proxy and the endpoints controller need the probe failures to stop routing (D30) |
+| 2 | `Drain` release: `Effect.sleep(config.shutdownDelay)` (skipped on a failure exit). Every listener keeps serving; `/v1` answers normally and never `NOT_READY`. | SPEC.md:1199-1200; docs/API.md:342; P3.7 asserts a `/v1` request after `/readyz` turned 503 still answers 200 (PLAN.md:444-446) |
 | 3 | Listener releases start concurrently (`Layer.mergeAll`) and call `app.close()`. Fastify sets its closing flag (a new request on a kept-alive socket gets 503 + `Connection: close`), runs `preClose`, then `server.close()` and `onClose`. | Fastify 5.12.7 `fastify.js:384-430`, `lib/route.js:483-500`, read from the tarball |
-| 4 | Public listener `preClose` hook: complete the `Shutdown` `Deferred`. Every SSE handler waiting on it writes its final event and ends `reply.raw`; every wait handler waiting on it answers at once with the current state (201 for `CreateRun?wait`, 200 for `WaitRun`). The hook then awaits `finish` on the tracked responses. | SPEC.md:1169-1170, SPEC.md:233 "the server may answer earlier at shutdown"; P5.1 and P5.2 (PLAN.md:625-637). `close()` cannot see hijacked `reply.raw` responses (knative `serving pkg/http/handler/hijack.go:27-66`) |
+| 4 | Public listener `preClose` hook: complete the `Shutdown` `Deferred`. Every SSE handler waiting on it ends `reply.raw` (no shutdown event, SPEC.md:256-258); every wait handler waiting on it answers at once with the current state (201 for `CreateRun?wait`, 200 for `WaitRun`). The hook then awaits `finish` on the tracked responses. | SPEC.md:1201-1202, SPEC.md:233 "the server may answer earlier at shutdown"; P5.1 and P5.2 (PLAN.md:635-647). `close()` cannot see hijacked `reply.raw` responses (knative `serving pkg/http/handler/hijack.go:27-66`) |
 | 5 | `app.close()` resolves on all three listeners, each bounded by `Effect.timeoutOption`. | listeners close before the pool, so step 4 can still read the store |
-| 6 | Store layer release: the Kysely pool and, in postgres mode, the dedicated `LISTEN` client (SPEC.md:548-549); in embedded mode the single better-sqlite3 connection (SPEC.md:561). | SPEC.md:1170 "closes the pool"; it goes last because every layer above depends on it |
-| 7 | The main fiber ends interrupt-only and the teardown maps that to exit 0. | SPEC.md:1170 "exits 0" |
+| 6 | Store layer release: the Kysely pool and, in postgres mode, the dedicated `LISTEN` client (SPEC.md:548-549); in embedded mode the single `node:sqlite` `Database` connection (SPEC.md:561-565). | SPEC.md:1202 "closes the pool"; it goes last because every layer above depends on it |
+| 7 | `Telemetry` layer release: the tracer provider runs `forceFlush()` then `shutdown()`, bounded by `shutdownTimeout` (default 3000 ms); spans of the steps above reach the OTLP endpoint when one is set. | `@effect/opentelemetry` 4.0.6 `NodeSdk.ts` `layerTracerProvider`; docs/STACK.md 4.1 provides `Telemetry` under everything else |
+| 8 | The main fiber ends interrupt-only and the teardown maps that to exit 0. | SPEC.md:1202 "exits 0" |
 
 Observed pitfall (probe): the `Deferred` was completed outside `preClose`
 and `close()` followed at once. The wait response was still being
@@ -137,10 +142,11 @@ written, so its keep-alive socket was not idle; `server.close()` waited on
 it and the release hit its 5 s timeout. Awaiting `finish` on the tracked
 responses inside `preClose` (step 4) cut the close to 2 ms.
 
-## Scheduler (SPEC.md:1170-1174, P4.11 PLAN.md:592-599)
+## Scheduler (SPEC.md:1202-1206, P4.11 PLAN.md:602-609)
 
 Budget: ≤ 10 s in-flight iteration + informer stop + Lease update (10 s
-API timeout, SPEC.md:795) + pool close, under 30 s. P4.11 acceptance
+API timeout, SPEC.md:801) + pool close + span flush (≤ 3 s, only with an
+OTLP endpoint), under 30 s. P4.11 acceptance
 expects exit 0 within 5 seconds of SIGTERM as a *standby* (no iteration in
 flight) with the Lease cleared in `test/fake-kube`.
 
@@ -152,28 +158,29 @@ owns that contract.
 
 | Step | Effect construct | Why / citation |
 |---|---|---|
-| 1 | `Drain` release: `Ref.set(readiness.draining, true)`, then arm the watchdog. | SPEC.md:1163 "returns 503 from the start of shutdown"; Dapr flips readiness before draining (`dapr pkg/scheduler/server/server.go:336-366`) |
-| 2 | Leader finalizer, registered after the loop forks so it runs first: `Ref.set(stopping, true)`. The main loop checks the flag before each `claimQueued` and starts no new iteration. Do not just interrupt the loop fiber: that would cut an iteration between a Job create and the run's transition. | SPEC.md:1171 "stops claiming" |
-| 3 | `Fiber.await(mainLoop).pipe(Effect.timeoutOption("10 seconds"))`. The iteration already carries `Effect.timeout("10 seconds")` and releases its claims in `Effect.ensuring`; unprocessed claims are released and the rest expire normally. | SPEC.md:1171; SPEC.md:802-806 and :1117 (10 s iteration deadline); SPEC.md:1173-1174 "unfinished leases expire normally"; docs/STACK.md:184 |
-| 4 | The leader scope closes. The heartbeat, deliveries, sweep and reconcile fibers are interrupted, and so are in-flight Kubernetes calls, which aborts their `signal`. Thread the signal into the client-node call (`krun-scheduler-k8s`). | SPEC.md:779 loops stop on SIGTERM |
-| 5 | The Job and Pod informer `Stream`s end, and their scoped finalizers call `informer.stop()`. After that the Function informer layer, which is process-wide and outside the leader scope, releases. | SPEC.md:1172 "stops the informers"; a live watch keeps the event loop busy and the 5 s exit assertion fails |
-| 6 | Set `krun_scheduler_leader` to 0, then clear `holderIdentity` on the Lease: `get`, and only if the read `holderIdentity` is this pod, `update` with the read `resourceVersion` and `holderIdentity` empty. One 409 retry. Each call runs under `Effect.timeout("10 seconds")`. A failure is logged at warn and never blocks exit. A standby holds nothing and skips the update. | SPEC.md:1172-1173 "clears `holderIdentity` on the Lease so a standby takes over at once"; P4.11 asserts the Lease is cleared in the fake (PLAN.md:597-599); `maxUnavailable: 0` guarantees a Ready standby (SPEC.md:1335-1337) |
+| 1 | `Drain` release: `Ref.set(readiness.draining, true)`, then arm the watchdog. | SPEC.md:1195 "returns 503 from the start of shutdown"; Dapr flips readiness before draining (`dapr pkg/scheduler/server/server.go:336-366`) |
+| 2 | Leader finalizer, registered after the loop forks so it runs first: `Ref.set(stopping, true)`. The main loop checks the flag before each `claimQueued` and starts no new iteration. Do not just interrupt the loop fiber: that would cut an iteration between a Job create and the run's transition. | SPEC.md:1203 "stops claiming" |
+| 3 | `Fiber.await(mainLoop).pipe(Effect.timeoutOption("10 seconds"))`. The iteration already carries `Effect.timeout("10 seconds")` and releases its claims in `Effect.ensuring`; unprocessed claims are released and the rest expire normally. | SPEC.md:1203; SPEC.md:808-811 and :1117 (10 s iteration deadline); SPEC.md:1205-1206 "unfinished leases expire normally"; docs/STACK.md:246 |
+| 4 | The leader scope closes. The heartbeat, deliveries, sweep and reconcile fibers are interrupted, and so are in-flight Kubernetes calls, which aborts their `signal`. Thread the signal into the client-node call (`krun-scheduler-k8s`). | SPEC.md:785 loops stop on SIGTERM |
+| 5 | The Job and Pod informer `Stream`s end, and their scoped finalizers call `informer.stop()`. After that the Function informer layer, which is process-wide and outside the leader scope, releases. | SPEC.md:1204 "stops the informers"; a live watch keeps the event loop busy and the 5 s exit assertion fails |
+| 6 | Set `krun_scheduler_leader` to 0, then clear `holderIdentity` on the Lease: `get`, and only if the read `holderIdentity` is this pod, `update` with the read `resourceVersion` and `holderIdentity` empty. One 409 retry. Each call runs under `Effect.timeout("10 seconds")`. A failure is logged at warn and never blocks exit. A standby holds nothing and skips the update. | SPEC.md:1204-1205 "clears `holderIdentity` on the Lease so a standby takes over at once"; P4.11 asserts the Lease is cleared in the fake (PLAN.md:607-609); `maxUnavailable: 0` guarantees a Ready standby (SPEC.md:1384-1386) |
 | 7 | Admin listener release: `app.close()`, bounded. | the probe keeps answering (503) until here |
-| 8 | Store layer release (pool, `LISTEN` client, or the SQLite connection). | SPEC.md:1173 "closes the pool" |
-| 9 | The teardown maps the interrupt to exit 0. | SPEC.md:1173 "exits 0" |
+| 8 | Store layer release (pool, `LISTEN` client, or the SQLite connection). | SPEC.md:1205 "closes the pool" |
+| 9 | `Telemetry` layer release: span flush, bounded by `shutdownTimeout` (default 3000 ms). | as gateway step 7 |
+| 10 | The teardown maps the interrupt to exit 0. | SPEC.md:1205 "exits 0" |
 
-Leader loss (no successful renew for 10 s, SPEC.md:790-792) takes a
+Leader loss (no successful renew for 10 s, SPEC.md:796-798) takes a
 different path. The renew fiber interrupts the leader scope (loops,
 informers, in-flight calls) and then fails the main fiber with a
 `LeaderLost` tagged error. Finalizers still run, but `Drain` skips its
 delay because the exit is a failure, and step 6 is skipped because another
 pod may already hold the Lease. The teardown exits 1 and Kubernetes
 restarts the pod as a standby. Never reuse the SIGTERM path's exit 0 here
-(P4.2 PLAN.md:488-496).
+(P4.2 PLAN.md:494-502).
 
 ## Tests that pin these sequences
 
-Order and timing in-process (`@effect/vitest`, docs/STACK.md:108):
+Order and timing in-process (`@effect/vitest`, docs/STACK.md:161):
 
 ```ts
 it.effect("drain flips readiness, waits the delay, then closes", () =>
@@ -200,17 +207,17 @@ the listener closes after it in any order, and the store close last.
 
 Process tests (real clock, `child_process.spawn`):
 
-- P3.7 (PLAN.md:432-441): embedded mode with a temp dir and `KUBECONFIG`
+- P3.7 (PLAN.md:438-447): embedded mode with a temp dir and `KUBECONFIG`
   at `test/fake-kube` serving one Function; `/readyz` 200 on the admin
   port; `/v1/*` 404 on the admin port; with `KRUN_SHUTDOWN_DELAY=2s` a
   `/v1` request after `/readyz` turned 503 still answers 200; exit 0
   within 5 s of SIGTERM.
-- P4.11 (PLAN.md:592-599): the same harness for the scheduler; `/readyz`
+- P4.11 (PLAN.md:602-609): the same harness for the scheduler; `/readyz`
   200 as standby; exit 0 within 5 s of SIGTERM with the Lease cleared.
-- P5.1 (PLAN.md:625-630): SIGTERM ends an in-flight wait early, returning
+- P5.1 (PLAN.md:635-640): SIGTERM ends an in-flight wait early, returning
   the run without error.
-- P5.2 (PLAN.md:631-637): `WatchRun` closes on SIGTERM.
-- P4.2 (PLAN.md:488-496): release on SIGTERM, and exit non-zero on renew
+- P5.2 (PLAN.md:641-647): `WatchRun` closes on SIGTERM.
+- P4.2 (PLAN.md:494-502): release on SIGTERM, and exit non-zero on renew
   failure, against a stubbed `CoordinationV1Api`.
 
 Spawn the process, send `SIGTERM`, and assert the `exit` event's code and
@@ -221,6 +228,6 @@ pass them as `KRUN_*_LISTEN_ADDR`.
 ## Upgrade note
 
 Scheduler downtime must stay below `KRUN_TTL_AFTER_FINISHED`
-(SPEC.md:914-919, 1417): a Job that `ttlSecondsAfterFinished` removes
+(SPEC.md:920-925, 1472): a Job that `ttlSecondsAfterFinished` removes
 while no leader is running becomes `job_lost`. The sequence above and
 `maxUnavailable: 0` keep that window to seconds.

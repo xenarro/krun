@@ -1,6 +1,6 @@
 ---
 name: krun-webhooks-objstore
-description: Use when building krun webhooks, SSRF guard or S3. Pinned-address delivery, timestamped HMAC, retry schedule, presigned URLs.
+description: Use when building krun webhooks, SSRF guard or S3. picomatch host globs, pinned-address delivery, timestamped HMAC, traceparent on deliveries, retry schedule, presigned URLs.
 ---
 
 # krun webhooks and object storage
@@ -33,10 +33,12 @@ call sites in P3.3 (`CreateRun` callback check) and P3.6 (`GetRunResult`
 ## Read first
 
 - docs/STACK.md sections 1, 2.2 (`undici`), 2.4 (`@aws-sdk/*`), 2.5
-  (`ipaddr.js`, `uuid`), 3 (Vitest, `@effect/vitest`, fast-check,
+  (`ipaddr.js`, `uuid`, `picomatch`), 2.6 (OpenTelemetry), 3 (Vitest,
+  `@effect/vitest`, fast-check,
   testcontainers), 4.2 (tagged errors), 4.3 (SPEC rules mapped to Effect),
   4.4 (time). It is normative for every library choice below.
-- SPEC.md:1060-1083 (section 9 Webhooks: address check, dispatcher, signature).
+- SPEC.md:1074-1098 (section 9 Webhooks: address check, dispatcher, signature); SPEC.md:1139-1152
+  (telemetry: webhook deliveries send a W3C `traceparent`, span attribute redaction).
 - SPEC.md:921-928 (deliveries loop), SPEC.md:1119 (limits row), SPEC.md:1146 (metric).
 - SPEC.md:348-351 (delivery inserted in the terminal transaction), SPEC.md:452-464 (DDL),
   SPEC.md:515-516 (Store methods).
@@ -51,7 +53,7 @@ call sites in P3.3 (`CreateRun` callback check) and P3.6 (`GetRunResult`
   and example); docs/INTERNAL-API.md section 4 (the upload as the function sees it).
 - PLAN.md:319-328 (P2.1), :396-408 (P3.3), :428-430 (P3.6), :638-645 (P5.3), :646-649 (P5.4),
   :657-667 (P6.1, P6.2); PLAN.md:36-91 for allowed dependencies.
-- Decisions D29 (SPEC.md:1470), D31 (SPEC.md:1472) and D35 (SPEC.md:1476).
+- Decisions D29, D31, D35 and D36 (SPEC section 15).
 
 ## Rules
 
@@ -114,9 +116,16 @@ call sites in P3.3 (`CreateRun` callback check) and P3.6 (`GetRunResult`
 17. Failures are tagged (`Data.TaggedError`): `CallbackNotAllowed` with the reason,
     `DeliveryTransportError`, `ObjectStoreError`; adapters convert promise rejections with
     `Effect.tryPromise`; no `throw` outside adapters (docs/STACK.md section 4.2).
-18. Only docs/STACK.md dependencies: `effect`, `undici`, `ipaddr.js`, `@aws-sdk/client-s3`,
-    `@aws-sdk/s3-request-presigner`, `node:crypto`, `node:dns/promises`; glob-to-regex is written in
-    house (PLAN.md:82-87). Anything else needs a Decisions row (PLAN.md:29-30).
+18. Only docs/STACK.md dependencies: `effect`, `undici`, `ipaddr.js`, `picomatch`,
+    `@aws-sdk/client-s3`, `@aws-sdk/s3-request-presigner`, `@effect/opentelemetry` (through the
+    process's telemetry layer), `node:crypto`, `node:dns/promises`. Host globs are `picomatch`
+    matchers compiled once at config load, never a hand-written regex (docs/STACK.md 2.5, 4.3).
+    Anything else needs a Decisions row (PLAN.md:29-30).
+19. Every delivery attempt is an Effect span (`Effect.withSpan("webhook.deliver")`, attributes
+    delivery id, `krun.run_id`, attempt number, HTTP status; never the URL query, body, signature
+    or secret) and sends a W3C `traceparent` header for that span (SPEC.md:1149-1156). The header is
+    per attempt, outside the signature (which covers `<t>.<body>` only), and receivers must not
+    need it. Details: references/signature.md.
 
 ## Address check and dispatcher (P2.1)
 
@@ -195,6 +204,13 @@ relying on them:
   including a timeout, aborts `signal`). Services are `Context.Service`s per `MIGRATION.md`.
 - `node:crypto`: `createHmac('sha256', secret).update(t + '.').update(bodyBytes).digest('hex')` and
   `timingSafeEqual` on equal-length buffers (docs/STACK.md section 2.5).
+- picomatch `^4.0`: `picomatch(globs, { nocase: false, dot: true })` returns one matcher for a list
+  (true when any glob matches); `*` matches any run of characters except `/`, which never occurs in a
+  hostname, so `*.acme.com` matches `a.b.acme.com`.
+- Current span for `traceparent`: Effect exposes the active span (in Effect 3 `Effect.currentSpan`
+  with `traceId`, `spanId`, `sampled`); check Effect's MIGRATION.md and the @effect/opentelemetry docs
+  for the Effect 4 name and for a ready-made W3C propagator before formatting the header by hand as
+  `00-<traceId>-<spanId>-<01|00>`.
 
 ## Lessons from Dapr
 
@@ -263,7 +279,15 @@ relying on them:
   schema refines into a `Duration`; convert with `Duration.toSeconds` to whole seconds for
   `expiresIn`; `activeDeadlineSeconds` is already seconds.
 - Hosts glob and CIDR parsing happen in `packages/shared/src/config` (P0.5); `webhook` receives
-  parsed values from the `Config` service and never reads `process.env`.
+  parsed values (compiled picomatch matcher, parsed CIDRs) from the `Config` service and never reads
+  `process.env`.
+- `nocase: false` is the STACK setting; `URL.hostname` is already lowercase for DNS names, so the
+  Config refinement lowercases each host glob before compiling. Without that, `*.Acme.com` silently
+  matches nothing.
+- `traceparent` comes from the attempt's own span, not the tick's, so each retry has its own span id.
+  The attempt span is not in the run's `CreateRun` trace: v1 does not join a run's spans into one
+  trace across processes (no trace column, SPEC section 11); the `krun.run_id` attribute is what
+  correlates it with the run's other spans.
 
 ## Before marking a task done
 

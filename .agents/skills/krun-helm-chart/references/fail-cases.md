@@ -1,6 +1,6 @@
 # Chart `fail` cases and the NOTES.txt warning
 
-Every case comes from SPEC.md:1308-1317 (plus the embedded replica rule
+Every case comes from SPEC.md:1352-1361 (plus the embedded replica rule
 SPEC.md:1314-1315 and the quota rule SPEC.md:1108). Each `fail` needs a
 message that names the value and what to set (PLAN.md:692-693 "fails with
 a clear message"). Implement them in one helper
@@ -12,7 +12,12 @@ emptiness and cannot express the cross-key conditions.
 Do not add a case the SPEC does not list (PLAN.md:31-32): no digest
 check on `litestream.image`, no consistency check between
 `config.shutdownDelay` and `terminationGracePeriodSeconds` (see SPEC
-RISK in SKILL.md).
+RISK in SKILL.md). The Gateway API, admission policy, telemetry and
+user-namespace values add no case either (SPEC.md:1352-1359): no `fail` for
+`gatewayApi.httpRoute.enabled` with empty `parentRefs`, no
+`.Capabilities` check for the Gateway API or ValidatingAdmissionPolicy
+APIs, no check of `observability.otlpEndpoint` or
+`tracesSampleRatio`, nothing for `jobsNamespace.userNamespaces`.
 
 ## Fail table
 

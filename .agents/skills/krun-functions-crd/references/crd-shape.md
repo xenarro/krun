@@ -51,12 +51,12 @@ status:                                    # written by the scheduler leader onl
 | `spec.group` | `krun.io` | SPEC.md:74 |
 | `spec.scope` | `Namespaced` | SPEC.md:75 |
 | `spec.names` | `kind: Function`, `listKind: FunctionList`, `plural: functions`, `singular: function`, `shortNames: [kfn]` | SPEC.md:74-75, D21 |
-| `spec.versions[0]` | `name: v1alpha1`, `served: true`, `storage: true` | SPEC.md:74, 1413 |
+| `spec.versions[0]` | `name: v1alpha1`, `served: true`, `storage: true` | SPEC.md:74, 1466-1468 |
 | `subresources` | `status: {}` | SPEC.md:111, PLAN.md:205 |
 | `additionalPrinterColumns` | see section 5 | SPEC.md:76, PLAN.md:205-206 |
 
 No other versions, no conversion strategy block beyond the default `None`
-(SPEC.md:1412), no webhook configuration anywhere.
+(SPEC.md:1466-1468), no webhook configuration anywhere.
 
 ## 3. `spec` properties the generator must emit (SPEC.md:80-118, 132-134)
 
@@ -174,7 +174,7 @@ Build `reason` as `z.enum(READY_REASONS)` so the CRD enum and the tuple in
 cheaply. Remember the KEDA lesson: adding a reason later is additive
 (fine); removing one breaks stored objects on the next apply.
 
-## 7. Chart template wrapper (SPEC.md:123-125, 1365-1369)
+## 7. Chart template wrapper (SPEC.md:123-125, 1419-1423)
 
 ```yaml
 {{- if .Values.crds.install }}
@@ -203,7 +203,7 @@ A JSON Schema document for the whole resource: `apiVersion` literal
 `$schema` to draft 2020-12. It is documentation; no process reads it
 (SPEC.md:126-127).
 
-## 9. RBAC the CRD implies (SPEC.md:1038-1047)
+## 9. RBAC the CRD implies (SPEC.md:1050-1062)
 
 | Role | Namespace | Verbs on `functions.krun.io` |
 |---|---|---|

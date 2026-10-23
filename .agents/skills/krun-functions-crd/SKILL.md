@@ -31,10 +31,10 @@ P0.8, P2.2, P2.3, P2.5, P4.7; read by P3.2/P3.3 (gateway fields) and P4.3b
 - SPEC.md:72-174 (section 3, all of it), 19-24 (non-goals), 188
   (`/readyz`), 335 and 808-811 (`queueTimeout` of a deleted or invalid
   Function), 776-781 (informer on every replica, writer leader-only),
-  847-853 (no resync), 944-948 (no ReDoS guard), 1035-1047 (RBAC),
-  1091-1094 (digest only), 1144-1145 (metrics), 1199-1214 (the five ceiling
-  variables), 1365-1369 (CRD as chart template), 1410-1413 (additive-only),
-  D17/D21/D22/D26/D33/D35 (SPEC.md:1458-1476).
+  847-853 (no resync), 944-948 (no ReDoS guard), 1048-1062 (RBAC),
+  1107-1109 (digest only), 1141-1177 (metrics and spans), 1229-1247 (the
+  five ceiling variables), 1419-1423 (CRD as chart template), 1466-1468
+  (additive-only), D17/D21/D22/D26/D33/D35 (SPEC.md:1505-1540).
 - docs/API.md section 2.1 and 3.1-3.2 (the `Function` resource as served:
   read-only, Ready functions only, generic 404).
 - docs/STACK.md sections 2 and 4 (Zod for every own schema, Ajv only for
@@ -111,12 +111,12 @@ P0.8, P2.2, P2.3, P2.5, P4.7; read by P3.2/P3.3 (gateway fields) and P4.3b
    the reason, patched through `CustomObjectsApi` (via the `Kube` service)
    on the status subresource only when `observedGeneration` or the
    condition changes; the gateway's Role has no `status` verb at all
-   (SPEC.md:153-158, 776-779, 1038-1044, PLAN.md:557-561).
+   (SPEC.md:153-158, 776-779, 1048-1062, PLAN.md:557-561).
 10. Readiness of both processes waits for the informer's initial list; a
     failed initial list (404 before the CRD is Established) is retried with
     backoff while `/readyz` stays 503; a failed watch is restarted with
     backoff because client-node informers stop for good on error
-    (SPEC.md:158-162, 188, PLAN.md:338-341, D33 SPEC.md:1474). In Effect
+    (SPEC.md:158-162, 188, PLAN.md:338-341, D33). In Effect
     terms: the informer `Stream` is wrapped in `Stream.retry` with an
     exponential `Schedule`, never left to fail the layer. Never exit the
     process on an informer error.
@@ -138,10 +138,12 @@ P0.8, P2.2, P2.3, P2.5, P4.7; read by P3.2/P3.3 (gateway fields) and P4.3b
 13. CRD `v1alpha1` is additive-only: new fields optional with defaults; a
     breaking change opens `v1alpha2` by a Decisions row, no conversion
     webhook in v1, `v1alpha1` stays `served: true, storage: true`
-    (SPEC.md:1410-1413).
+    (SPEC.md:1466-1468).
 14. Dependencies here are exactly `zod`, `effect`, `ajv`, `ajv-formats`,
-    `yaml`, `@kubernetes/client-node` 2.x (only through the `Kube` service),
-    `prom-client` (PLAN.md:60-74, docs/STACK.md section 2); a CEL evaluator,
+    `yaml`, `@kubernetes/client-node` 2.x (only through the `Kube` service);
+    the two Function metrics are Effect `Metric`s from the shared
+    `Metrics` service, exported by `krun-process-runtime`'s telemetry layer
+    (PLAN.md section 2, docs/STACK.md section 2); a CEL evaluator,
     schema-walker package, CRD generator or Effect Schema needs a Decisions
     row (PLAN.md:29-30).
 15. Erasable syntax only: the reason list is a `const` tuple + union type
@@ -160,7 +162,7 @@ schema.ts (Zod spec + status + READY_REASONS tuple + IMAGE_DIGEST rule + DURATIO
        -> deploy/crds/functions.krun.io.yaml          (plain CRD, target openapi-3.0, committed)
        -> deploy/helm/krun/templates/crd-functions.yaml (same object inside
           `{{- if .Values.crds.install }}`, `helm.sh/resource-policy: keep`
-          when `crds.keep`; SPEC.md:123-125, 1365-1369)
+          when `crds.keep`; SPEC.md:123-125, 1419-1423)
        -> docs/schemas/function-v1alpha1.json         (editor schema, target draft-2020-12)
 ```
 
@@ -191,7 +193,7 @@ schema.ts (Zod spec + status + READY_REASONS tuple + IMAGE_DIGEST rule + DURATIO
 - Callback host check calls the P2.1 host-glob matcher in
   `packages/shared/src/webhook` (PLAN.md:332); with
   `KRUN_WEBHOOK_ALLOWED_HOSTS` empty any `callback.url` is
-  `CallbackNotAllowed` (SPEC.md:1214, PLAN.md:356-358). No DNS in layer two.
+  `CallbackNotAllowed` (SPEC.md:1247, PLAN.md:356-358). No DNS in layer two.
 - `krun validate` applies CRD defaults before layer two (as the API server
   does in-cluster): parsing with the Zod schema yields the `.default()`
   values, so a missing `serviceAccountName` is `krun-job-default` (SPEC.md:93).
@@ -343,7 +345,7 @@ schema.ts (Zod spec + status + READY_REASONS tuple + IMAGE_DIGEST rule + DURATIO
   shape or `z.toJSONSchema` alternatives: Zod is the only schema language
   (docs/STACK.md principle 2).
 - Never log `inputSchema`, `env` values, `callback.url` or whole Function
-  objects; log `name`, `uid`, `generation`, `reason` (SPEC.md:1088-1089).
+  objects; log `name`, `uid`, `generation`, `reason` (SPEC.md:1181-1186).
 
 ## Before marking a task done
 

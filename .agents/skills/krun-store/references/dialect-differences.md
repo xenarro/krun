@@ -10,13 +10,13 @@ of behaviour.
 
 | Concept | Postgres | SQLite | Row <-> TS |
 |---|---|---|---|
-| `id` | `uuid` | `text` | `string`, UUIDv7 from `uuid` `v7({ msecs })` with `msecs` from `Clock.currentTimeMillis` (SPEC.md:400, D9 SPEC.md:1450, docs/STACK.md 2.5) |
+| `id` | `uuid` | `text` | `string`, UUIDv7 from `uuid` `v7({ msecs })` with `msecs` from `Clock.currentTimeMillis` (SPEC.md:400, D9, docs/STACK.md 2.5) |
 | JSON columns (`input result error runtime_status job_status payload`) | `jsonb` | `text`, read with JSON1 | PG returns parsed objects; SQLite returns a string: `JSON.parse` in the row mapper. Insert with `JSON.stringify(v)` in both (docs/research/node-stack-facts.md:658-661, UNVERIFIED) |
 | timestamps | `timestamptz` | `text`, RFC 3339 UTC with milliseconds | `DateTime.Utc` in `Run`. pg returns a driver-built `Date`, SQLite returns the string; convert both to `DateTime.Utc` in the dialect mapper (Effect 3 `DateTime.unsafeMake`; check MIGRATION.md for the Effect 4 name). Write `DateTime.formatIso(dt)` in both dialects (always `YYYY-MM-DDTHH:mm:ss.sssZ`, fixed width, sorts as text; pg accepts the string for `timestamptz`) |
 | `state` | `text` + `check` | `text` + `check` | string union `State` |
 | `int` | `int` | `integer` | `number` |
 | partial indexes | yes | yes | same DDL text |
-| `returning` | yes | yes (3.35+) | same builders; better-sqlite3 13.0.3 bundles SQLite 3.53.4 (VERIFIED from the tarball) |
+| `returning` | yes | yes (3.35+) | same builders; Node 24.22's `node:sqlite` bundles SQLite 3.53.4 (observed); Node 26's bundled version is UNVERIFIED, assert `select sqlite_version()` >= 3.35 in P1.9 |
 
 Rules that follow:
 
@@ -38,13 +38,13 @@ Rules that follow:
 
 | Topic | Postgres | SQLite |
 |---|---|---|
-| Pool | `pg.Pool` of 5 per process (SPEC.md:548) | none: one synchronous `better-sqlite3` connection per process (SPEC.md:561) |
+| Pool | `pg.Pool` of 5 per process (SPEC.md:548) | none: one synchronous `node:sqlite` connection per process behind the in-house dialect (SPEC.md section 6, last paragraph) |
 | Extra connection | one dedicated `pg.Client` for `LISTEN`, outside the pool (SPEC.md:548-549) | none |
-| Transaction start | Kysely default `begin` | `SqliteDriver` subclass whose `beginTransaction` runs `begin immediate` (SPEC.md:562, PLAN.md:295-297) |
+| Transaction start | Kysely default `begin` | `SqliteDriver` subclass whose `beginTransaction` runs `begin immediate`, returned by the krun dialect's `createDriver()` (SPEC.md section 6, PLAN.md:300-306) |
 | Row locking | `for update skip locked` in claim statements (SPEC.md:480, 515) | serialised by `begin immediate` plus Kysely's connection mutex; omit the clause (SPEC.md:485) |
 | Pragmas | none | set on every connection (SPEC.md:551-559), see below |
 | Lifecycle | the `Database` layer is scoped: acquire builds `pg.Pool` (`max: 5`, `query_timeout: 10000`), release `db.destroy()` | acquire opens the file and sets the pragmas, release `db.destroy()` |
-| Query errors | rejection -> `Effect.tryPromise` `catch` -> `DatabaseError` | `better-sqlite3` throws synchronously inside Kysely's promise; same mapping |
+| Query errors | rejection -> `Effect.tryPromise` `catch` -> `DatabaseError` | `node:sqlite` throws synchronously inside Kysely's async `executeQuery`, which turns it into a rejection; same mapping. SQLite result codes are on `errcode` (5 = `SQLITE_BUSY`), `code` is always `ERR_SQLITE_ERROR` (observed on Node 24.22) |
 
 Kysely facts (VERIFIED from `pkgs/kysely-0.29.7/package/dist`):
 
@@ -58,10 +58,77 @@ Kysely facts (VERIFIED from `pkgs/kysely-0.29.7/package/dist`):
 - `SqliteAdapter.supportsMultipleConnections` is false, so the runtime driver
   wraps every `acquireConnection` in a `ConnectionMutex`
   (`driver/runtime-driver.js:22-24, 49-51`): Store calls serialise per
-  process. Do not open a second `better-sqlite3` handle in the Store; the
-  P1.9 test opens one only to prove `SQLITE_BUSY` (PLAN.md:298-300).
+  process. Do not open a second `node:sqlite` connection in the Store; the
+  P1.9 test opens one only to prove `SQLITE_BUSY` (PLAN.md:302-306).
 - `SqliteAdapter.acquireMigrationLock` is a no-op (single connection); the
   Postgres adapter takes a real lock (`dialect/sqlite/sqlite-adapter.js:13-20`).
+- `SqliteDialectConfig.database` is a `SqliteDatabase` (`close()`,
+  `prepare(sql)`); its statements expose `reader`, `all(params)`,
+  `run(params)` and `iterate(params)`, each called with the parameter
+  array as one argument (`dialect/sqlite/sqlite-dialect-config.d.ts:40-52`,
+  `sqlite-driver.js:56-80`). The interface was written for a different
+  driver, so `node:sqlite` needs an adapter.
+
+### The `node:sqlite` dialect adapter (P1.9, `store/sqlite/dialect.ts`)
+
+STACK.md 2.3 budgets about 40 lines. The sketch below ran against Kysely
+0.29.7 on Node 24.22.0 (insert with `returning`, update, transaction,
+row-value comparison, `stream()`); every detail is UNVERIFIED on Node 26
+until the P1.9 test passes there, starting with the class name (Node 24.22
+exports `DatabaseSync`; docs/STACK.md 2.3 names it `Database`).
+
+```ts
+import { DatabaseSync, type SQLInputValue } from "node:sqlite" // Node 26 name: check
+import {
+  CompiledQuery, SqliteDialect, SqliteDriver,
+  type DatabaseConnection, type SqliteDatabase, type SqliteDialectConfig,
+} from "kysely"
+
+const asKysely = (db: DatabaseSync): SqliteDatabase => ({
+  close: () => db.close(),
+  prepare: (sql) => {
+    const stmt = db.prepare(sql)
+    const args = (p: ReadonlyArray<unknown>) => p as SQLInputValue[]
+    return {
+      reader: stmt.columns().length > 0,        // returns rows, incl. `returning`
+      all: (p) => stmt.all(...args(p)),          // spread: node:sqlite binds varargs
+      run: (p) => stmt.run(...args(p)),          // { changes, lastInsertRowid }
+      iterate: (p) => stmt.iterate(...args(p)),
+    }
+  },
+})
+
+class ImmediateDriver extends SqliteDriver {
+  override async beginTransaction(c: DatabaseConnection) {
+    await c.executeQuery(CompiledQuery.raw("begin immediate"))
+  }
+}
+
+export class KrunSqliteDialect extends SqliteDialect {
+  readonly #config: SqliteDialectConfig
+  constructor(db: DatabaseSync) {
+    const config = { database: asKysely(db) }
+    super(config)
+    this.#config = config
+  }
+  override createDriver() { return new ImmediateDriver(this.#config) }
+}
+```
+
+- The `Database` layer opens the file (`new DatabaseSync(path)`), runs the
+  five pragmas with `db.exec`, then builds `new Kysely({ dialect: new
+  KrunSqliteDialect(db) })`; release is `kysely.destroy()`, which calls
+  `close()`.
+- `reader` from `columns()` matches what the interface expects: a
+  statement that returns rows goes through `all`, so `insert ...
+  returning *` yields rows and a plain `update` yields `numAffectedRows`.
+- Never pass Kysely's array straight through: a lone array argument is read
+  as a named-parameter object (`Unknown named parameter '0'`).
+- The parameter cast is the one unchecked spot: values reaching it must
+  already be `null`, `number`, `bigint`, `string` or `Uint8Array`;
+  `undefined` and `Date` throw at bind time.
+- Kysely prepares a statement per query; no statement cache until a
+  benchmark asks for one.
 
 ### SQLite pragmas (SPEC.md:553-559, verbatim)
 
@@ -73,10 +140,12 @@ foreign_keys = ON
 auto_vacuum  = INCREMENTAL
 ```
 
-- Apply with `db.pragma('journal_mode = WAL')` etc. right after
-  `new Database(path)` and before `migrate()`; `db.pragma('journal_mode',
-  { simple: true })` returns `'wal'` for the P1.9 assertion
-  (docs/research/node-stack-facts.md:676-678, UNVERIFIED API detail).
+- Apply with `db.exec('pragma journal_mode = WAL')` etc. right after
+  opening the `node:sqlite` database and before `migrate()`; there is no
+  `pragma()` helper. `db.prepare('pragma journal_mode').get()` returns
+  `{ journal_mode: 'wal' }` for the P1.9 assertion (observed on Node
+  24.22, UNVERIFIED on 26). WAL needs a file: an in-memory database
+  reports `memory`, so the P1.9 test uses the temp-file database.
 - `auto_vacuum` only takes effect on an empty database or after `vacuum`;
   set it before the first migration creates tables.
 - `foreign_keys` is per connection and off by default; without it
@@ -136,7 +205,7 @@ seeding 5000 terminal + 50 active rows and `analyze runs`, names
   VERIFIED to exist) or `sql\`(created_at, id) < (${a}, ${b})\``. SQLite
   supports row values since 3.15.
 - Postgres `uuid` compares bytewise and UUIDv7 text compares the same way,
-  so `id desc` ties agree across dialects (D9 SPEC.md:1450).
+  so `id desc` ties agree across dialects (D9).
 
 ## 6. `subscribe` per dialect (SPEC.md:541-549, PLAN.md:290-294)
 
@@ -157,18 +226,18 @@ re-emits a row (PLAN.md:293-294). Under `TestClock` the SQLite poll
 advances with `TestClock.adjust("1 second")`; the Postgres latency test
 needs the live clock (`it.live`).
 
-## 7. Migration policy and `krun migrate` (SPEC.md:385-388, 1405-1410; PLAN.md:236-243)
+## 7. Migration policy and `krun migrate` (SPEC.md:385-388, 1460-1465; PLAN.md:236-243)
 
 - Runner: Kysely `Migrator` with `FileMigrationProvider`, one folder per
   dialect, each migration exports `up(db)` running raw SQL through `sql`
   templates (PLAN.md:236-238). No `down` is required; krun is forward-only
-  (SPEC.md:1405).
+  (SPEC.md:1460).
 - Name migrations so string order is chronological: `0001_init.ts`,
   `0002_<topic>.ts`. `FileMigrationProvider` sorts by file name and
   `Migrator` refuses executed migrations that are missing or out of order
   ("corrupted migrations", `migration/migrator.js:500-508`, VERIFIED).
 - Under Vitest the provider's own `import()` runs in Node, outside Vite's
-  transform, so it loads the `.ts` migration through Node 24 type stripping
+  transform, so it loads the `.ts` migration through Node 26 type stripping
   (UNVERIFIED; check in P1.2): keep migrations erasable-syntax only and
   importing nothing but `kysely`. Under `tsc` output it imports `.js`.
   Point `migrationFolder` at `import.meta.dirname`-relative paths and keep
@@ -179,8 +248,8 @@ needs the live clock (`it.live`).
   tagged error on it.
 - Policy: expand/contract, each migration keeps the previous minor's code
   working, drops ship one minor later, `helm rollback` by one minor is
-  supported (SPEC.md:1405-1407, docs/OPERATIONS.md:31-36).
-- `krun migrate` diff rule (SPEC.md:1407-1410, PLAN.md:238-243): before
+  supported (SPEC.md:1460-1462, docs/OPERATIONS.md:31-36).
+- `krun migrate` diff rule (SPEC.md:1462-1465, PLAN.md:238-243): before
   `migrateToLatest`, call `migrator.getMigrations()` (sorted by name, each
   with `executedAt` when recorded, `migration/migrator.d.ts:59, 377-391`,
   VERIFIED) and read `kysely_migration` directly for names the binary does
@@ -197,14 +266,15 @@ needs the live clock (`it.live`).
   effect, never `process.exit`.
 
   Note that `Migrator` itself would throw "corrupted migrations" in the
-  "some unknown" cases because the executed list no longer matches; the
+  "some unknown" cases because the executed list does not match the
+  provider's; the
   diff must run first and decide, so the operator sees krun's message, not
   Kysely's.
 - `krun migrate` reads only `KRUN_DB_MODE`, `KRUN_DB_DSN`, `KRUN_DB_PATH`
-  (SPEC.md:1346-1347, 1188-1190); it runs as the chart's pre-upgrade hook in
-  Postgres mode and as an init step in embedded mode (SPEC.md:1343,
-  1359-1361, docs/OPERATIONS.md:31-34). Never log the DSN (pino `redact`
-  covers `dsn`, SPEC.md:1151-1153).
+  (SPEC.md:1395-1396, 1220-1222); it runs as the chart's pre-upgrade hook in
+  Postgres mode and as an init step in embedded mode (SPEC.md:1390-1392,
+  1408-1412, docs/OPERATIONS.md:31-34). Never log the DSN (pino `redact`
+  covers `dsn`, SPEC.md:1181-1186).
 - Acceptance (PLAN.md:241-243): migrate up twice is idempotent on both
   dialects; a database with one extra recorded migration yields exit 0 and
   the warning; extra plus pending yields exit 1. Simulate "extra" by

@@ -123,10 +123,10 @@ const upsert = (obj: FunctionObject) => Ref.update(map, (m) => {
   side effect except the status writer, which diffs first, so no
   special-casing is needed.
 - `afterChange` recomputes `krun_functions{ready="true"|"false"}` from the
-  map (two gauge series, SPEC.md:1145) and publishes the changed entry to
+  map (two gauge series, SPEC.md:1177) and publishes the changed entry to
   `changes` (read only by the scheduler leader's status writer).
 - Never log the object; log `{ name, uid, generation, reason }` at info on
-  a reason change and at debug otherwise (SPEC.md:1088-1089).
+  a reason change and at debug otherwise (SPEC.md:1181-1186).
 
 ## 4. Start, `synced`, 404 before Established, retry with backoff
 
@@ -136,7 +136,7 @@ const restartSchedule = Schedule.exponential('1 second').pipe(
   Schedule.modifyDelay(({ duration }) => Effect.succeed(Duration.min(duration, Duration.seconds(60)))),
 );
 const markSynced = Effect.gen(function* () {
-  if (yield* Deferred.succeed(synced, undefined)) metrics.functionsSynced.set(1);
+  if (yield* Deferred.succeed(synced, undefined)) yield* Metric.update(functionsSynced, 1);
 });
 const logInformerError = (e: KubeApiError) =>
   e.name === 'TimeoutError' ? Effect.logDebug('function informer timeout, restarting', { code: e.status })
@@ -158,7 +158,7 @@ const logInformerError = (e: KubeApiError) =>
   instead of answering 503 (SPEC.md:158-160, 188). Readiness reads
   `isSynced` into its `Ref`; the scheduler's start gate awaits `synced`.
   Until then `krun_functions_synced` is 0 and the `KrunFunctionsNotSynced`
-  alert fires after 2 m (SPEC.md:1396).
+  alert fires after 2 m (SPEC.md:1451).
 - UNVERIFIED: whether `informer.start()` resolves after the LIST completed
   or returns earlier. Check `dist/cache.js` `doneHandler`; if it returns
   early, emit the `Synced` marker from the first `connect` followed by the
@@ -176,16 +176,19 @@ const logInformerError = (e: KubeApiError) =>
   `TestClock.adjust('1 second')` and assert a second acquisition. No
   `setTimeout`, no real sleeps.
 
-## 5. Metrics (SPEC.md:1144-1145)
+## 5. Metrics (SPEC.md:1176-1177)
 
 | Metric | Type | Labels | Set when |
 |---|---|---|---|
 | `krun_functions_synced` | gauge | none | 1 after the first successful initial list; starts at 0 |
 | `krun_functions` | gauge | `ready` = `"true"`/`"false"` | recomputed after every add/update/delete |
 
-Both processes expose them on the admin listener through `prom-client`
-(`krun-process-runtime`; Effect `Metric` is not used). No per-function
-label on either (cardinality rule, keda.md section 4.7).
+Both are Effect `Metric.gauge`s defined once in the shared Metrics module
+and updated with `Metric.update` (the `ready` label through
+`Metric.withAttributes`); the OpenTelemetry Prometheus exporter serves them
+on each process's admin listener (`krun-process-runtime`
+`references/metrics-table.md`). No per-function label on either
+(cardinality rule, keda.md section 4.7).
 
 ## 6. Status writer (P4.7, SPEC.md:153-158, 776-779)
 
@@ -228,7 +231,7 @@ const statusWriter = Effect.gen(function* () {
   service only for the writer.
 - Leader only: forked into the leader scope after Lease acquisition and
   interrupted with it on loss or SIGTERM (SPEC.md:776-779); the gateway
-  never builds it and its Role has no `status` verb (SPEC.md:1040-1044).
+  never builds it and its Role has no `status` verb (SPEC.md:1050-1057).
 - On start, iterate the whole map once (a new leader converges objects it
   never saw change; Knative enqueues a full pass on promotion,
   `revision/controller.go:71-92`), then follow `changes`. Subscribe before

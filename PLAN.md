@@ -20,8 +20,9 @@ agent can resume from any state with no chat history.
    `2026-10-22 P1.3 <short sha> note`. Commit the plan change with the code.
    Push the branch, open a pull request to main, merge it when CI is green.
    Never push main directly. Only the owner creates `v*` tags.
-5. A change that contradicts SPEC.md needs a new row in SPEC.md section 15
-   first. Then the code. Owner decisions never get a Decisions row from the
+5. A change that contradicts SPEC.md needs its row in SPEC.md section 15
+   added or rewritten first, then the code. The table holds only decisions
+   in force; history lives in git. Owner decisions never get a Decisions row from the
    agent: published package names beyond the P0.9 fallbacks, the public API
    shape, SPEC.md section 9 policy, non-goals. For those write BLOCKED.
 6. Blocked: append `BLOCKED P1.3: <what is needed>` to the progress log, then
@@ -39,7 +40,7 @@ docs/STACK.md is the normative stack: every library, its version range,
 its use, its rules and the alternatives rejected. This section is the
 allowlist an agent checks before adding an import.
 
-- Node.js 24 LTS, TypeScript 7 strict (`tsc` emits `dist/` per package),
+- Node.js 26 (LTS from late October 2026), TypeScript 7 strict (`tsc` emits `dist/` per package),
   ES modules, pnpm workspace. Erasable syntax only: no enums, no parameter
   properties.
 - Effect 4 is the foundation of every process (docs/STACK.md section 4);
@@ -49,9 +50,9 @@ allowlist an agent checks before adding an import.
 - Tests: Vitest 5 with `@effect/vitest` (`it.effect`, `TestClock`),
   fast-check for property tests, testcontainers for Postgres and MinIO.
   `make test` runs `pnpm -r exec vitest run` and the Python suite.
-- `pnpm`, `biome` (lint and format), `docker`, `kind` 0.24 or newer (its
+- `pnpm`, `biome` (lint and format), `docker`, `kind` 0.31 or newer (its
   kindnetd enforces NetworkPolicy), `kubectl`, `helm` 4, `helm-docs`,
-  `promtool`, `actionlint`, `gh`.
+  `promtool`, `actionlint`, `gh`. kind node image 1.33 or newer.
 - Python 3.11 or newer, `uv`, `ruff`, `pytest`, `mypy` for `sdk/python`.
 - CI tools, not dependencies: Trivy, cosign, syft, `pnpm audit`, Renovate,
   helm/kind-action pinned to the same kind version.
@@ -62,7 +63,7 @@ allowlist an agent checks before adding an import.
 | `effect`, `@effect/platform-node` | foundation: services, layers, typed errors, scopes, schedules, streams, clock; process entry with `NodeRuntime.runMain` |
 | `zod` | every boundary schema; CRD and editor schema through `z.toJSONSchema` |
 | `fastify`, `fastify-type-provider-zod`, `@fastify/swagger` | HTTP listeners, Zod route schemas, generated OpenAPI |
-| `kysely`, `pg`, `better-sqlite3` | typed SQL for both dialects, migrations, `LISTEN` |
+| `kysely`, `pg` | typed SQL for both dialects, migrations, `LISTEN`; SQLite is the built-in `node:sqlite` behind an in-house Kysely adapter |
 | `@kubernetes/client-node` 2.x | Jobs, Pods, Secrets, Leases, Functions, informers |
 | `undici` | webhook delivery with a pinned-address `Agent` |
 | `ajv`, `ajv-formats` | user-supplied `inputSchema` only |
@@ -71,16 +72,19 @@ allowlist an agent checks before adding an import.
 | `@aws-sdk/client-s3`, `@aws-sdk/s3-request-presigner` | presigned URLs, object exists |
 | `yaml` | keys file, Function documents for `krun validate` |
 | `ipaddr.js` | address classification and CIDR matching for webhook targets |
-| `prom-client` | metrics |
+| `@effect/opentelemetry` and the `@opentelemetry/*` packages in docs/STACK.md section 2.6 | metrics (Prometheus exporter) and traces (OTLP) |
+| `picomatch` | key and webhook host globs |
+| `@clack/prompts`, `picocolors`, `tinyexec` | CLI only: prompts, colour, running `docker` and `kubectl` |
 
 Dev dependencies: `typescript`, `vitest`, `@effect/vitest`, `fast-check`,
 `testcontainers`, `@testcontainers/postgresql`, `@testcontainers/minio`,
-`@biomejs/biome`, `@types/node`, `@types/pg`, `@types/better-sqlite3`.
+`@biomejs/biome`, `@types/node`, `@types/pg`, `knip`, `publint`,
+`@arethetypeswrong/cli`; `hypothesis` for the Python SDK.
 
 Node built-ins for everything else: `node:crypto` for SHA-256, HMAC,
 `timingSafeEqual` and token bytes, `node:dns/promises`, `node:fs`,
 `node:util` `parseArgs` for the CLI. Written in house, no package: token
-bucket, glob to regex, SSE on `reply.raw`, Lease leader election (a scoped
+bucket, SSE on `reply.raw`, Lease leader election (a scoped
 Effect layer on `CoordinationV1Api`), the duration grammar (a Zod
 refinement into `Duration`). The SDKs (`packages/sdk-node`, `sdk/python`)
 have no runtime dependencies and do not use Effect.
@@ -165,12 +169,12 @@ Gate: `make check` green in CI on an empty but wired repository.
       Acceptance: `make check` and `make helm-lint` pass.
 - [ ] P0.3 Dockerfile: multi-stage, `pnpm -r build`, then
       `pnpm install --prod --frozen-lockfile` and every workspace package's
-      `dist/` (`packages/cli/dist` included) copied onto a distroless Node.js base pinned by digest (glibc, so the
-      `better-sqlite3` prebuilt binary loads), non-root 65532, entrypoint
+      `dist/` (`packages/cli/dist` included) copied onto a distroless Node.js 26 base pinned by digest (no native
+      addons, so no build toolchain in any stage), non-root 65532, entrypoint
       runs `bin/krun.js`. Acceptance: `make docker` builds and
       `docker run <image> gateway` prints `gateway`.
-- [ ] P0.4 GitHub Actions `ci.yml` on push and pull request: `make check`,
-      `make generate` then `git diff --exit-code`, `make docker`,
+- [ ] P0.4 GitHub Actions `ci.yml` on push and pull request: `make check`
+      (including `knip`), `make generate` then `git diff --exit-code`, `make docker`,
       `make helm-lint`, `pnpm audit --prod --audit-level=critical`, Trivy on
       the image (`--severity CRITICAL --ignore-unfixed --exit-code 1`);
       `renovate.json` for npm, Docker digests and Actions. Acceptance:
@@ -186,12 +190,13 @@ Gate: `make check` green in CI on an empty but wired repository.
       `KRUN_S3_PRESIGN_TTL=""` yielding the default.
 - [ ] P0.6 Verify `CLAUDE.md` matches PLAN section 1 and SPEC D15: read
       order, `make check` before every commit, no non-goals, no
-      Co-Authored-By trailer, TypeScript on Node.js 24; edit only on drift.
+      Co-Authored-By trailer, TypeScript on Node.js 26; edit only on drift.
       Acceptance: the rules match.
 - [ ] P0.7 Admin listener plugin in `packages/shared/src/health`:
       `/healthz`, `/readyz`, `/metrics` on `KRUN_ADMIN_LISTEN_ADDR` for both
-      processes (a readiness route over an Effect `Ref`, `prom-client`
-      registry); readiness returns 503 until marked ready,
+      processes (a readiness route over an Effect `Ref`; the OpenTelemetry
+      Prometheus exporter serving `/metrics`; the `Telemetry` layer with OTLP
+      traces when `OTEL_EXPORTER_OTLP_ENDPOINT` is set); readiness returns 503 until marked ready,
       when the database check exceeds 2 seconds, and from the start of
       shutdown. Acceptance: `@effect/vitest` test with Fastify `inject` and `TestClock`,
       including a stalled database check.
@@ -225,7 +230,7 @@ Gate: `make check` green in CI on an empty but wired repository.
 
 Gate: `pnpm exec vitest run packages/shared/src/store` runs the
 contract suite against SQLite on a temp-file database (`fs.mkdtemp` under
-`os.tmpdir()`, removed in `after`) and against Postgres via testcontainers,
+`os.tmpdir()`, removed in `after`) and against Postgres 18 via testcontainers,
 both green.
 
 - [ ] P1.1 Model types, Kysely table types, `toRun`, `toRunSummary`
@@ -292,11 +297,12 @@ both green.
       subscribe, kind `job_status` when `from_state = to_state`.
       Acceptance: a transition is observed within 2 seconds in both modes;
       SQLite never re-emits a row.
-- [ ] P1.9 SQLite pragmas on open (`better-sqlite3`), one connection per
-      process, a `SqliteDriver` subclass whose `beginTransaction` runs
+- [ ] P1.9 SQLite on Node's built-in `node:sqlite`: an in-house Kysely
+      dialect adapter (`packages/shared/src/store/sqlite/dialect.ts`),
+      pragmas on open, one connection per process, a `SqliteDriver` subclass whose `beginTransaction` runs
       `begin immediate`. Acceptance: on the temp-file database, test
       asserts `journal_mode` is `wal`; while a Store transaction is open, a
-      second `better-sqlite3` connection's `begin immediate` with
+      second `node:sqlite` connection's `begin immediate` with
       `busy_timeout` 0 fails `SQLITE_BUSY`.
 - [ ] P1.10 `setRuntimeStatus`, `setResult` and `setError`, allowed in
       `queued` with a token set, `scheduled` or `running`; `setJobStatus`,
@@ -552,8 +558,12 @@ set, Job gone.
 - [ ] P4.6 Metrics from SPEC section 11 owned by the leader:
       `krun_runs_transitions_total`, `krun_runs_current` from
       `countByState` each loop, queue wait, cold start, run duration.
-      Acceptance: with `test/fake-kube` completing the Job, metric names
-      appear on the admin `/metrics` after one run.
+      Acceptance: with `test/fake-kube` completing the Job, the exact metric
+      names of SPEC section 11 appear on the admin `/metrics` after one run
+      (no doubled `_total`, histograms in seconds), and with an in-memory span exporter the run's create request, iteration
+      and Kubernetes calls appear as spans carrying the same `krun.run_id`;
+      a `traceparent` sent with `CreateRun` becomes the parent of the request
+      span.
 - [ ] P4.7 Function status writer on the leader: `Ready` condition with the
       reason from P2.2, patched through `CustomObjectsApi` only when
       `observedGeneration` or the condition changes. Acceptance: stubbed
@@ -597,7 +607,7 @@ set, Job gone.
       `KUBECONFIG` pointing at `test/fake-kube`: `/readyz` 200 as standby,
       exits 0 within 5 seconds of SIGTERM with the Lease cleared in the
       fake.
-- [ ] P4.12 `test/e2e` foundation: `make kind-up` pinned to kind 0.24 or
+- [ ] P4.12 `test/e2e` foundation: `make kind-up` pinned to kind 0.31 or
       newer following kind's local-registry recipe (`registry:2` as
       `kind-registry` on `localhost:5001` joined to the `kind` network,
       containerd `config_path` with a per-node hosts.toml mirror, the
@@ -708,7 +718,9 @@ mode and in postgres mode with a plain Postgres Deployment from
       `KRUN_ADMIN_LISTEN_ADDR=:9091` with port name `admin-sched`, ports and
       probes per container, init containers in order Litestream restore
       (orphan `-wal` and `-shm` removal, then restore) and `krun migrate`,
-      Litestream sidecar from `db.embedded.litestream.image`, `fail` when
+      Litestream as a native sidecar (init container with `restartPolicy:
+      Always` between the restore init container and `krun migrate`) from
+      `db.embedded.litestream.image`, `fail` when
       replicas exceed 1, Litestream Secret keys `LITESTREAM_ACCESS_KEY_ID`
       and `LITESTREAM_SECRET_ACCESS_KEY`; the pod runs as the scheduler
       ServiceAccount with no gateway ServiceAccount or RoleBinding; a
@@ -725,7 +737,9 @@ mode and in postgres mode with a plain Postgres Deployment from
       `jobsNamespace.keep`, LimitRange with defaults and `max` for cpu,
       memory and ephemeral-storage, ResourceQuota including
       ephemeral-storage; always rendered: `krun-job-default` with
-      `automountServiceAccountToken: false`; chart `fail` when
+      `automountServiceAccountToken: false`; the digest
+      ValidatingAdmissionPolicy and binding under
+      `jobsNamespace.admissionPolicy`; chart `fail` when
       `config.maxRunning` exceeds `quota.pods` while `create` is true, when
       webhooks are enabled without a secret, or when object storage is
       enabled without `endpoint`, `bucket` or `existingSecret`. Acceptance:
@@ -750,6 +764,13 @@ mode and in postgres mode with a plain Postgres Deployment from
       unrestricted `0.0.0.0/0`. Acceptance: `helm template` contains each
       rule in both modes, including a rendered `except`; the e2e checks run
       in P7.6.
+- [ ] P7.4d Optional features: `gatewayApi.httpRoute` renders an HTTPRoute
+      to the public Service with the given `parentRefs` and `hostnames`;
+      `jobsNamespace.userNamespaces` sets `hostUsers: false` on function
+      pods through `KRUN_JOB_HOST_USERS`; `observability.*` sets the
+      `OTEL_*` variables on both processes. Acceptance: `helm template`
+      renders each only when enabled; e2e on kind with the admission policy
+      on rejects a tag-only Job created by hand in the jobs namespace.
 - [ ] P7.5 Chart README generated by `helm-docs` inside `make generate`,
       documenting every value, `crds.keep` consequences, the re-install
       procedure and the plain CRD manifest for `crds.install=false`.
@@ -803,6 +824,8 @@ function per language on kind.
       ending the process, local mode stream separation; `package.json`
       lists no `dependencies`; the process exits without waiting for the
       heartbeat timer.
+      `ci.yml` gains an `sdk-node` job running this suite on Node 22 and
+      26.
 - [ ] P8.2 `sdk/python`: the same with `urllib.request` and a daemon thread
       for heartbeats, `run(handle)` as a plain call under `__main__`, never
       a decorator; `pyproject.toml`, `uv`, `ruff`, `pytest`; `make test`
@@ -884,9 +907,7 @@ Gate: all e2e scenarios green; README states measured numbers and the
       1800 s); durations recorded in README.
 - [ ] P9.5 Release `v0.1.0`: prepare the release pull request (CHANGELOG,
       version stamps verified by the `release.yml` dry-run); the owner
-      tags; after the tag `release.yml` publishes the signed image and OCI
-      chart with SBOM to GHCR, `@krun/sdk` and `@krun/cli` to npm, `krun`
-      to PyPI. Acceptance: the dry-run job is green on the release pull
+      tags; after the tag `release.yml` publishes the signed image and OCI chart with SBOM to GHCR, `@krun/sdk` and `@krun/cli` to npm (after `publint` and `attw --pack` pass), `krun` to PyPI. Acceptance: the dry-run job is green on the release pull
       request; after the tag, `helm install` from the OCI chart works,
       `npx @krun/cli init` and `pip install krun` work, `cosign verify`
       passes on the image.

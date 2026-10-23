@@ -1,38 +1,40 @@
 # Environment variables (SPEC.md section 12)
 
-Verbatim from SPEC.md:1186-1217 (working tree 2026-10-23) with a `process`
+Verbatim from SPEC.md:1218-1254 (working tree 2026-10-23) with a `process`
 column and a `kind` column added for the parser. Re-check the line numbers
 before quoting; SPEC.md is edited concurrently.
 
-## Validation rules (SPEC.md:1178-1184)
+## Validation rules (SPEC.md:1210-1216)
 
-- Flags are not supported except `--help` (SPEC.md:1178).
+- Flags are not supported except `--help` (SPEC.md:1210).
 - Each process validates its own variables at startup and exits 1 naming
-  the first bad one (SPEC.md:1179-1180). The named checks:
-  1. `KRUN_DB_DSN` empty while `KRUN_DB_MODE=postgres` (SPEC.md:1180).
+  the first bad one (SPEC.md:1211-1212). The named checks:
+  1. `KRUN_DB_DSN` empty while `KRUN_DB_MODE=postgres` (SPEC.md:1212).
   2. Scheduler with `KRUN_WEBHOOK_ALLOWED_HOSTS` set and
-     `KRUN_WEBHOOK_SECRET` empty (SPEC.md:1180-1181). Gateway does not
+     `KRUN_WEBHOOK_SECRET` empty (SPEC.md:1212-1213). Gateway does not
      need the secret.
   3. `KRUN_MAX_INPUT_BYTES` or `KRUN_MAX_RESULT_BYTES` above `1048576`
-     (SPEC.md:1182).
-  4. A duration not matching `^\d+(ms|s|m|h)$` (SPEC.md:1182-1183; the
+     (SPEC.md:1214).
+  4. A duration not matching `^\d+(ms|s|m|h)$` (SPEC.md:1214-1215; the
      same grammar as Function fields, SPEC.md:117-118).
-  5. A CIDR that does not parse (SPEC.md:1183).
+  5. A CIDR that does not parse (SPEC.md:1215).
 - An empty value is unset: the default applies and no validation runs on
-  it (SPEC.md:1183-1184). P0.5 acceptance tests `KRUN_S3_PRESIGN_TTL=""`
-  yielding the default (PLAN.md:185-186).
+  it (SPEC.md:1215-1216). P0.5 acceptance tests `KRUN_S3_PRESIGN_TTL=""`
+  yielding the default (PLAN.md:189-190).
 - P0.5 acceptance covers: defaults, one invalid duration, one invalid
   CIDR, DSN empty in postgres mode, webhook hosts without secret, a size
-  above 1 MiB, and the empty-value case (PLAN.md:183-186).
+  above 1 MiB, and the empty-value case (PLAN.md:187-190).
 
 `kind` legend: `enum`, `string`, `path`, `addr` (`host:port`, empty host =
 all interfaces), `url`, `int` (non-negative integer, plain digits), `dur`
 (duration grammar), `csv` (comma-separated strings), `cidrs`
-(comma-separated CIDRs), `level` (pino level name).
+(comma-separated CIDRs), `level` (pino level name), `bool` (`true` or
+`false`, nothing else), `ratio` (a decimal number; see the sampler note
+below).
 
 Each kind is one small Zod 4 schema in `packages/shared/src/config`, all
 wrapped by the same empty-is-unset preprocess and composed into
-`GatewayEnv` and `SchedulerEnv` (PLAN.md:179-186): `enum` → `z.enum`;
+`GatewayEnv` and `SchedulerEnv` (PLAN.md:183-190): `enum` → `z.enum`;
 `int` → digits regex then `Number`, with `.max(1048576)` on the two byte
 limits; `dur` → the `^\d+(ms|s|m|h)$` regex refined into an Effect
 `Duration` (the same refinement the Function schema uses); `cidrs` →
@@ -88,7 +90,7 @@ export const GatewayEnv = z.object({
   default issue message for a regex failure prints the pattern, not the
   value, but a custom refinement might not.
 
-## Table (SPEC.md:1186-1217)
+## Table (SPEC.md:1218-1254)
 
 | Variable | Default | Used by (SPEC text) | process | kind |
 |---|---|---|---|---|
@@ -113,6 +115,7 @@ export const GatewayEnv = z.object({
 | `KRUN_MAX_ACTIVE_DEADLINE` | `86400` | both, Function validation | both | int (seconds) |
 | `KRUN_ALLOWED_SERVICE_ACCOUNTS` | `krun-job-default` | both, Function validation; comma-separated | both | csv |
 | `KRUN_K8S_CONCURRENCY` | `8` | scheduler | scheduler | int |
+| `KRUN_JOB_HOST_USERS` | `true` | scheduler; `false` sets `hostUsers: false` on function pods (chart value `jobsNamespace.userNamespaces`) | scheduler | bool |
 | `KRUN_TTL_AFTER_FINISHED` | `86400` | scheduler | scheduler | int (seconds) |
 | `KRUN_RETENTION` | `720h` | scheduler | scheduler | dur |
 | `KRUN_ALLOWED_REGISTRIES` | empty, any | both | both | csv |
@@ -122,9 +125,12 @@ export const GatewayEnv = z.object({
 | `KRUN_WEBHOOK_ALLOWED_CIDRS` | empty | both; comma-separated CIDRs that pass the address check | both | cidrs |
 | `KRUN_WEBHOOK_SECRET` | | scheduler; comma-separated secrets, one signature each | scheduler | csv (secret) |
 | `KRUN_LOG_LEVEL` | `info` | both | both | level |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | empty, traces dropped | both; standard OpenTelemetry variable, OTLP/HTTP | both | string |
+| `OTEL_SERVICE_NAME` | `krun-gateway` or `krun-scheduler` | both | both | string |
+| `OTEL_TRACES_SAMPLER`, `OTEL_TRACES_SAMPLER_ARG` | `parentbased_traceidratio`, `0.1` | both | both | string, ratio |
 
 `KRUN_API_URL`, `KRUN_API_KEY`, `KRUN_REGISTRY` are read by the CLI on a
-developer machine only (SPEC.md:1219-1221); they are not process config.
+developer machine only (SPEC.md:1255-1257); they are not process config.
 `krun validate` and `krun deploy` also read the five validation ceilings
 named in SPEC section 3 (`KRUN_MAX_ACTIVE_DEADLINE`, `KRUN_MAX_QUEUED`,
 `KRUN_ALLOWED_REGISTRIES`, `KRUN_ALLOWED_SERVICE_ACCOUNTS`,
@@ -132,11 +138,27 @@ named in SPEC section 3 (`KRUN_MAX_ACTIVE_DEADLINE`, `KRUN_MAX_QUEUED`,
 defaults; share those field schemas with the CLI rather than copying them.
 
 Not in the table (open gap, see SKILL.md): the pod name the scheduler
-uses as Lease `holderIdentity` (SPEC.md:785). SPEC section 12 names no
+uses as Lease `holderIdentity` (SPEC.md:791). SPEC section 12 names no
 variable for it as of 2026-10-23.
 
 ## Notes for the parser
 
+- `KRUN_JOB_HOST_USERS` is a `bool`: `z.enum(["true", "false"])`
+  transformed to a boolean; `z.coerce.boolean()` would turn `"false"` into
+  `true`. It reaches the Job manifest as `hostUsers` (`krun-scheduler-k8s`).
+- The four `OTEL_*` variables are standard OpenTelemetry variables that the SDK
+  also reads itself (`telemetry.md`). krun parses them anyway, with the same
+  empty-is-unset rule, because the `Telemetry` layer decides from them:
+  no endpoint, no span processor; `OTEL_SERVICE_NAME` unset, the process
+  default; `OTEL_TRACES_SAMPLER` unset, krun builds the SPEC default
+  sampler from `OTEL_TRACES_SAMPLER_ARG` (default `0.1`), because the
+  SDK's own default is `parentbased_always_on`. None of them is among the
+  five startup rules (SPEC.md:1212-1215): do not exit 1 on them. A ratio
+  that is not a number in `[0, 1]` is an open gap (SKILL.md); fall back to
+  `0.1` with a warn line naming the variable.
+- The variables are plain process env, so `z.object` must not strip
+  them before the `Telemetry` layer reads the parsed config: declare them
+  in both `GatewayEnv` and `SchedulerEnv`.
 - `KRUN_MAX_ACTIVE_DEADLINE` and `KRUN_TTL_AFTER_FINISHED` are integer
   seconds (`86400`), not durations; `KRUN_MAX_WAIT`, `KRUN_SHUTDOWN_DELAY`,
   `KRUN_RETENTION` and `KRUN_S3_PRESIGN_TTL` are durations. Do not accept
@@ -147,15 +169,15 @@ variable for it as of 2026-10-23.
   `KRUN_NAMESPACE` explicitly; see the open gap in SKILL.md on what to do
   when neither exists.
 - `KRUN_GATEWAY_INTERNAL_URL` default is computed after `KRUN_NAMESPACE`
-  is resolved (SPEC.md:1195).
+  is resolved (SPEC.md:1227).
 - `KRUN_WEBHOOK_SECRET` and `KRUN_S3_SECRET_KEY` / `KRUN_S3_ACCESS_KEY`
   and `KRUN_DB_DSN` are secrets: never log the config object; `dsn` is in
-  the pino redact list (SPEC.md:1151-1153), the others must simply never
+  the pino redact list (SPEC.md:1183-1185), the others must simply never
   be passed to a logger.
 - The scheduler in embedded mode gets `KRUN_ADMIN_LISTEN_ADDR=:9091` from
-  the chart because both processes share one pod (SPEC.md:1194).
+  the chart because both processes share one pod (SPEC.md:1226).
 - The chart renders section 12 tunables from `config.*` camelCase keys on
-  both processes (SPEC.md:1240-1249); unknown variables to a process are
+  both processes (SPEC.md:1276-1285); unknown variables to a process are
   ignored, not rejected. So the env schema is a plain `z.object` (unknown
   keys stripped), never `z.strictObject`: `process.env` always carries
   `PATH`, `HOME` and the other process's `KRUN_*` variables.

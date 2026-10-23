@@ -5,10 +5,8 @@ verified against the published packages. The krun skills in
 `.claude/skills` cite it by line number (`docs/research/node-stack-facts.md:NNN`),
 so the file is kept byte-for-byte as written.
 
-It predates SPEC.md D35. Sections 2 (`@kubernetes/client-node`), 4
-(Kysely) and 5 (drivers and utilities) remain valid. Sections 1 (Node type
-stripping and `node --test`) and 3 (TypeBox, `@fastify/under-pressure`,
-`close-with-grace`) are superseded by docs/STACK.md: krun uses Vitest,
-Zod and Effect instead. The Fastify facts in section 3 about route
-schemas, request ids, logging, hooks, SSE, error handlers and listeners
-still describe Fastify 5.
+Use sections 2 (`@kubernetes/client-node`), 4 (Kysely) and 5 (drivers and
+utilities), and the Fastify 5 facts in section 3 on route schemas, request
+ids, logging, hooks, SSE, error handlers and listeners. Sections 1 and 3
+also cover libraries krun does not use; docs/STACK.md is the list of what
+krun uses.

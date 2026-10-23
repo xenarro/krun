@@ -8,10 +8,12 @@ description: Use when writing krun Store, migrations or SQL. Implements SPEC sec
 Covers `packages/shared/src/store`: model types, `toRun`/`toRunSummary`, the
 `Store` interface, both dialect implementations, migrations and the shared
 contract suite, plus the Effect `Database` service they run on. Serves PLAN
-Phase 1 tasks P1.1-P1.11 (PLAN.md:224-314) and is consulted by any
-P3.x/P4.x task that calls a Store method. Stack (SPEC D35, docs/STACK.md
-2.3): Kysely 0.29 + `pg` + `better-sqlite3`, wrapped in Effect 4 services;
-`@effect/sql-*` and `effect/sql` are not used.
+Phase 1 tasks P1.1-P1.11 (PLAN.md:228-318) and is consulted by any
+P3.x/P4.x task that calls a Store method. Stack (SPEC D35, D36,
+docs/STACK.md 2.3): Kysely 0.29 + `pg` + Node 26's built-in `node:sqlite`
+behind an in-house Kysely dialect adapter, wrapped in Effect 4 services;
+no native addon; `@effect/sql-*` and `effect/sql` are not used. Postgres
+16 is the supported floor; CI runs the contract suite on Postgres 18.
 
 ## When to use
 
@@ -26,7 +28,7 @@ P3.x/P4.x task that calls a Store method. Stack (SPEC D35, docs/STACK.md
   (`effect-core-patterns`, `effect-error-handling`,
   `effect-resource-management`, `effect-testing`). Effect's `MIGRATION.md`
   overrides skill text written for Effect 3: `Context.Tag` is
-  `Context.Service`, `Runtime<R>` is gone, `FiberRef` is
+  `Context.Service`, there is no `Runtime<R>`, `FiberRef` is
   `Context.Reference` (CLAUDE.md rule 7).
 
 ## Read first
@@ -35,20 +37,22 @@ P3.x/P4.x task that calls a Store method. Stack (SPEC D35, docs/STACK.md
   precedence); SPEC.md:383-562 data model, DDL, claim query, `Store`
   interface, cursor, `listStale`, `subscribe`, pool and pragmas.
 - SPEC.md:225-265 wire rules that `toRun`/`toRunSummary` implement;
-  SPEC.md:1405-1410 migration policy; SPEC.md:1343-1347 `krun migrate` env;
-  D35 SPEC.md:1476.
+  SPEC.md:1460-1465 migration policy; SPEC.md:1390-1396 `krun migrate` env;
+  D35 and D36 (SPEC.md section 15, last two rows); SPEC.md section 14
+  (Postgres 16 or newer, CI on 18; Node.js 26).
 - docs/STACK.md 2.3 (data packages and rules), 4.2 (tagged errors), 4.4
   (time).
-- PLAN.md:36-91 toolchain and the dependency table; PLAN.md:224-314 Phase 1
-  gate and tasks; docs/API.md:229-249 `ListRuns` filter grammar.
+- PLAN.md:36-94 toolchain and the dependency table; PLAN.md:228-318 Phase 1
+  gate and tasks (P1.9 at PLAN.md:300-306); docs/API.md:229-249 `ListRuns` filter grammar.
 - `references/store-interface.md`: the interface verbatim, its Effect
   form, one row per method with task, semantics, acceptance, allowed-state
   matrix, notify payloads.
 - `references/ddl.md`: DDL in both dialects, index-to-query map, claim,
   delivery-claim and sweep statements.
 - `references/dialect-differences.md`: type mapping, connections and
-  pragmas, `listStale`, literal predicate, cursor, `subscribe`, migration
-  policy and the `krun migrate` diff rule.
+  pragmas, the `node:sqlite` dialect adapter, `listStale`, literal
+  predicate, cursor, `subscribe`, migration policy and the `krun migrate`
+  diff rule.
 
 ## Rules
 
@@ -66,7 +70,7 @@ P3.x/P4.x task that calls a Store method. Stack (SPEC D35, docs/STACK.md
 3. Every terminal transition inserts the `deliveries` row in the same
    transaction when `callback_url` is set, payload `toRunSummary` of the
    updated row, including `expireQueued`, heartbeat, `job_lost` and
-   `job_create_failed` (SPEC.md:348-351, D29 SPEC.md:1470); a crash between
+   `job_create_failed` (SPEC.md:348-351, D29); a crash between
    two statements must not lose a webhook.
 4. Every successful state change appends one `run_events` row and, in
    Postgres, `pg_notify('krun_runs', '<id>:<state>')` inside the
@@ -80,7 +84,7 @@ P3.x/P4.x task that calls a Store method. Stack (SPEC D35, docs/STACK.md
    `at` of their `run_events` row; read `DateTime.now` once per write and
    use it for both (SPEC.md:357-359, PLAN.md:270-271).
 7. The application generates all ids and all timestamps; no DB time
-   defaults (SPEC.md:399-400, D9 SPEC.md:1450). Ids are UUIDv7 from `uuid`
+   defaults (SPEC.md:399-400, D9). Ids are UUIDv7 from `uuid`
    `v7({ msecs })` with `msecs` from `Clock.currentTimeMillis`; timestamps
    from `DateTime.now`. Never `Date.now()` or `new Date()` (CLAUDE.md rule
    8), so `TestClock` controls leases, `created_at` and id order in tests.
@@ -96,9 +100,10 @@ P3.x/P4.x task that calls a Store method. Stack (SPEC D35, docs/STACK.md
     `lease_until < now` makes a row claimable again (SPEC.md:470-487), with
     `now` read from `Clock` inside the method.
 11. SQLite claim and every other Store transaction open with `begin
-    immediate` through a `SqliteDriver` subclass (SPEC.md:485-486, 562;
-    PLAN.md:295-300); a deferred transaction upgrading to write returns
-    `SQLITE_BUSY` immediately regardless of `busy_timeout`.
+    immediate` through a `SqliteDriver` subclass returned by the in-house
+    dialect (SPEC.md:485-486, 562; PLAN.md:300-306); a deferred
+    transaction upgrading to write returns `SQLITE_BUSY` immediately
+    regardless of `busy_timeout`.
 12. `listStale` SQLite uses `max(coalesce(json_extract(runtime_status,
     '$.at'), started_at), started_at)`; scalar `max` returns null on any
     null (SPEC.md:523-527).
@@ -106,7 +111,7 @@ P3.x/P4.x task that calls a Store method. Stack (SPEC D35, docs/STACK.md
     `observedAt` changed, with the same comparison inside the CAS
     (SPEC.md:511, 858-860); `setRuntimeStatus`, `setResult`, `setError` are
     allowed only in `queued` with a token, `scheduled`, `running`
-    (SPEC.md:508-510, D27 SPEC.md:1468).
+    (SPEC.md:508-510, D27).
 14. `listRuns` orders `created_at desc, id desc`, cursor base64url
     `created_at|id` plus a parent/filter hash, row-value comparison
     `(created_at, id) < ($createdAt, $id)` in both dialects, items are
@@ -114,8 +119,9 @@ P3.x/P4.x task that calls a Store method. Stack (SPEC D35, docs/STACK.md
     (SPEC.md:522-523, 236-240; PLAN.md:275-283).
 15. Postgres: pool of 5 per process (`query_timeout` 10000) plus one
     dedicated `LISTEN` client outside the pool. SQLite: one synchronous
-    `better-sqlite3` connection, no pool, the five pragmas on every open
-    (SPEC.md:548-561, docs/STACK.md 2.3).
+    `node:sqlite` connection reached through the in-house adapter in
+    `packages/shared/src/store/sqlite/dialect.ts`, no pool, the five
+    pragmas on every open (SPEC.md:548-566, docs/STACK.md 2.3).
 16. `toRun` (FULL) and `toRunSummary` (BASIC = minus `input`, `result`,
     `logTail`, `error.details`) in `packages/shared/src/store` are the only
     row-to-wire mappers; `listRuns`, delivery payload, SSE and the gateway
@@ -127,22 +133,35 @@ P3.x/P4.x task that calls a Store method. Stack (SPEC D35, docs/STACK.md
     different hash fails with `ConflictError` (PLAN.md:244-252).
 18. Migrations: Kysely `Migrator` + `FileMigrationProvider`, one folder per
     dialect, raw SQL in `sql` templates, forward-only expand/contract; `krun
-    migrate` diffs `kysely_migration` first (SPEC.md:385-388, 1405-1410;
+    migrate` diffs `kysely_migration` first (SPEC.md:385-388, 1460-1465;
     PLAN.md:236-243).
-19. Only docs/STACK.md dependencies: `effect`, `kysely`, `pg`,
-    `better-sqlite3`, `uuid`, `canonicalize`; dev `vitest`,
+19. Only docs/STACK.md dependencies: `effect`, `kysely`, `pg`, `uuid`,
+    `canonicalize`, plus the built-in `node:sqlite`; dev `vitest`,
     `@effect/vitest`, `fast-check`, `testcontainers`,
-    `@testcontainers/postgresql`. `@effect/sql-kysely`, `@effect/sql-pg`,
-    `effect/sql`, an ORM, a migration CLI or `pg-listen` need a Decisions
-    row first (PLAN.md:29-30, docs/STACK.md 2.3 "considered and
-    rejected").
+    `@testcontainers/postgresql`, `@types/pg`. No SQLite package: embedded
+    mode is the built-in `node:sqlite` and krun has no native addons (D36,
+    docs/STACK.md principle 8). `@effect/sql-kysely`, `@effect/sql-pg`, `effect/sql`, an ORM,
+    a migration CLI or `pg-listen` need a Decisions row first
+    (PLAN.md:29-30, docs/STACK.md 2.3 "considered and rejected").
 20. Every Kysely call runs through the `Database` service inside
     `Effect.tryPromise`, mapping the rejection to a tagged `DatabaseError`
     (docs/STACK.md 2.3, 4.2). No `throw` outside the adapter; a failed read
     is a failure, never an empty result.
 21. Never log `input`, `result`, `runtimeStatus`, `error.details`, `dsn`,
-    tokens or hashes of tokens (SPEC.md:1151-1153); the Store logs ids,
+    tokens or hashes of tokens (SPEC.md:1181-1186); the Store logs ids,
     states and reasons only.
+22. Postgres 16 is the floor (SPEC.md section 14), CI tests only 18: SQL
+    and migrations use nothing newer than 16. No `uuidv7()` (18; ids come
+    from the application anyway), no `MERGE ... RETURNING` or `JSON_TABLE`
+    (17). CI cannot catch this, so review migrations for it.
+23. Every Store method call is an Effect span (`Effect.withSpan` in the
+    `Store` layer, kind `client`, name `store.<method>`) with the method
+    name, row count and, whenever the call is for one run, the attribute
+    `krun.run_id`; never SQL text with values, bound parameters or row
+    contents (SPEC.md:1147-1157). The span table and test recipe live in
+    `krun-process-runtime` `references/telemetry.md`. The Store keeps no
+    trace context with the run: v1 does not join a run's spans into one
+    trace.
 
 ## Layout and types (P1.1)
 
@@ -179,11 +198,12 @@ P3.x/P4.x task that calls a Store method. Stack (SPEC D35, docs/STACK.md
   are `@effect/vitest` `it.effect` (already scoped) with the dialect's layer
   provided through `layer(...)`.
 - SQLite: `fs.mkdtemp` under `os.tmpdir()`, removed in `afterAll`
-  (PLAN.md:226-230). Postgres: `@testcontainers/postgresql`, one container
+  (PLAN.md:231-234). Postgres: `@testcontainers/postgresql` on a
+  `postgres:18` image pinned by digest (PLAN Phase 1 gate), one container
   per file, started in an `Effect.acquireRelease` layer (or `beforeAll`)
   with `db.destroy()` and container stop on release.
 - Gate: `pnpm exec vitest run packages/shared/src/store` green on both
-  (PLAN.md:226-230). Skip, never fake, the Postgres half when Docker is
+  (PLAN.md:231-234). Skip, never fake, the Postgres half when Docker is
   absent, and write `BLOCKED` (PLAN.md:27-28).
 - Time: lease expiry, the 60 s delivery lease and `listStale` cut-offs are
   driven with `TestClock.adjust` (the Store reads `Clock`), never real
@@ -200,9 +220,12 @@ P3.x/P4.x task that calls a Store method. Stack (SPEC D35, docs/STACK.md
 - Concurrency tests: `Effect.all` of N identical `createRun` calls with
   `{ concurrency: "unbounded" }` yields one row and one event
   (PLAN.md:250-252); two claimers never share a run while the lease is
-  valid (PLAN.md:257-258); P1.9 opens a second `better-sqlite3` handle with
-  `busy_timeout` 0 and expects `SQLITE_BUSY` on `begin immediate` while a
-  Store transaction is open (PLAN.md:297-300).
+  valid (PLAN.md:257-258); P1.9 opens a second `node:sqlite` connection
+  with `busy_timeout` 0 and expects `SQLITE_BUSY` on `begin immediate`
+  while a Store transaction is open (PLAN.md:302-306). Assert the error's
+  `errcode === 5` (SQLITE_BUSY), not its `code`: `node:sqlite` reports
+  `code: 'ERR_SQLITE_ERROR'`, `errcode: 5`, `errstr: 'database is
+  locked'` (observed on Node 24.22; UNVERIFIED on Node 26).
 - Delivery test: a terminal transition with a callback leaves exactly one
   `pending` delivery whose payload has `name`, `state: 'SUCCEEDED'`,
   `createTime` and no `input` (PLAN.md:267-270).
@@ -219,6 +242,34 @@ tarball under `~/.hermes/cache/scratch/krun-skills/pkgs/`.
   `begin immediate`. The SQLite adapter reports a single connection, so
   Kysely serialises calls through a `ConnectionMutex`
   (`dist/driver/runtime-driver.js:22-24`, VERIFIED).
+- Kysely 0.29.7 `SqliteDialectConfig.database` takes a `SqliteDatabase`
+  (`close()`, `prepare(sql)`) whose `SqliteStatement` has `readonly
+  reader: boolean`, `all(params)`, `run(params)` returning `{ changes,
+  lastInsertRowid }`, `iterate(params)`
+  (`dist/dialect/sqlite/sqlite-dialect-config.d.ts:40-52`, VERIFIED).
+  `SqliteConnection.executeQuery` calls `stmt.all(parameters)` when
+  `reader`, else `stmt.run(parameters)`, passing the parameter array as
+  one argument (`sqlite-driver.js:56-69`, VERIFIED). `SqliteDialect` keeps
+  its config in a private field, so the krun dialect subclass keeps its
+  own copy and overrides `createDriver()` (`sqlite-dialect.js`,
+  VERIFIED). Sketch in `references/dialect-differences.md` section 2.
+- `node:sqlite` (built in; release candidate in Node 26, D36). Observed on
+  Node 24.22.0 with Kysely 0.29.7; UNVERIFIED on Node 26 until the P1.9
+  test runs there: statements have
+  `run`, `get`, `all`, `iterate`, `columns`; parameters are spread
+  (`stmt.all(...params)`): an array passed as the single argument is read
+  as a named-parameter object and fails `Unknown named parameter '0'`, so
+  the adapter spreads; `reader` is `stmt.columns().length > 0` (an
+  `insert ... returning` has columns, a plain `insert` has none); rows
+  have a null prototype; `undefined` and `Date` cannot be bound
+  (`ERR_INVALID_ARG_TYPE`), booleans bind as 1/0; integers read as JS
+  numbers; there is no `db.pragma()` helper, use `db.exec('pragma ...')`
+  and `db.prepare('pragma journal_mode').get()` (returns `{ journal_mode:
+  'wal' }`). Node 24.22 bundles SQLite 3.53.4; Node 26's bundled version
+  is UNVERIFIED (`select sqlite_version()` in P1.9; `returning` needs
+  3.35+). Node 24.22 exports the class as `DatabaseSync`; docs/STACK.md
+  2.3 names it `Database`; the Node 26 export name is UNVERIFIED, check
+  `Object.keys(await import('node:sqlite'))` before writing the adapter.
 - Kysely `migrateToLatest()` never throws; read `error` from the result
   (`dist/migration/migrator.d.ts:61-66`, VERIFIED) and turn it into a
   tagged failure. `getMigrations()` returns name + `executedAt` sorted by
@@ -230,15 +281,9 @@ tarball under `~/.hermes/cache/scratch/krun-skills/pkgs/`.
   (`dist/expression/expression-builder.d.ts:561`, VERIFIED).
 - Effect `Effect.tryPromise({ try, catch })` maps a rejection to the
   `catch` result; the `try` callback receives an `AbortSignal` that fires
-  on interruption, but `pg` and `better-sqlite3` cannot cancel a running
-  query with it: an interrupted write may still commit.
-- better-sqlite3 13.0.3 bundles SQLite 3.53.4 (`deps/sqlite3/sqlite3.h:149`,
-  VERIFIED): `returning`, partial indexes, row values, JSON1 all present.
-  `db.pragma('journal_mode = WAL')`; `pragma(str, { simple: true })` returns
-  the scalar (docs/research/node-stack-facts.md:676-678, UNVERIFIED). Whether 13.0.3 ships
-  a Node 24 (ABI 137) prebuilt is UNVERIFIED; otherwise node-gyp needs
-  python3 and build-essential in the Docker build stage
-  (docs/research/node-stack-facts.md:670-675).
+  on interruption, but `pg` and `node:sqlite` cannot cancel a running
+  query with it: an interrupted write may still commit. `node:sqlite` is
+  synchronous, so a slow statement also blocks the event loop.
 - pg 8.23.1: use a dedicated `Client` for `LISTEN`; on `error`/`end` create
   a new `Client` (a Client cannot reconnect), `connect()`, re-`LISTEN`, and
   rely on the 1 s poll fallback for the gap; payload limit 8000 bytes;
@@ -249,14 +294,14 @@ tarball under `~/.hermes/cache/scratch/krun-skills/pkgs/`.
 - uuid 14: `import { v7 } from 'uuid'`; `v7({ msecs })` with the time from
   `Clock` (docs/STACK.md 2.5). Whether explicit `msecs` keeps the
   within-millisecond monotonic sequence is UNVERIFIED; the `listRuns`
-  cursor is `(created_at, id)` so order stays stable either way. Node 24
-  has no `crypto.randomUUIDv7`.
+  cursor is `(created_at, id)` so order stays stable either way. Use
+  `uuid` even if Node offers a built-in v7: only `msecs` from `Clock`
+  keeps ids deterministic under `TestClock`.
 - canonicalize 5.1: one function from an object to its RFC 8785 string;
   its default-export shape under `nodenext` ESM is UNVERIFIED, check once.
-- pnpm 10 skips dependency build scripts unless `pnpm-workspace.yaml` lists
-  `onlyBuiltDependencies: [better-sqlite3]`; a skipped build fails only at
-  `require` time (docs/research/node-stack-facts.md:805-809, UNVERIFIED; see the `pnpm`
-  skill).
+- No store dependency has an install or build script (`pg`, `kysely`,
+  `uuid`, `canonicalize` are plain JavaScript; SQLite is built into Node),
+  so the store needs no pnpm build approval and the image no compiler.
 
 ## Lessons from Dapr and KEDA
 
@@ -294,8 +339,20 @@ tarball under `~/.hermes/cache/scratch/krun-skills/pkgs/`.
   unvalidated input is injection; validate against the non-terminal set
   first.
 - SQLite timestamps compare as text: write `DateTime.formatIso` output only
-  (fixed-width `...sssZ`); a `Date` or `DateTime` object passed to
-  better-sqlite3 throws or stores a number.
+  (fixed-width `...sssZ`); a `Date` or `DateTime` object bound through
+  `node:sqlite` throws `ERR_INVALID_ARG_TYPE`, and so does `undefined`.
+  Map optional fields to `null` before binding.
+- The adapter must spread parameters into `node:sqlite`; passing Kysely's
+  array as one argument works only for zero-parameter statements, so a
+  bug here hides until the first query with a bound value.
+- `node:sqlite` rows have a null prototype: route them through the dialect
+  mapper into plain objects before `toRun`, and do not `toStrictEqual` a
+  raw row against an object literal.
+- The P1.9 `SQLITE_BUSY` assertion checks `errcode` 5; `code` is the
+  generic `ERR_SQLITE_ERROR` for every SQLite failure.
+- `node:sqlite` is a release candidate in Node 26 (D36): a Node minor may
+  change it. Keep every `node:sqlite` call inside `dialect.ts` and the
+  open sequence so a change touches one file.
 - Do not run Effects inside a Kysely transaction callback. Read the clock,
   make ids and compute the hash first, then run the whole transaction as
   one Promise-returning Kysely function inside one `Effect.tryPromise`.
@@ -311,7 +368,7 @@ tarball under `~/.hermes/cache/scratch/krun-skills/pkgs/`.
 - `NOTIFY` outside the write transaction can arrive before the row is
   visible to the SSE handler's re-read; notify inside the transaction.
 - `Migrator` throws on unknown recorded names; the `krun migrate` diff must
-  run first (SPEC.md:1407-1410).
+  run first (SPEC.md:1462-1465).
 - `FileMigrationProvider` imports every file in the folder: no helpers or
   tests inside `migrations/*`.
 - `returning *` with Kysely on SQLite returns strings for JSON and
@@ -329,7 +386,7 @@ tarball under `~/.hermes/cache/scratch/krun-skills/pkgs/`.
 - Skills and blog posts pairing Effect with SQL point at `@effect/sql`;
   docs/STACK.md 2.3 rejected it (Effect 3 only for Kysely, unstable and
   Effect Schema based in Effect 4). Stay on Kysely behind `Database`.
-- SPEC RISK: SPEC.md:1405 says "forward-only" while the installed `kysely`
+- SPEC RISK: SPEC.md:1460 says "forward-only" while the installed `kysely`
   skill and Kysely itself support `down`. Do not add `down` migrations or
   a `migrateDown` command without a Decisions row (PLAN.md:23-26).
 - SPEC RISK: SPEC.md:548 fixes the pool at 5 connections while the gateway
@@ -339,7 +396,7 @@ tarball under `~/.hermes/cache/scratch/krun-skills/pkgs/`.
 
 ## Before marking a task done
 
-- Run the task's acceptance from PLAN.md:231-313 (contract test named in
+- Run the task's acceptance from PLAN.md:236-318 (contract test named in
   the task) and the Phase 1 gate `pnpm exec vitest run
   packages/shared/src/store` on both dialects, then `make check`
   (PLAN.md:17-18, CLAUDE.md:5).
@@ -359,9 +416,12 @@ tarball under `~/.hermes/cache/scratch/krun-skills/pkgs/`.
   SPEC.md/PLAN.md are being edited concurrently, so re-check a cited line
   before quoting it in a commit or a Decisions row.
 - Kysely API facts marked VERIFIED were read from the 0.29.7 tarball's
-  `dist/`; better-sqlite3 pragma API, pg LISTEN behaviour, uuid v7 with
-  `msecs`, canonicalize's export shape and pnpm `onlyBuiltDependencies`
-  are UNVERIFIED and should be confirmed at the first `pnpm install`.
+  `dist/`. The `node:sqlite` facts and the dialect adapter sketch were
+  observed on Node 24.22.0 only; the Node 26 export name, bundled SQLite
+  version and adapter behaviour are UNVERIFIED until the P1.9 test runs on
+  Node 26. pg LISTEN behaviour, uuid v7 with `msecs` and canonicalize's
+  export shape are UNVERIFIED and should be confirmed at the first
+  `pnpm install`.
   Effect 4 API names in this skill follow docs/STACK.md; where one is
   uncertain, Effect's `MIGRATION.md` decides.
 - This skill does not cover the HTTP mapping of Store results (401/409 for

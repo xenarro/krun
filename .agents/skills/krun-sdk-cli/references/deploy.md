@@ -4,8 +4,10 @@ Source of truth: SPEC.md:752-768, PLAN.md:838-845. Golden path from code to
 a Ready function. The CLI shells out to `docker` and `kubectl`; it holds no
 Kubernetes client library. `deploy` is an Effect program (docs/STACK.md
 section 4): argv from `node:util` `parseArgs`, `docker` and `kubectl` behind
-`Docker` and `Kubectl` services over `node:child_process`, files through an
-`Fs` service, time from `Clock`, each failure a `Data.TaggedError`.
+`Docker` and `Kubectl` services over `tinyexec` (docs/STACK.md 2.7), files
+through an `Fs` service, prompts and spinners through a `Prompt` service
+over `@clack/prompts`, colour from `picocolors` on stderr only, time from
+`Clock`, each failure a `Data.TaggedError`.
 
 ## Synopsis
 
@@ -25,7 +27,8 @@ Precedence: default < env < flag; the merged values pass one Zod schema
 (the CLI's options, same style as every krun config). The CLI reads `KRUN_API_KEY` only to
 mention it; it never expands or prints the value. It never reads
 `KRUN_GATEWAY_URL` (SPEC.md:762-763). No other flags (PLAN.md:31-32): no
-`--image`, `--no-build`, `--tag`, `--context` or prompts.
+`--image`, `--no-build`, `--tag`, `--context` or prompts: `deploy` never
+asks a question, on a TTY or off one (prompts belong to `krun init`).
 
 ## Steps, in order (SPEC.md:753-761)
 
@@ -33,10 +36,12 @@ mention it; it never expands or prints the value. It never reads
 2. Resolve the registry; build `ref = <registry>/<name>:<tag>` where the tag
    is a throwaway (e.g. `latest`, or a timestamp formatted from
    `DateTime.now`); only the digest is recorded.
-3. `docker build -t <ref> <dir>`; stream output to stderr, or print a
-   heartbeat line every 10 s if quiet (a fiber on `Schedule.spaced("10
-   seconds")` forked for the child's lifetime; func `client.go:812-836`:
-   users kill silent CLIs).
+3. `docker build -t <ref> <dir>` via `tinyexec`; on a TTY run the step
+   under a clack spinner (`Building <ref>`), off a TTY stream output to
+   stderr or print a heartbeat line every 10 s if quiet (a fiber on
+   `Schedule.spaced("10 seconds")` forked for the child's lifetime; func
+   `client.go:812-836`: users kill silent CLIs). Steps 4, 9 and 10 get
+   their own spinner the same way.
 4. `docker push <ref>`; capture stdout.
 5. Read the digest (see below). Abort if none was found.
 6. Write `image: <registry>/<name>@sha256:<64 hex>` into `function.yaml`,
@@ -108,7 +113,10 @@ OpenFaaS/Fission, SPEC.md:76-78).
 ## Output and errors
 
 - Human progress on stderr; the three commands (and in `--no-apply` the
-  digest) on stdout.
+  digest) on stdout, uncoloured so they paste cleanly. Status words on
+  stderr may be coloured with `picocolors` (green done, red failed,
+  yellow hint); `NO_COLOR` set or stderr not a TTY means no escape
+  codes.
 - Wrap errors at the CLI boundary with a "Try this:" block (func
   `cmd/errors.go`):
   - no registry: `krun deploy --registry ghcr.io/<you>` / `export KRUN_REGISTRY=...`;
@@ -120,16 +128,22 @@ OpenFaaS/Fission, SPEC.md:76-78).
   - CRD missing (`the server doesn't have a resource type "functions"`):
     the platform chart is not installed or `crds.install=false`.
 - Exit codes: 0 success, 1 error, 130 on Ctrl-C (`NodeRuntime.runMain`
-  turns SIGINT into interruption; the finalizer kills the `docker` or
-  `kubectl` child before exit).
+  turns SIGINT into interruption; the `AbortSignal` that
+  `Effect.tryPromise` hands to `try` is passed to `tinyexec`, so the
+  `docker` or `kubectl` child is killed before exit; check Effect's
+  MIGRATION.md for the Effect 4 `tryPromise` signature).
 
 ## Tests
 
 - `@effect/vitest` (`it.effect`), gate `pnpm exec vitest run packages/cli`.
   Provide fake `Docker` and `Kubectl` layers (the `Docker` fake returns a
   canned push transcript, the `Kubectl` fake scripted Function JSON per
-  poll), an `Env` layer with `KRUN_*` cleared, and the real `Fs` over an
-  `fs.mkdtemp` copy of the template (func `pkg/testing/testing.go:332-363`).
+  poll), an `Env` layer with `KRUN_*` cleared, a `Terminal` layer with TTY
+  off (and one run with TTY on and a recording `Prompt` fake to check the
+  spinners start and stop), and the real `Fs` over an `fs.mkdtemp` copy
+  of the template (func `pkg/testing/testing.go:332-363`). One adapter
+  test runs the real `tinyexec` service against `node -e` scripts for
+  exit codes, stderr capture and interruption.
 - Assert on `function.yaml` re-read from disk: digest written, comments and
   schema header preserved.
 - Cases: happy path; `--no-apply` (no kubectl call at all); push transcript
@@ -152,6 +166,6 @@ OpenFaaS/Fission, SPEC.md:76-78).
 - `validate` in-process needs the Zod Function schema and the second-layer
   validator from `packages/shared` (bringing `effect`, `zod`, `ajv`,
   `ajv-formats`, `yaml`) without pulling the server runtime (`pg`, `kysely`,
-  `better-sqlite3`, `fastify`, `@kubernetes/client-node`, `@aws-sdk/*`) into
+  `fastify`, `@kubernetes/client-node`, `@aws-sdk/*`, `@opentelemetry/*`) into
   `npx @krun/cli`; SPEC does not say how (subpath export, schema-only
   package, or bundling). Decisions row or BLOCKED.

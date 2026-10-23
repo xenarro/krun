@@ -1,12 +1,12 @@
-# Logging (SPEC.md:1149-1159, 1087-1089)
+# Logging (SPEC.md:1181-1191, 1103-1105)
 
 Line numbers from the working tree 2026-10-23; re-check before quoting.
 
 ## pino setup
 
-- JSON via pino, one line per event (SPEC.md:1149). One pino instance per
+- JSON via pino, one line per event (SPEC.md:1181). One pino instance per
   process, built in the Logger layer (`packages/shared/src/runtime`,
-  PLAN.md:107) with `{ level, redact }` and passed as `loggerInstance` to
+  PLAN.md:111) with `{ level, redact }` and passed as `loggerInstance` to
   every Fastify instance (public, internal, admin, scheduler admin);
   derive module loggers with `.child({ module })`. A second pino instance
   would miss the redact list.
@@ -14,14 +14,17 @@ Line numbers from the working tree 2026-10-23; re-check before quoting.
   (docs/STACK.md 2.5), so `Effect.logInfo` in a loop or handler produces
   the same JSON line, through the same redaction, as `request.log.info`.
   See "Effect Logger on pino" below for the verified Effect 4 code.
-- Level from `KRUN_LOG_LEVEL`, default `info` (SPEC.md:1150, SPEC.md:1217).
+- Level from `KRUN_LOG_LEVEL`, default `info` (SPEC.md:1182, SPEC.md:1250).
   Set it twice from the one config value: as the pino `level`, and as
   `References.MinimumLogLevel` (`Layer.succeed(References.MinimumLogLevel,
   "Debug")`). Effect's own minimum defaults to `Info`, so an Effect
   `logDebug` is dropped before it reaches pino unless you set it (probe).
 - Fields where relevant: `run_id`, `function`, `state`, `reason`, `reqId`
-  (SPEC.md:1149-1150). Use exactly these names (snake_case `run_id`,
-  camelCase `reqId`, as written); dashboards and the audit test grep them.
+  (SPEC.md:1181-1182), and `traceId` plus `spanId` on every line written
+  inside a span (SPEC.md:1152-1153). Use exactly these names (snake_case
+  `run_id`, camelCase `reqId`, `traceId`, `spanId`, as written); dashboards,
+  docs/OPERATIONS.md ("find it by the `traceId` field") and the audit test
+  grep them.
 - `reqId` is on every request-scoped line (SPEC.md:277). Fastify binds it
   on the request logger (`request.log`, a pino child). The handler runner
   provides `request.log` as the Effect logger's target (`CurrentPino`
@@ -40,7 +43,7 @@ Line numbers from the working tree 2026-10-23; re-check before quoting.
   `request.log` from the first line. Add an `onSend` hook that sets the
   response header.
 - `trustProxy: true` so `client_ip` is the forwarded address
-  (SPEC.md:1157; Fastify 5 accepts `true`, CIDR strings or a function).
+  (SPEC.md:1189; Fastify 5 accepts `true`, CIDR strings or a function).
 - Fastify's default request/response logging prints `req`/`res`
   summaries at info. Turn it off on every listener and write the audit
   line yourself in `onResponse`, otherwise every request logs twice. In
@@ -50,16 +53,16 @@ Line numbers from the working tree 2026-10-23; re-check before quoting.
   disableRequestLogging: true })` with `LogController` imported from
   `fastify` (probe, `docs/Reference/Server.md` "logController"). Probe
   hits on the admin listener (`/healthz` every 10 s, `/readyz` every 5 s
-  per SPEC.md:1327-1330) must not log at info; log them at debug or not
+  per SPEC.md:1376-1379) must not log at info; log them at debug or not
   at all.
 
 ## Effect Logger on pino (verified: effect 4.0.6, pino 10.4.0, Fastify 5.12.7)
 
-Lives in the Logger layer of `packages/shared/src/runtime` (PLAN.md:107).
+Lives in the Logger layer of `packages/shared/src/runtime` (PLAN.md:111).
 The probe `log.test.mjs` passed with exactly this shape:
 
 ```ts
-import { Context, Layer, Logger, References } from "effect"
+import { Context, Layer, Logger, Option, References, Tracer } from "effect"
 import type { Logger as Pino } from "pino"
 
 // Which pino logger the current fiber writes to; defaults to the process root.
@@ -76,6 +79,8 @@ export const PinoLogger = Logger.make(({ logLevel, message, fiber }) => {
   const parts = Array.isArray(message) ? message : [message]
   const fields = Object.assign({}, fiber.getRef(References.CurrentLogAnnotations),
     ...parts.filter((p) => typeof p === "object" && p !== null))
+  const span = Context.getOption(fiber.context, Tracer.ParentSpan)   // UNVERIFIED, see below
+  if (Option.isSome(span)) Object.assign(fields, { traceId: span.value.traceId, spanId: span.value.spanId })
   fiber.getRef(CurrentPino)[m](fields, parts.filter((p) => typeof p === "string").join(" "))
 })
 
@@ -85,9 +90,14 @@ export const LoggerLive = Layer.mergeAll(
 )
 ```
 
+- `toEffectLevel` maps the pino names from `KRUN_LOG_LEVEL` to Effect's
+  `LogLevel` (`fatal` → `"Fatal"`, `error` → `"Error"`, `warn` → `"Warn"`,
+  `info` → `"Info"`, `debug` → `"Debug"`, `trace` → `"Trace"`, `silent` →
+  `"None"`; `effect` `LogLevel.ts` lists `All Fatal Error Warn Info Debug
+  Trace None`).
 - `Logger.layer(loggers)` overwrites the current logger set unless
   `{ mergeWithExisting: true }` is passed (`Logger.ts` `layer`), so the
-  default console logger is gone and no line prints twice. Effect 3's
+  default console logger is not in the set and no line prints twice. Effect 3's
   `Logger.replace(Logger.defaultLogger, ...)` is not the Effect 4 API.
 - `Logger.Options` carries `message`, `logLevel`, `cause`, `fiber` and
   `date`. Do not log `date`: pino stamps its own `time`. Pass `cause` to
@@ -95,6 +105,19 @@ export const LoggerLive = Layer.mergeAll(
   `input`, a DSN in a pg error message).
 - Annotations: `Effect.annotateLogs({ run_id, function })` becomes fields
   on the line (probe asserted `run_id`). Use the SPEC field names exactly.
+- Trace ids (SPEC.md:1152-1153): the two span lines in the code above are not
+  covered by the probe and are UNVERIFIED. What the source shows (`effect` 4.0.6):
+  `Fiber` exposes `context`, `Tracer.ParentSpan` is the context service
+  that `Effect.withSpan` sets (an Effect span or the external parent from
+  `traceparent`), and every span has `traceId` and `spanId` even when no
+  OpenTelemetry tracer is installed. Probe it before P3.1b relies on it,
+  and check Effect's `MIGRATION.md` if `Context.getOption` has another
+  name. Lines outside any span (startup, shutdown steps outside a span)
+  carry neither field; that is correct.
+- Never bind `traceId`/`spanId` into a pino child as well: pino serialises
+  child bindings and the line's own fields side by side, so the key would
+  appear twice in one JSON line. The Effect logger adds them per line;
+  the audit hook adds them from the request span (below).
 - Request scope: the handler runner wraps the handler Effect with
   `Effect.provideService(CurrentPino, request.log)`, so the `reqId`
   binding from the Fastify child appears on every `Effect.log*` line in
@@ -110,7 +133,7 @@ export const LoggerLive = Layer.mergeAll(
   which keeps the redact list (probe: a request-scoped line and a root
   line both redacted, `reqId` present).
 
-## Redact list (SPEC.md:1151-1153, verbatim)
+## Redact list (SPEC.md:1183-1185, verbatim)
 
 pino `redact` in both processes on every listener covers:
 
@@ -130,17 +153,20 @@ redact the same keys one level down for the shapes krun logs
 not set `censor` to something that reveals length.
 
 P3.1b acceptance: "a redacted field never appears in a log line"
-(PLAN.md:382). Write the test with `@effect/vitest` `it.effect` against a
+(PLAN.md:388). Write the test with `@effect/vitest` `it.effect` against a
 pino destination stream (a `node:stream` `Writable` that collects
 chunks). Log an object holding each path with a sentinel value three
 ways: through the root pino, through `request.log` (Fastify `inject`
 with an `Authorization: Bearer <sentinel>` header), and through
 `Effect.logInfo` with `LoggerLive` provided. Then assert the sentinel is
-absent from the captured output.
+absent from the captured output. pino `redact` does not reach spans: run
+the same request with an in-memory span exporter and assert the sentinel
+is in no span attribute, event or status either (`telemetry.md`
+"Redaction for spans").
 
 ## Never-log list
 
-Never logged, regardless of level (SPEC.md:1153-1154, 1087-1089, 986,
+Never logged, regardless of level (SPEC.md:1185-1186, 1103-1105, 992,
 1159):
 
 - request and response bodies (public and internal listeners);
@@ -150,7 +176,7 @@ Never logged, regardless of level (SPEC.md:1153-1154, 1087-1089, 986,
 - `KRUN_DB_DSN`, `KRUN_WEBHOOK_SECRET`, `KRUN_S3_SECRET_KEY`,
   `KRUN_S3_ACCESS_KEY` (never log the parsed config object; log the
   variable *name* in the exit-1 message, never the value);
-- the `Authorization` header on either listener (SPEC.md:986 "The token
+- the `Authorization` header on either listener (SPEC.md:992 "The token
   is never logged").
 
 Log the *name* of a thing, not its value: key name, Function name, Secret
@@ -158,22 +184,23 @@ name, run id, variable name, HTTP status. Dapr applies the same rule to
 `secretKeyRef` resolution: every line names the resource or the env var,
 never the value (`dapr pkg/runtime/processor/secret/secret.go:134-186`).
 
-## Audit line (SPEC.md:1156-1159)
+## Audit line (SPEC.md:1188-1191)
 
 One line per `/v1` request (public listener only), at `info`; `warn` for
 401 and 403. Fields:
 
 | Field | Value | Notes |
 |---|---|---|
-| `key` | key name, or `null` | never the key itself (SPEC.md:1159); P3.1b asserts `key: null` on the 401 line (PLAN.md:381) |
-| `client_ip` | `request.ip` with `trustProxy: true` | SPEC.md:1157 |
+| `key` | key name, or `null` | never the key itself (SPEC.md:1191); P3.1b asserts `key: null` on the 401 line (PLAN.md:387) |
+| `client_ip` | `request.ip` with `trustProxy: true` | SPEC.md:1189 |
 | `user_agent` | `User-Agent` header | |
-| `route` | `request.routeOptions.url`, `unmatched` on 404 | same rule as the `route` metric label (SPEC.md:1131) |
+| `route` | `request.routeOptions.url`, `unmatched` on 404 | same rule as the `route` metric label (SPEC.md:1163) |
 | `code` | response status | |
 | `run_id` | when present | create, get, cancel, wait, watch, result |
 | `function` | when present | |
 | `idempotency_key` | when present | the `requestId` of `CreateRun` (SPEC.md:228-233) |
 | `reqId` | always | request-scoped (SPEC.md:277) |
+| `traceId`, `spanId` | when the request span exists | read from the request span the request runner keeps on the request (`telemetry.md` "Spans"), not from a pino child binding (SPEC.md:1152-1153) |
 
 Emit from a single `onResponse` hook registered on the public listener so
 every route, including 404 and 415 before a handler runs, produces one

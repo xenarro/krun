@@ -12,34 +12,41 @@ before citing) and adds the command and the "green" definition.
 - [ ] `make check` passes locally: `make lint` = `biome check` and
       `tsc --noEmit` (TypeScript 7) in every package (P0.2, PLAN.md:161-162);
       `make test` = `pnpm -r exec vitest run` plus
-      `uv run --directory sdk/python pytest` (PLAN.md:51, 137-138).
+      `uv run --directory sdk/python pytest` (PLAN.md:51, 137-138);
+      `knip` reports nothing (P0.4, PLAN.md:176-177).
 - [ ] Every package has a `vitest.config.ts` and the `@effect/vitest` smoke
       test passes; `pnpm -r build && node bin/krun.js gateway` prints
       `gateway` (P0.1, PLAN.md:155-158).
 - [ ] The first pull request shows a green `ci.yml` run (`gh run watch`,
       P0.4, PLAN.md:176-178); `actionlint` passes.
 - [ ] `make helm-lint` passes on the stub chart (P0.2, PLAN.md:162-165).
-- [ ] `make docker` builds and `docker run <image> gateway` prints `gateway`
-      (P0.3, PLAN.md:170-171).
+- [ ] `make docker` builds on a Node 26 base with no build toolchain in
+      any stage and `docker run <image> gateway` prints `gateway`; the
+      production `node_modules` holds no `*.node` file (P0.3,
+      PLAN.md:170-175).
 - [ ] P0.7: `@effect/vitest` test with Fastify `inject` and `TestClock`,
       including a stalled database check (PLAN.md:196-197).
 - [ ] P0.8: `make generate` twice leaves no diff (PLAN.md:209-212).
 - [ ] `release.yml` dry-run job passes on the pull request, or the progress
       log carries `BLOCKED P0.9: <owner precondition>` (PLAN.md:213-222).
 
-## Phase 1: store (PLAN.md:226-229)
+## Phase 1: store (PLAN.md:231-234)
 
 > Gate: `pnpm exec vitest run packages/shared/src/store` runs the
 > contract suite against SQLite on a temp-file database (`fs.mkdtemp` under
-> `os.tmpdir()`, removed in `after`) and against Postgres via testcontainers,
+> `os.tmpdir()`, removed in `after`) and against Postgres 18 via testcontainers,
 > both green.
 
 - [ ] One shared contract suite runs against both dialects (one `describe`
       or `layer(...)` block per dialect providing the `Store` layer;
       `krun-store`). "Removed in `after`" is Vitest `afterAll` or the
       layer's `Effect.acquireRelease` finalizer.
-- [ ] The Postgres run needs Docker; without it the suite fails, not skips
-      (SKILL.md rule 13).
+- [ ] The Postgres run uses the digest-pinned `postgres:18` image and needs
+      Docker; without it the suite fails, not skips (SKILL.md rule 13).
+- [ ] The SQLite run uses Node 26's `node:sqlite` through the in-house
+      dialect: `journal_mode` reads `wal` and a second connection's
+      `begin immediate` with `busy_timeout` 0 fails `SQLITE_BUSY` while a
+      Store transaction is open (P1.9, PLAN.md:300-306; `krun-store`).
 - [ ] The `explain` tests name `runs_active_idx` (P1.4, PLAN.md:259-262) and
       `runs_created_idx` (P1.6, PLAN.md:282-283).
 - [ ] Lease and staleness tests move time with `TestClock`, not sleeps.
@@ -88,6 +95,12 @@ before citing) and adds the command and the "green" definition.
 - [ ] P4.1-P4.10 unit tests run on the fake `Kube` layer with `TestClock`
       (`references/fake-kube.md` part 1); P4.6 and P4.11 process tests on
       `test/fake-kube` (part 2).
+- [ ] P4.6: after one run the admin `/metrics` shows the exact SPEC section
+      11 names (no doubled `_total`, histograms in seconds), and an
+      in-memory span exporter holds the create request, the iteration's
+      per-run span and the Kubernetes calls, all carrying the same
+      `krun.run_id`, with a `traceparent` sent on `CreateRun` as the
+      parent of the request span (PLAN.md:558-566).
 - [ ] `make kind-up` created the cluster and the registry and passed the
       enforcement probe (P4.12, PLAN.md:600-612, `references/kind-recipe.md`).
 - [ ] The five scenarios in `references/e2e-scenarios.md` "Phase 4" are
@@ -137,6 +150,10 @@ before citing) and adds the command and the "green" definition.
       and the upgrade/rollback scenario.
 - [ ] `promtool check rules` passes on the rendered PrometheusRule (P7.7,
       PLAN.md:772-776).
+- [ ] P7.4d: optional features render only when enabled, and on kind with
+      the admission policy on a tag-only Job created by hand in the jobs
+      namespace is rejected (PLAN.md:766-771); the kind node image is 1.33
+      or newer.
 
 ## Phase 8: SDKs and CLI (PLAN.md:780-782)
 
@@ -148,8 +165,8 @@ before citing) and adds the command and the "green" definition.
       (PLAN.md:822-829). The Node template's `npm test` is the function
       author's own dependency-free test (it may use `node --test`); it is
       not a krun test and does not run under Vitest.
-- [ ] `sdk/python` passes `pytest`, `ruff check` and `mypy --strict`
-      (STACK.md:127-128); `packages/sdk-node` `package.json` lists no
+- [ ] `sdk/python` passes `pytest` (including its `hypothesis` properties),
+      `ruff check` and `mypy --strict` (STACK.md section 3); `packages/sdk-node` `package.json` lists no
       `dependencies` (PLAN.md:803-805).
 - [ ] `test/sdk-conformance` passes in both suites (Node SDK under Vitest,
       Python under pytest); reordering one SDK's calls fails its suite
@@ -168,7 +185,9 @@ before citing) and adds the command and the "green" definition.
 - [ ] P9.3 numbers in README and docs/OPERATIONS.md with the measurement
       conditions (kind, runner size, image cached; PLAN.md:867-870).
 - [ ] The alert-name check script passes (P9.6, PLAN.md:893-897).
-- [ ] Release pull request prepared; the owner tags (PLAN.md:22, 885-892).
+- [ ] Release pull request prepared; the owner tags (PLAN.md:22, 905-911).
+      `publint` and `attw --pack` pass on `@krun/sdk` and `@krun/cli` in the
+      dry-run before any npm publish (P9.5).
 
 ## Definition of done for v1 (PLAN.md:899-904)
 

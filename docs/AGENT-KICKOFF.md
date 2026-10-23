@@ -23,8 +23,8 @@ Rules:
    Co-Authored-By trailer; run the task's acceptance command and
    `make check` before marking `[x]`; append one line to the progress log;
    commit the plan change with the code.
-3. When the code must deviate from SPEC.md, stop, add a row to SPEC.md
-   section 15 with a one-line why, then implement. Owner decisions never
+3. When the code must deviate from SPEC.md, stop, add or rewrite the
+   matching row in SPEC.md section 15 with a one-line why, then implement. Owner decisions never
    get a Decisions row from you: published package names beyond the P0.9
    fallbacks, the public API shape, SPEC.md section 9 policy, non-goals.
    For those write BLOCKED and continue elsewhere.
@@ -39,10 +39,10 @@ Rules:
    task that does not depend on it, and list every BLOCKED item in your
    final message.
 8. Verify each phase's tools at its start; a missing one is BLOCKED.
-   Phase 0: `node --version` (24), `pnpm --version`, `uv --version`,
+   Phase 0: `node --version` (26), `pnpm --version`, `uv --version`,
    `docker version`, `helm version`, `actionlint --version`,
    `gh auth status`, `git push --dry-run origin HEAD`. Phase 4:
-   `kind version` (0.24 or newer), `kubectl version --client`. Phase 7:
+   `kind version` (0.31 or newer), `kubectl version --client`. Phase 7:
    `helm-docs --version`, `promtool --version`.
 
 Session loop:
@@ -94,7 +94,7 @@ section 1 non-goal was built; no dependency outside PLAN.md section 2;
 no `Date.now()`, `new Date()` or bare `throw` in application code; Zod
 is the only schema library for krun's own schemas; no
 secret, input, result, token or key reaches logs or manifests; `make
-check` passes. A branch that changes behaviour without a new row in
+check` passes. A branch that changes behaviour without a matching row in
 SPEC.md section 15 is a blocker.
 
 No praise, no style comments, no restating the diff.

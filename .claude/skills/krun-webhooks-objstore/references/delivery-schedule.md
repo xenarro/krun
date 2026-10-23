@@ -20,7 +20,8 @@ section 4.3 (SPEC rules mapped to Effect). Store semantics and SQL belong to
 | re-claim | when the batch returned 40 rows, claim again at once in the same tick | loop inside the tick effect | SPEC.md:924-925 |
 | attempts | 6 in all; `dead` after the sixth failure | | SPEC.md:926-927, :1119 |
 | total span | about 15 h | | SPEC.md:1119, docs/API.md:375-376 |
-| metric | `krun_deliveries_total{state}` on the leader | prom-client counter from the `Metrics` service | SPEC.md:1146 |
+| metric | `krun_deliveries_total{state}` on the leader | Effect `Metric` counter, exported by the OpenTelemetry Prometheus exporter under the same name | SPEC section 11 |
+| span | one `webhook.deliver` span per attempt; its context goes out as `traceparent` | `Effect.withSpan` | SPEC section 11 |
 | alert | `KrunDeliveriesDead`: `increase(krun_deliveries_total{state="dead"}[1h]) > 0`, warning | | SPEC.md:1399 |
 
 ## Schedule
@@ -80,9 +81,10 @@ const deliveriesLoop = drain.pipe(
    failure is a failed attempt with `last_error` naming the reason
    (SPEC.md:1069).
 2. `nowMillis = yield* Clock.currentTimeMillis`;
-   `headers = { 'content-type', 'x-krun-delivery': d.id, 'x-krun-run-id': d.runId, 'x-krun-signature': sign(bodyBytes, secrets, nowMillis) }`
+   `headers = { 'content-type', 'x-krun-delivery': d.id, 'x-krun-run-id': d.runId, 'x-krun-signature': sign(bodyBytes, secrets, nowMillis), traceparent }`
    (references/signature.md); `bodyBytes` is `d.payload` serialised once.
-   `x-krun-delivery` is the same row id on every attempt.
+   `x-krun-delivery` is the same row id on every attempt; `traceparent`
+   is this attempt's span (steps 1-5 run inside `Effect.withSpan("webhook.deliver")`).
 3. POST through the pinned dispatcher, `redirect: 'manual'`, under
    `Effect.timeout("10 seconds")` (the scoped `post` in
    references/ssrf-check.md).

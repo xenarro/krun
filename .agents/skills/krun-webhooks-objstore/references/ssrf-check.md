@@ -1,7 +1,7 @@
 # Webhook host allowlist and SSRF address check (P2.1)
 
-Source: SPEC.md:1062-1073, D31 (SPEC.md:1472), PLAN.md:319-328,
-docs/OPERATIONS.md:120-121, docs/STACK.md sections 2.2 and 2.5. Module:
+Source: SPEC.md:1076-1087, D31, PLAN.md:319-328,
+docs/OPERATIONS.md (Security operations), docs/STACK.md sections 2.2, 2.5 and 4.3. Module:
 `packages/shared/src/webhook`.
 
 ## Inputs (parsed by the Zod Config schema in `packages/shared/src/config`, P0.5)
@@ -12,11 +12,15 @@ docs/OPERATIONS.md:120-121, docs/STACK.md sections 2.2 and 2.5. Module:
 | allowed CIDRs | `KRUN_WEBHOOK_ALLOWED_CIDRS` | comma-separated CIDRs; a CIDR that does not parse exits 1 at startup | SPEC.md:1183, :1215 |
 | secrets | `KRUN_WEBHOOK_SECRET` | comma-separated; required on the scheduler when hosts are set | SPEC.md:1181, :1216 |
 
-Glob grammar: the in-house glob-to-regex (PLAN.md:83) used for API key
-function globs; `*` matches any run of characters including dots
-(`*.acme.com` matches `hooks.acme.com` and `a.b.acme.com`), anchored both
-ends, case-insensitive on the host. Match against `url.hostname` with IPv6
-brackets removed. No port, no path, no scheme in the glob.
+Glob grammar: `picomatch`, the same library as the API key function
+globs (docs/STACK.md 2.5): `picomatch(hostGlobs, { nocase: false, dot:
+true })`, compiled once when the Config is parsed. `*` matches any run of
+characters except `/`, so dots included (`*.acme.com` matches
+`hooks.acme.com` and `a.b.acme.com`, not `acme.com`), anchored both ends.
+Host globs are lowercased at parse because `URL.hostname` is lowercase
+for DNS names and matching is case-sensitive. Match against
+`url.hostname` with IPv6 brackets removed. No port, no path, no scheme in
+the glob. Never translate globs to a RegExp by hand (docs/STACK.md 2.5).
 
 ## Algorithm
 
@@ -98,6 +102,8 @@ with `it.effect` from `@effect/vitest`):
 | `https://hooks.acme.com/krun` resolving to `93.184.216.34` | `*.acme.com` | accept, pinned `93.184.216.34` |
 | `https://hooks.acme.com/krun` resolving to `93.184.216.34, 10.0.0.5` | `*.acme.com` | reject (one private record) |
 | `https://evil.example/` | `*.acme.com` | reject before DNS |
+| `https://acme.com/` | `*.acme.com` | reject before DNS (`*.` needs a label) |
+| `https://HOOKS.ACME.COM/` resolving to `93.184.216.34` | `*.Acme.com` | accept (hostname and glob both lowercased) |
 | `ftp://hooks.acme.com/` | `*.acme.com` | reject (scheme) |
 | `http://[::1]:8080/` | `*` | reject (`loopback`, after bracket strip) |
 | `http://receiver.krun-e2e.svc:8080/` resolving to `10.96.0.12` | `*.svc` with CIDR `10.96.0.0/12` | accept (the e2e receiver, D31) |

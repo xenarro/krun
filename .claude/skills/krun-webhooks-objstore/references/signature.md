@@ -11,6 +11,13 @@ docs/OPERATIONS.md:114-117.
 | `X-Krun-Delivery` | `deliveries.id` (UUID) | yes; receivers dedupe on it | SPEC.md:1079-1080 |
 | `X-Krun-Run-Id` | bare run UUIDv7 (`name` in the body carries the full resource name) | yes | SPEC.md:1080-1081 |
 | `X-Krun-Signature` | `t=<unix seconds at send>,v1=<hex>,v1=<hex>...` | no; `t` is the send time of this attempt | SPEC.md:1075-1078 |
+| `traceparent` | W3C trace context of this attempt's span, `00-<32 hex trace id>-<16 hex span id>-<flags>` | no; a new span per attempt | SPEC section 11 |
+
+`traceparent` is not signed and carries no krun data; receivers may use
+it to join their own trace and must not require it. Set it from the
+attempt span (`Effect.withSpan("webhook.deliver")` around re-check, sign
+and POST), never from the tick span, and add no `tracestate` or
+`baggage`.
 
 Body: the stored `deliveries.payload` bytes, the BASIC `Run` (`RunSummary`
 from `toRunSummary`, SPEC.md:1082-1083, SPEC.md:529-533). It omits
@@ -121,5 +128,9 @@ Vitest in `packages/shared/src/webhook`, gate
   false, any skew up to 300 s keeps it true.
 - In the deliveries loop test (`it.effect`), the `t=` value equals the
   `TestClock` time in seconds after `TestClock.adjust`.
+- The receiver sees a `traceparent` matching
+  `^00-[0-9a-f]{32}-[0-9a-f]{16}-0[01]$` on every attempt, with a different
+  span id on the retry of the 500-then-200 case; with an in-memory span
+  exporter, the span ids match the exported `webhook.deliver` spans.
 - Never commit a real secret; tests generate theirs with `randomBytes`
   (PLAN.md:33).

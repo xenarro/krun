@@ -164,8 +164,9 @@ Prove it with a child process and a deadline on its exit, not in-process.
   `await`.
 - `ctx.log(obj)`: `process.stdout.write(JSON.stringify(obj) + "\n")` in the
   pod, `process.stderr.write` locally.
-- Node 20+ API surface only (SPEC.md:660), although the test runner itself
-  needs Node 22.12 or 24.
+- Node 22 API surface only (SPEC.md:664, section 14). CI runs this suite
+  on Node 22 and Node 26 with Vitest 5 (which supports Node 22.12 or
+  newer).
 
 ## 8. Python specifics (`sdk/python/krun`)
 

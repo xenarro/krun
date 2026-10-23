@@ -24,7 +24,7 @@ typed failure (an invalid Function is a value, not an error). Durations are
 parsed with the shared duration grammar (the Zod refinement into
 `Duration`, PLAN.md:82-86), the same code the Config layer uses.
 
-Defaults for the five variables: SPEC.md:1199, 1206-1207, 1211, 1214.
+Defaults for the five variables: SPEC.md:1231, 1238-1239, 1244, 1247.
 `queueTimeout` is returned even on failure when it parses, because the
 scheduler's `expireQueued` reads the cached Function "Ready or not"
 (SPEC.md:808-811). No I/O, no env, no DNS, no clock inside the function.
@@ -37,13 +37,13 @@ scheduler's `expireQueued` reads the cached Function "Ready or not"
 | 2 | `heartbeatTimeout` (when set) matches the pattern | SPEC.md:140 | `InvalidDuration` | `invalid value: "<v>": spec.heartbeatTimeout` | `heartbeatTimeout: soon` |
 | 3 | `heartbeatTimeout` (when set) >= 30 s | SPEC.md:140-141 | `InvalidDuration` | `expected 30s <= "<v>": spec.heartbeatTimeout` | `heartbeatTimeout: 5s` (named in PLAN) |
 | 4 | `image` contains `@sha256:` (mirror of the CEL rule, for `krun validate` on files) | SPEC.md:133-134 | `RegistryNotAllowed` is wrong here: this is layer one; report it as the CRD schema failure line, not a reason | `spec.image must be pinned by digest ...` | tag image (P2.5 fixture) |
-| 5 | `image` starts with one of `allowedRegistries` when the list is non-empty | SPEC.md:141-142, 1091-1092 | `RegistryNotAllowed` | `invalid value: "<registry>": spec.image` (print the prefix, not the whole ref if it holds credentials-like text) | `image: docker.io/x@sha256:...` with `allowedRegistries: ['ghcr.io/acme/']` |
+| 5 | `image` starts with one of `allowedRegistries` when the list is non-empty | SPEC.md:141-142, 1107-1108 | `RegistryNotAllowed` | `invalid value: "<registry>": spec.image` (print the prefix, not the whole ref if it holds credentials-like text) | `image: docker.io/x@sha256:...` with `allowedRegistries: ['ghcr.io/acme/']` |
 | 6 | `serviceAccountName` (defaulted `krun-job-default`) in `allowedServiceAccounts` | SPEC.md:93, 142-143 | `ServiceAccountNotAllowed` | `invalid value: "<sa>": spec.serviceAccountName` | `serviceAccountName: default` (forbidden SA, named in PLAN) |
 | 7 | no `secretRefs[i]` matches `krun-*` | SPEC.md:101, 143 | `SecretRefNotAllowed` | `invalid value: "krun-keys": spec.secretRefs[1]` | `secretRefs: [ok, krun-job-abc]` |
 | 8 | `activeDeadlineSeconds` <= `maxActiveDeadline` | SPEC.md:102, 138-139 | `DeadlineAboveCeiling` | `expected 1 <= <v> <= <max>: spec.activeDeadlineSeconds` | `activeDeadlineSeconds: 86401` |
 | 9 | `maxQueued` <= `maxQueued` ceiling | SPEC.md:104, 139 | `QueuedAboveCeiling` | `expected 1 <= <v> <= <max>: spec.maxQueued` | `maxQueued: 1001` |
 | 10 | `maxConcurrency` >= 1 | SPEC.md:140 | no reason in the enum (SKILL.md Limitations); CRD `minimum: 1` catches it in-cluster; in `krun validate` report it as a schema failure line | `expected 1 <= <v>: spec.maxConcurrency` | `maxConcurrency: 0` |
-| 11 | `callback.url` (when set): `webhookAllowedHosts` non-empty and host matches a glob (P2.1 matcher) | SPEC.md:144, 1062, 1214 | `CallbackNotAllowed` | `invalid value: "<host>": spec.callback.url` | `callback.url: https://evil.example/x` with empty hosts (P2.5 fixture) |
+| 11 | `callback.url` (when set): `webhookAllowedHosts` non-empty and host matches a glob (P2.1 matcher) | SPEC.md:144, 1078, 1247 | `CallbackNotAllowed` | `invalid value: "<host>": spec.callback.url` | `callback.url: https://evil.example/x` with empty hosts (P2.5 fixture) |
 | 12 | `JSON.stringify(inputSchema).length <= 65536` (bytes: use `Buffer.byteLength`) | SPEC.md:87, 138 | `SchemaTooLarge` | `expected size <= 65536 bytes, got <n>: spec.inputSchema` | 65 KiB schema (named in PLAN) |
 | 13 | no `$ref`/`$dynamicRef` value anywhere in `inputSchema` that does not start with `#` | SPEC.md:137 | `SchemaInvalid` | `remote $ref not allowed: spec.inputSchema<path>` | `$ref: https://example.com/s.json` (remote `$ref`, named in PLAN) |
 | 14 | `new Ajv2020({ strict: true })` + ajv-formats `compile(inputSchema)` succeeds | SPEC.md:136-137 | `SchemaInvalid` | first line of the Ajv error, prefixed `spec.inputSchema: ` | `{ type: 'objekt' }` or an unknown keyword under `strict` (non-compiling schema, named in PLAN) |
@@ -83,7 +83,7 @@ addFormats(ajv);
 - `pattern` regexes are trusted; no timeout, no safe-regex check
   (SPEC.md:948).
 
-## 3. Ceilings from the environment (SPEC.md:170-174, 1199-1214)
+## 3. Ceilings from the environment (SPEC.md:170-174, 1229-1247)
 
 | Variable | Default | Parse |
 |---|---|---|
@@ -129,7 +129,7 @@ Never print a secret; none of these five are secrets.
   (proposal: exit 1 with `no Function documents found` so CI misconfig is
   loud; note it in the progress log).
 - No cluster access, no `KRUN_NAMESPACE`, no flags except `--help`
-  (SPEC.md:1178). `bin/krun.js validate` dispatches to
+  (SPEC.md:1210). `bin/krun.js validate` dispatches to
   `packages/cli/dist/validate.js` (PLAN.md:354-356); `krun deploy` calls
   the same exported function (SPEC.md:174).
 

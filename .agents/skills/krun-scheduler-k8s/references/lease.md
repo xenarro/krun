@@ -146,7 +146,7 @@ transient retry.
 
 `NodeRuntime.runMain` turns SIGTERM into interruption of the main fiber;
 the scope finalizers then run in reverse acquisition order. There is no
-signal handler of our own (docs/STACK.md 2.6, 4.3). The order SPEC asks
+signal handler of our own (docs/STACK.md 2.1, 2.9, 4.3). The order SPEC asks
 for falls out of that:
 
 1. `/readyz` returns 503 (SPEC.md:1163): the readiness finalizer is

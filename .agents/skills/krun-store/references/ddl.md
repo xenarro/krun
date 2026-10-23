@@ -79,7 +79,7 @@ create index deliveries_due_idx on deliveries (next_at) where state = 'pending';
 create index deliveries_run_idx on deliveries (run_id);
 ```
 
-No table partitioning in v1 (SPEC.md:467, D10 SPEC.md:1451: the partition
+No table partitioning in v1 (SPEC.md:467, D10: the partition
 key would have to join the idempotency unique index). Retention is a
 batched delete on `runs_finished_idx` (SPEC.md:467-468).
 
@@ -89,8 +89,9 @@ Only the types change: `uuid` -> `text`, `jsonb` -> `text`,
 `timestamptz` -> `text` (RFC 3339 UTC with milliseconds), `int` -> `integer`.
 `on delete cascade` needs `pragma foreign_keys = ON` on every connection
 (SPEC.md:557). Partial indexes, `check`, and `returning` work on SQLite
-3.35+ (SPEC.md:397); better-sqlite3 13.0.3 bundles SQLite 3.53.4
-(`pkgs/better-sqlite3-13.0.3/package/deps/sqlite3/sqlite3.h:149`, VERIFIED).
+3.35+ (SPEC.md:397). `node:sqlite` in Node 24.22 bundles SQLite 3.53.4
+(observed with `select sqlite_version()`); the version in Node 26 is
+UNVERIFIED, so P1.9 asserts it is at least 3.35.
 
 ```sql
 create table runs (
@@ -223,7 +224,7 @@ the Effect 4 name) and bind it as an RFC 3339 string from
 ## Delivery row inserted by every terminal path (SPEC.md:348-351, D29)
 
 Inside the terminal transaction, when `callback_url` is set:
-`id` UUIDv7 (`v7({ msecs })` from `Clock`, SPEC.md:1081), `run_id`, `url = callback_url`,
+`id` UUIDv7 (`v7({ msecs })` from `Clock`, SPEC.md:1097), `run_id`, `url = callback_url`,
 `payload = toRunSummary(updated row)`, `attempt 0`, `next_at = at` of the
 transition, `state 'pending'`, `created_at = at`. Paths: `transition` to a
 terminal state, `expireQueued`, and through `transition` the heartbeat,

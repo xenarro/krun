@@ -17,37 +17,42 @@ disagrees, PLAN wins.
   `vite` (`^6.4 || ^7 || ^8`) as a required peer, installed by pnpm's
   `autoInstallPeers` (default true). Dev-only: never in the runtime image.
 - `testcontainers` 12.2.1 needs Node `>= 22.22`.
-- `better-sqlite3` 13.0.3 ships `prebuilds/linux-x64.node`,
-  `linux-arm64.node` (glibc) and musl variants, `gypfile: false`, and no
-  install script: no python3/make/g++ in the build stage and no pnpm build
-  approval needed. Confirm in P0.3 with `node -e "require('better-sqlite3')"`
-  inside the final image.
+- No native addons (D36, STACK.md principle 8): SQLite is Node 26's
+  built-in `node:sqlite` and every runtime package is plain JavaScript. The
+  build stage needs no python3, make or C++ compiler, and the final base
+  has no libc constraint. P0.3 proves it: after `pnpm install --prod`,
+  `find node_modules -name '*.node'` prints nothing; a hit means a native
+  dependency slipped in and needs a Decisions row.
+- `node:sqlite` is a release candidate in Node 26: the build and runtime
+  Node versions must match `.node-version` exactly (same major and minor),
+  so a test run on one minor never ships on another.
 - pnpm 12 (`pnpm` skill `references/features-supply-chain-security.md`):
-  build-script approval is `allowBuilds` in `pnpm-workspace.yaml`;
-  `onlyBuiltDependencies` was removed. With `strictDepBuilds` default true
+  build-script approval is `allowBuilds` in `pnpm-workspace.yaml` (not
+  `onlyBuiltDependencies`). With `strictDepBuilds` default true
   an unreviewed build script fails install (`ERR_PNPM_IGNORED_BUILDS`):
-  approve or deny each one the first install lists.
+  approve or deny each one the first install lists. The runtime tree should
+  list none; dev tools may (deny unless the tool fails without it).
 
 ## Dockerfile (P0.3, PLAN.md:166-171)
 
 | Rule | Why |
 |---|---|
-| Multi-stage: `build` stage on a Node 24 image pinned by digest runs `pnpm install --frozen-lockfile` and `pnpm -r build` (TypeScript 7 `tsc` emitting `dist/` per package) | PLAN.md:42, 166 |
+| Multi-stage: `build` stage on a Node 26 image pinned by digest runs `pnpm install --frozen-lockfile` and `pnpm -r build` (TypeScript 7 `tsc` emitting `dist/` per package); no `apt-get install` of build tools in any stage | PLAN.md:42, 170-175; D36 |
 | The build tsconfig excludes `**/*.test.ts`, `**/testing/**` and `vitest.config.ts` | test code and test layers never reach `dist/` or the image; `tsc --noEmit` in `make lint` still type-checks them |
 | Then `pnpm install --prod --frozen-lockfile` (or `pnpm deploy --prod` per app) so the runtime tree has no dev dependencies: no `typescript`, `vitest`, `vite`, `@effect/vitest`, `fast-check`, testcontainers, Biome | PLAN.md:167, 76-78 |
 | Copy every workspace package's `dist/`, `packages/cli/dist` included, plus the pruned `node_modules` and `bin/krun.js` onto the final stage | `krun validate` dispatches to `packages/cli/dist/validate.js` (PLAN.md:168, 354-355; SPEC.md:54-55) |
-| Final base: distroless Node.js, glibc, pinned by digest | the `better-sqlite3` `linux-*.node` prebuild links glibc (PLAN.md:168-169); digest pin feeds Renovate (PLAN.md:176) |
+| Final base: distroless Node.js 26, pinned by digest | PLAN.md:170-175; no native addon, so libc does not matter; the exact distroless repository name for Node 26 is UNVERIFIED, check in P0.3; digest pin feeds Renovate (P0.4) |
 | `USER 65532`, `ENTRYPOINT ["node", "bin/krun.js"]` | non-root matches the chart securityContext (SPEC.md:1320-1321); four entrypoints by argument (SPEC.md:54-55) |
 | Read-only root filesystem works: nothing writes outside `/tmp` and `KRUN_DB_PATH` | the chart mounts `/tmp` as emptyDir (SPEC.md:1322-1323) |
 | `.dockerignore` excludes `test/`, `.git`, host `node_modules`, `deploy/`, `docs/` | smaller context; the fake kube never ships |
 | Build args `KRUN_VERSION`, `KRUN_COMMIT` into OCI labels `org.opencontainers.image.{version,revision,source}` | `release.yml` stamping (PLAN.md:217-220) |
 
 Acceptance: `make docker` builds; `docker run <image> gateway` prints
-`gateway` (PLAN.md:170-171); from P2.5
+`gateway` (PLAN.md:174-175); from P2.5
 `docker run -v "$PWD/fixtures:/f:ro" <image> validate /f/tag-image.yaml`
 prints its line and exits 1 (PLAN.md:359-361).
 
-## `ci.yml` (P0.4, PLAN.md:172-178; P4.12, PLAN.md:609-611)
+## `ci.yml` (P0.4, PLAN.md:176-182; P4.12, PLAN.md:609-623)
 
 Triggers: `push` to `main` and `pull_request` (PLAN.md:172). Top-level
 `permissions: contents: read`; jobs raise only what they need. Every
@@ -56,13 +61,14 @@ Triggers: `push` to `main` and `pull_request` (PLAN.md:172). Top-level
 
 | Job | Steps | Notes |
 |---|---|---|
-| `check` | checkout, pnpm + Node 24 from `.node-version`, `uv` (Python 3.11+), `pnpm install --frozen-lockfile`, `make check` | the Phase 0 gate (PLAN.md:146). `make lint` = `biome check` + `tsc --noEmit` per package (PLAN.md:161-162) plus `ruff` and `mypy --strict` on `sdk/python` (STACK.md:127-128); `make test` = `pnpm -r exec vitest run`, the root Vitest project, and `uv run --directory sdk/python pytest` (PLAN.md:51, 137-138). The store contract suite (Postgres) and P6.1 (MinIO) need Docker on the runner; set `TESTCONTAINERS_RYUK_DISABLED=true` if Ryuk cannot run privileged |
+| `check` | checkout, pnpm + Node 26 from `.node-version` (`actions/setup-node` `node-version-file`), `uv` (Python 3.11+), `pnpm install --frozen-lockfile`, `make check` | the Phase 0 gate. `make lint` = `biome check` + `tsc --noEmit` per package (PLAN.md:161-162) plus `ruff` and `mypy --strict` on `sdk/python` (STACK.md section 3); `make test` = `pnpm -r exec vitest run`, the root Vitest project, and `uv run --directory sdk/python pytest` with its `hypothesis` properties (PLAN.md:51, 137-138); `make check` also runs `knip` (PLAN.md:176-177). The store contract suite runs on a `postgres:18` testcontainer and P6.1 on MinIO, so Docker must be on the runner; set `TESTCONTAINERS_RYUK_DISABLED=true` if Ryuk cannot run privileged |
+| `sdk-node` | matrix `node: [22, 26]`: checkout, pnpm, `actions/setup-node` with the matrix version, `pnpm install --frozen-lockfile --filter @krun/sdk...` (the SDK and its dev dependencies only), `pnpm --filter @krun/sdk exec vitest run` | the Node SDK supports Node 22 or newer (SPEC.md section 14); Vitest 5 supports Node 22.12 or newer. The only job with a hard-coded Node version list; the rest of the workspace is tested on Node 26 from `.node-version`. Exact filtered-install flags UNVERIFIED against pnpm 12, check in P0.4 |
 | `generate` | `make generate && git diff --exit-code` | catches a stale CRD, editor schema, OpenAPI document or chart README (PLAN.md:139-140, 173, 209) |
 | `docker` | `make docker`, Trivy `--severity CRITICAL --ignore-unfixed --exit-code 1` on the image | PLAN.md:173-175 |
 | `helm-lint` | install Helm 4 at the Makefile's `HELM_VERSION`, `make helm-lint` including the chart render tests; from P7.7 also `promtool check rules` on the rendered PrometheusRule | PLAN.md:52-54, 174, 775 |
 | `audit` | `pnpm audit --prod --audit-level=critical` | PLAN.md:174 |
 | `actionlint` | `actionlint` on `.github/workflows/` | P0.4 acceptance (PLAN.md:176-177) |
-| `kind-e2e` (P4.12) | `helm/kind-action` with `version_file` and `install_only: true`, the same pinned Helm 4, `make kind-up`, `make e2e`, upload gateway and scheduler logs as artifacts on failure | PLAN.md:609-611; runs on pull requests and main; from P9.4 budget 2 x 1800 s for the quickstart (PLAN.md:880-884) |
+| `kind-e2e` (P4.12) | `helm/kind-action` with `version_file` and `install_only: true`, the same pinned Helm 4, `make kind-up` with a `kindest/node` image of 1.33 or newer pinned by digest, `make e2e`, upload gateway and scheduler logs as artifacts on failure | PLAN.md:55, 609-623; runs on pull requests and main; from P9.4 budget 2 x 1800 s for the quickstart (PLAN.md:880-884) |
 | `release-dry-run` (P0.9) | the `release.yml` dry-run job invoked on pull requests | PLAN.md:221-222 |
 
 - Vitest in CI: GitHub Actions sets `CI=true`, so `allowOnly` is false (a
@@ -83,10 +89,14 @@ Triggers: `push` to `main` and `pull_request` (PLAN.md:172). Top-level
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended", ":pinDigests", "helpers:pinGitHubActionDigests"],
-  "enabledManagers": ["npm", "dockerfile", "github-actions", "pep621", "helm-values", "kubernetes"],
+  "enabledManagers": ["npm", "nodenv", "dockerfile", "github-actions", "pep621", "helm-values", "kubernetes"],
   "packageRules": [
     { "matchManagers": ["npm"], "rangeStrategy": "bump", "matchDepTypes": ["dependencies", "devDependencies"] },
-    { "matchPackageNames": ["effect", "@effect/platform-node", "@effect/vitest"], "groupName": "effect" },
+    { "matchPackageNames": ["effect", "@effect/platform-node", "@effect/vitest", "@effect/opentelemetry"], "groupName": "effect" },
+    { "matchPackageNames": ["@opentelemetry/**"], "groupName": "opentelemetry" },
+    { "matchPackageNames": ["@opentelemetry/sdk-trace-node", "@opentelemetry/sdk-trace-base", "@opentelemetry/sdk-metrics", "@opentelemetry/resources"], "allowedVersions": "<3" },
+    { "matchPackageNames": ["@opentelemetry/exporter-prometheus", "@opentelemetry/exporter-trace-otlp-http", "@opentelemetry/api-logs", "@opentelemetry/sdk-logs"], "allowedVersions": "<0.300" },
+    { "matchDepNames": ["node"], "groupName": "node" },
     { "matchPackageNames": ["testcontainers", "@testcontainers/postgresql", "@testcontainers/minio"], "groupName": "testcontainers" },
     { "matchUpdateTypes": ["major"], "matchDepTypes": ["dependencies"], "dependencyDashboardApproval": true },
     { "matchDepNames": ["kind", "kindest/node", "helm/kind-action"], "groupName": "kind" }
@@ -98,9 +108,16 @@ Triggers: `push` to `main` and `pull_request` (PLAN.md:172). Top-level
   carets elsewhere, STACK.md:35-36) and `pnpm-lock.yaml` pins exact
   versions, so Renovate bumps ranges instead of pinning them.
 - Effect packages move together in one pull request, always the same
-  version (STACK.md:233-234): the `effect` group. A major of any runtime
-  dependency needs a Decisions row (STACK.md:235): dashboard approval keeps
-  Renovate from opening it unasked.
+  version (STACK.md section 6): the `effect` group, which includes
+  `@effect/opentelemetry`. The OpenTelemetry SDK stays on the 2.x and
+  0.2xx lines `@effect/opentelemetry` 4.0.6 peers on (STACK.md 2.6): the
+  `allowedVersions` rules. A major of any runtime dependency needs a
+  Decisions row (STACK.md section 6): dashboard approval keeps Renovate
+  from opening it unasked.
+- Node: the `nodenv` manager bumps `.node-version` and the `dockerfile`
+  manager the Node 26 base digests; the `node` group keeps them in one pull
+  request so CI and the image never run different Node versions (manager
+  and dep names UNVERIFIED against current Renovate docs; check in P0.4).
 - Scope is npm, Docker digests and Actions (PLAN.md:176); the `kubernetes`
   manager covers `test/e2e/*.yaml` image digests (MinIO, Postgres,
   registry). The kind version file needs a `customManagers` regex entry
@@ -130,8 +147,8 @@ The dry-run job must still pass on pull requests without any of them.
 
 | Job | Trigger | Steps |
 |---|---|---|
-| `dry-run` | `pull_request`, and reused by `ci.yml` | stamp a synthetic `0.0.0-pr<N>` into every `package.json`, `sdk/python/pyproject.toml`, `deploy/helm/krun/Chart.yaml` `version` and `appVersion` (PLAN.md:217-219); `pnpm -r build`; `pnpm pack` both packages; `uv build`; `helm package`; `make docker`; `git diff --stat` printed; no push, no publish |
-| `release` | `push` tags `v*` (owner-only, PLAN.md:22) | `permissions: { contents: write, packages: write, id-token: write }`; stamp the tag; build; push the image to GHCR and read its digest; `cosign sign --yes <image>@<digest>` keyless; `syft <image>@<digest> -o spdx-json=sbom.spdx.json`; `cosign attest --yes --type spdxjson --predicate sbom.spdx.json <image>@<digest>`; `helm package` then `helm push` to `oci://ghcr.io/xenarro/charts`; `cosign sign` the chart digest; publish `@krun/sdk` and `@krun/cli` with `npm publish --provenance --access public` under OIDC; `uv publish` with OIDC; create the GitHub release with the `CHANGELOG.md` section for the tag |
+| `dry-run` | `pull_request`, and reused by `ci.yml` | stamp a synthetic `0.0.0-pr<N>` into every `package.json`, `sdk/python/pyproject.toml`, `deploy/helm/krun/Chart.yaml` `version` and `appVersion` (P0.9); `pnpm -r build`; `pnpm exec publint` and `pnpm exec attw --pack` in `packages/sdk-node` and `packages/cli`; `pnpm pack` both packages; `uv build`; `helm package`; `make docker`; `git diff --stat` printed; no push, no publish |
+| `release` | `push` tags `v*` (owner-only, PLAN.md:22) | `permissions: { contents: write, packages: write, id-token: write }`; stamp the tag; build; push the image to GHCR and read its digest; `cosign sign --yes <image>@<digest>` keyless; `syft <image>@<digest> -o spdx-json=sbom.spdx.json`; `cosign attest --yes --type spdxjson --predicate sbom.spdx.json <image>@<digest>`; `helm package` then `helm push` to `oci://ghcr.io/xenarro/charts`; `cosign sign` the chart digest; `publint` and `attw --pack` on `@krun/sdk` and `@krun/cli`, failing the job before anything is published to npm (P9.5); publish both with `npm publish --provenance --access public` under OIDC; `uv publish` with OIDC; create the GitHub release with the `CHANGELOG.md` section for the tag |
 
 - Version stamping is a script (`scripts/stamp-version.ts`) with a Vitest
   test in the root project (`pnpm -r` skips the workspace root, so
@@ -140,12 +157,19 @@ The dry-run job must still pass on pull requests without any of them.
   stripped; a tag not matching SemVer fails. It is a build tool, not
   application code: run with `node scripts/stamp-version.ts` (type
   stripping; erasable syntax only, STACK.md:123-125).
+- `publint` checks `package.json` `exports`, `files` and `types`
+  against the packed contents; `attw --pack` (`@arethetypeswrong/cli`)
+  packs the package and checks that its types resolve under every module
+  resolution mode, which matters for `@krun/sdk` because it is imported by
+  other teams' builds on Node 22 or newer (SPEC.md section 14). Both are
+  dev dependencies (STACK.md section 3); exact CLI flags UNVERIFIED, check
+  in P0.9.
 - One SemVer version per tag for image, chart, SDKs and CLI
   (SPEC.md:1413-1416); the templates' pinned SDK version must equal the
   workspace version.
 - `CHANGELOG.md` per tag (PLAN.md:221-222): the release pull request adds
   the section; the workflow fails when the tag's section is missing.
-- Post-release acceptance (P9.5, PLAN.md:889-892): `helm install` from the
+- Post-release acceptance (P9.5, PLAN.md:905-911): `helm install` from the
   OCI chart, `npx @krun/cli init`, `pip install krun`, `cosign verify` with
   `--certificate-identity-regexp` for the workflow and
   `--certificate-oidc-issuer https://token.actions.githubusercontent.com`.

@@ -85,7 +85,11 @@ names (`admin`, `admin-sched`).
 {{- end }}
 ```
 
-## PSA labels on the jobs Namespace (SPEC.md:1010-1012)
+## PSA labels on the jobs Namespace (SPEC.md:1014-1016)
+
+`podSecurityVersion` defaults to `v1.33`, the minimum supported
+Kubernetes (SPEC section 14); never `latest`, which would change the
+policy under the operator on a cluster upgrade.
 
 ```yaml
 pod-security.kubernetes.io/enforce: restricted
@@ -101,6 +105,62 @@ Plus `helm.sh/resource-policy: keep` when `jobsNamespace.keep`
 platform team does before `helm install` (SPEC.md:1325-1327,
 docs/OPERATIONS.md:16-18) and the P7 e2e creates it labelled
 (PLAN.md:677-678).
+
+## Digest ValidatingAdmissionPolicy (SPEC.md:1017-1021, PLAN P7.4a, P7.4d)
+
+Rendered when `jobsNamespace.admissionPolicy` is true (default), whether
+or not `jobsNamespace.create` is. Both objects are cluster-scoped (no
+`metadata.namespace`); the binding narrows them to the jobs namespace.
+
+```yaml
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: krun-jobs-digest
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - { apiGroups: [batch], apiVersions: [v1], operations: [CREATE, UPDATE], resources: [jobs] }
+      - { apiGroups: [""],    apiVersions: [v1], operations: [CREATE, UPDATE], resources: [pods] }
+  variables:
+    - name: spec
+      expression: "object.kind == 'Job' ? object.spec.template.spec : object.spec"
+  validations:
+    - expression: >-
+        variables.spec.containers.all(c, c.image.contains('@sha256:')) &&
+        (!has(variables.spec.initContainers) ||
+         variables.spec.initContainers.all(c, c.image.contains('@sha256:')))
+      message: "images in the krun jobs namespace must be pinned by digest (image@sha256:...)"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: krun-jobs-digest
+spec:
+  policyName: krun-jobs-digest
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchLabels: { kubernetes.io/metadata.name: {{ .Values.jobsNamespace.name }} }
+```
+
+- Jobs and Pods both: the scheduler's Jobs are denied before their
+  pods exist (a 4xx the scheduler classifies as `job_create_failed`), and
+  a Pod created by hand or by another controller is denied too.
+- `kubernetes.io/metadata.name` is set by the API server on every
+  Namespace, so the binding works with `jobsNamespace.create=false`.
+- Containers and init containers only, as SPEC says; ephemeral containers
+  (`kubectl debug`) go through the `pods/ephemeralcontainers`
+  subresource, which this rule does not match. Do not widen it without
+  BLOCKED.
+- The CEL above is a sketch: UNVERIFIED until the P7.4d e2e on kind
+  rejects a tag-only Job created by hand and the scheduler's
+  digest-pinned Jobs still pass. `kubernetes-hardening` covers VAP
+  mechanics; SPEC fixes the scope and the name.
+- This enforces the digest SPEC section 9 requires ("Images: digest
+  only"); it verifies no signature. Signature policy stays the platform
+  team's (Kyverno or Sigstore policy-controller).
 
 ## LimitRange and ResourceQuota (SPEC.md:1027-1031)
 
@@ -149,8 +209,9 @@ section 13 unless the owner changes them.
 | `krun-migrate` SA | `.Release.Namespace` | — | — | none; `automountServiceAccountToken: false`; hook annotations | postgres mode only |
 
 `functions.krun.io` in SPEC prose means `apiGroups: [krun.io]`,
-`resources: [functions]` in RBAC. Nothing cluster-wide except the CRD
-object (SPEC.md:1041). The Lease rule needs two entries because `create`
+`resources: [functions]` in RBAC. No cluster-wide RBAC; the CRD and
+the digest policy and binding are the only cluster-scoped objects
+(SPEC.md:1041). The Lease rule needs two entries because `create`
 cannot carry `resourceNames` (PLAN.md:737-738). No verb on
 `secrets` beyond the listed four is granted: `get` serves the
 `AlreadyExists` path (read the existing token, SPEC.md:821), `list` the
