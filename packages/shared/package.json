@@ -15,8 +15,20 @@
     "lint": "biome check . && tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@effect/opentelemetry": "~4.0.6",
     "@effect/platform-node": "~4.0.6",
+    "@opentelemetry/api": "~1.9.0",
+    "@opentelemetry/api-logs": "~0.223",
+    "@opentelemetry/exporter-prometheus": "~0.223",
+    "@opentelemetry/exporter-trace-otlp-http": "~0.223",
+    "@opentelemetry/resources": "^2.12",
+    "@opentelemetry/sdk-logs": "~0.223",
+    "@opentelemetry/sdk-metrics": "^2.12",
+    "@opentelemetry/sdk-trace-base": "^2.12",
+    "@opentelemetry/sdk-trace-node": "^2.12",
+    "@opentelemetry/semantic-conventions": "^1.43",
     "effect": "~4.0.6",
+    "fastify": "^5.12",
     "ipaddr.js": "^2.5",
     "zod": "^4.6"
   },

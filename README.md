@@ -12,7 +12,9 @@ The initial scaffold and configuration layer are implemented. This is not a runn
 - Digest-pinned, non-root distroless container packaging.
 - CI checks for types, formatting, tests, unused code, generated files, container packaging, chart lint and critical vulnerabilities.
 
-The four server-image commands currently print their names and exit successfully. They do not start listeners, migrate a database or validate Function resources yet. Admin health/telemetry, Function schemas, storage and the actual gateway/scheduler are the next implementation steps. See [PLAN.md](PLAN.md) for acceptance criteria and progress.
+Admin health support is partially implemented as a reusable, scoped Fastify admin app, not wired into the finite process commands yet. It has live `/healthz`, Ref-backed `/readyz` with a two-second database timeout, initial Function-LIST and drain gates, and non-gating leader status. The `/metrics` route requires an injected scrape service; the production OpenTelemetry reader and OTLP `Telemetry` layer are not implemented or accepted yet. Telemetry dependencies and acceptance-first tests are checkpointed, but `runtime/telemetry.ts` is not implemented and the full check is not green. P0.7 remains incomplete.
+
+The four server-image commands currently print their names and exit successfully. They do not start listeners, migrate a database or validate Function resources yet. Function schemas, storage and the actual gateway/scheduler are later implementation steps. See [PLAN.md](PLAN.md) for acceptance criteria and progress.
 
 ## Check the current implementation
 
@@ -43,7 +45,7 @@ Tests include configuration defaults and boundaries, process-specific validation
 
 [docs/STACK.md](docs/STACK.md) is the dependency allowlist. Automatic peer installation is disabled so unused Redis integration is not pulled in by the platform package. Process entrypoints import its public `NodeRuntime` subpath. Vite is development-only because Vitest 5 requires it (SPEC D37); neither Vite nor Redis belongs in the production image.
 
-The release-age guard remains enabled. Repository-local exceptions cover only the explicitly approved Effect 4.0.6 packages, and strict mode prevents installs from silently adding other exceptions.
+The release-age guard remains enabled. Repository-local exceptions cover only the explicitly approved Effect 4.0.6 packages, and strict mode prevents installs from silently adding other exceptions. SPEC D38 caps the OpenTelemetry API at `~1.9.0` for SDK 2.12 compatibility; it does not waive installation policy. SPEC D39 records a reproducible declaration-only pnpm patch for pino's transitive `thread-stream@4.2.0`, whose published types otherwise fail with Node 26; no runtime JavaScript or compiler checks are weakened.
 
 ## Design and operations
 
