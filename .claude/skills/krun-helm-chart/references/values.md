@@ -1,10 +1,9 @@
 # Chart values (SPEC.md section 13)
 
-Values shape verbatim from SPEC.md:1259-1350, then the meaning of every
-key and the env variable or resource it drives. Keep `values.yaml` in
-this shape: the P7.5 README is generated from it by `helm-docs`
-(PLAN.md:753-757), and `config.*` must stay one camelCase key per
-section 12 tunable (SPEC.md:1271).
+Values shape verbatim from SPEC.md:1259-1350, then each key's meaning and
+the env variable or resource it drives. Keep `values.yaml` in this shape:
+`helm-docs` generates the P7.5 README from it (PLAN.md:753-757), and
+`config.*` stays one camelCase key per section 12 tunable (SPEC.md:1271).
 
 ## values.yaml (verbatim, SPEC.md:1259-1350)
 
@@ -101,8 +100,8 @@ webhooks: { allowedHosts: [], allowedCIDRs: [], existingSecret: "" }
   # existingSecret key: secret (comma-separated); required when allowedHosts is set
 ```
 
-The two trailing `#` comment lines sit under their map in SPEC prose; in
-`values.yaml` put them above the key so `helm-docs` attaches them.
+SPEC puts the two trailing `#` comment lines under their map. In
+`values.yaml` put them above the key, so `helm-docs` attaches them.
 
 ## Per-key meaning
 
@@ -147,7 +146,7 @@ The two trailing `#` comment lines sit under their map in SPEC prose; in
 | `jobsNamespace.podSecurityVersion` | the three `pod-security.kubernetes.io/*-version` labels | default `v1.33`, the minimum supported Kubernetes (SPEC.md:1014-1016, 1483) |
 | `jobsNamespace.admissionPolicy` | ValidatingAdmissionPolicy `krun-jobs-digest` and its binding, scoped to `jobsNamespace.name` | default true; rendered whether or not `create` is true (SPEC.md:1017-1021, PLAN P7.4a); references/networkpolicies.md |
 | `jobsNamespace.userNamespaces` | `KRUN_JOB_HOST_USERS: "false"` on the scheduler container when true; nothing when false | the scheduler sets `hostUsers: false` on function pods (SPEC.md:1022-1027, 1236, section 7); needs 1.36, or 1.33-1.35 with the feature enabled |
-| `jobsNamespace.quota` | ResourceQuota `spec.hard` | dotted keys: read with `index` (see Pitfalls in SKILL.md); SPEC.md:1029-1030 |
+| `jobsNamespace.quota` | ResourceQuota `spec.hard` | dotted keys: read with `index` (references/fail-cases.md); SPEC.md:1029-1030 |
 | `jobsNamespace.limitRange` | LimitRange `type: Container` `defaultRequest`, `default`, `max` | SPEC.md:1027-1029 |
 | `jobsNamespace.dnsEgress` | `to:` peers of the DNS egress rule, rendered verbatim with `toYaml` | NodeLocal DNSCache appends an `ipBlock` (SPEC.md:1013-1016, docs/OPERATIONS.md:127-129) |
 | `jobsNamespace.egressCIDRs` | one `- ipBlock:` peer per entry, `cidr` plus optional `except` | NOTES.txt warning (SPEC.md:1021-1025) |
@@ -180,7 +179,7 @@ The two trailing `#` comment lines sit under their map in SPEC prose; in
 | `OTEL_SERVICE_NAME` | `krun-gateway` on gateway containers, `krun-scheduler` on scheduler containers, only when `observability.otlpEndpoint` is set | equals the process default, so leaving it out otherwise changes nothing (SPEC.md:1247) |
 | `OTEL_TRACES_SAMPLER` | `parentbased_traceidratio`, same gate | SPEC.md:1248 |
 
-Render every `config.*` key on both processes (SPEC.md:1271) even where
-section 12 says one process reads it; the process ignores what it does
-not use and the P7.2/P7.3 acceptance asserts "every `config` key as env"
+Render every `config.*` key on both processes (SPEC.md:1271), even where
+section 12 says only one process reads it. The process ignores what it
+does not use, and P7.2/P7.3 acceptance asserts "every `config` key as env"
 (PLAN.md:704, 720-721).

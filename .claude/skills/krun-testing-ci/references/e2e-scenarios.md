@@ -1,18 +1,17 @@
 # e2e scenario catalogue
 
-One file per scenario under `test/e2e/`, named after the failure mode or
-feature it proves (knative-serving `test/e2e/` layout). Every scenario
-creates its own Function (`<file>-<random>`) and cleans up in `afterAll`;
-files run under the e2e Vitest config in `kind-recipe.md`.
-All timing bounds are from PLAN.md; the assertion column is the minimum a
-reviewer checks for (docs/AGENT-KICKOFF.md:89-98). Function images are the
-`curlimages/curl` shape from docs/INTERNAL-API.md:326-371 until Phase 8;
-pin by digest (SPEC.md:1091).
-
-Wire names: `state` values are UPPER_SNAKE on the API (`SUCCEEDED`,
-`FAILED`), `failureReason` values are lower snake (`exit_code`), per
-docs/API.md; the lowercase store names below quote PLAN.md and mean the
-API form.
+- One file per scenario under `test/e2e/`, named after the failure mode or
+  feature it proves (knative-serving `test/e2e/` layout).
+- Per-file Function, cleanup and runner config: `kind-recipe.md`
+  "Harness".
+- All timing bounds come from PLAN.md. The assertion column is the minimum
+  a reviewer checks for (docs/AGENT-KICKOFF.md:89-98).
+- Function images follow the `curlimages/curl` shape from
+  docs/INTERNAL-API.md:326-371 until Phase 8; pin by digest (SPEC.md:1091).
+- Wire names: `state` values are UPPER_SNAKE on the API (`SUCCEEDED`,
+  `FAILED`); `failureReason` values are lower snake (`exit_code`), per
+  docs/API.md. Lowercase store names below quote PLAN.md and mean the API
+  form.
 
 ## Phase 4 gate (PLAN.md:469-481, P4.13)
 
@@ -24,10 +23,9 @@ API form.
 | `exit_code_status.e2e.ts` | posts two statuses, `exit 3` | `FAILED` with `exit_code`, `jobStatus.exitCode === 3`, `logTail` set, within 10 s |
 | `heartbeat_timeout.e2e.ts` | `heartbeatTimeout: 30s`, posts one status, sleeps | `FAILED` with `heartbeat_timeout` within 60 s; `logTail` set; the Job is deleted (`kubectl get job` 404) |
 
-Also in Phase 4, from the kind recipe: `enforcement_probe` runs inside
-`make kind-up` and is not a scenario file (PLAN.md:605-606); for "`make e2e`
-with zero scenarios" (PLAN.md:611-612) make it `probe.e2e.ts` or set
-`passWithNoTests`.
+`enforcement_probe` runs inside `make kind-up`; it is not a scenario file
+(PLAN.md:605-606). For "`make e2e` with zero scenarios" (PLAN.md:611-612)
+make it `probe.e2e.ts` or set `passWithNoTests`.
 
 ## Phase 5 (PLAN.md:618-623, P5.4)
 
@@ -37,7 +35,7 @@ with zero scenarios" (PLAN.md:611-612) make it `probe.e2e.ts` or set
 | `webhook.e2e.ts` | receiver records one delivery whose `X-Krun-Signature` verifies with `t=` and `v1=` (SPEC.md:1075-1084); a receiver configured to answer 500 once then 200 sees the same `X-Krun-Delivery` on both attempts (PLAN.md:646-648); with two secrets configured the header carries two `v1=` entries (PLAN.md:647-648) |
 
 Preconditions: `KRUN_WEBHOOK_ALLOWED_CIDRS` holds the kind pod and Service
-CIDRs (PLAN.md:621-623); the receiver verifies, the test reads its verdict.
+CIDRs (PLAN.md:621-623). The receiver verifies; the test reads its verdict.
 
 ## Phase 6 (PLAN.md:653-655, P6.3)
 
@@ -46,11 +44,13 @@ CIDRs (PLAN.md:621-623); the receiver verifies, the test reads its verdict.
 | `large_result.e2e.ts` | function uploads a 1 MB result through `KRUN_RESULT_UPLOAD_URL`; the run shows `resultUri`; `GET ...:getResult` returns 307 with `Cache-Control: no-store`; fetching the `Location` serves 1 MB with the expected checksum |
 
 Precondition: the raw `allow-minio` egress policy in the jobs namespace
-(PLAN.md:668-670); after P7.6 the chart's `objectStorage.egress` replaces it.
+(PLAN.md:668-670). After P7.6 the chart's `objectStorage.egress` replaces
+it.
 
 ## Phase 7 (PLAN.md:674-678, 758-771, P7.6)
 
-Run the matrix in both modes, each a fresh namespace with PSA `restricted`.
+Run the matrix in both modes, each in a fresh namespace with PSA
+`restricted`.
 
 | File | Assertion |
 |---|---|
@@ -78,17 +78,17 @@ Build both vendored template projects from `krun init`, `docker push` to
 |---|---|---|
 | `backpressure.e2e.ts` | P9.1 | 3000 submissions against `maxQueued` 1000, `maxConcurrency` 5: 429 `QUEUE_FULL` after the cap; never more than 5 active Jobs (sample `kubectl get jobs` every second, assert the max); quota rejections leave runs `QUEUED`; a key with `maxQueued` 10 gets 429 on the 11th (PLAN.md:852-856) |
 | `security.e2e.ts` | P9.2 | `kubectl get pod -o yaml` of a job pod contains neither the input nor the token (grep-for-absence of a random marker placed in the input); the job pod cannot reach the public port, the admin ports or the database (connect attempts time out); a run's token is 401 for another run id; a tag-only image is rejected at apply by the CRD (`kubectl apply` fails, `causes[].field`); a non-compiling `inputSchema` gives `Ready=False` and a POST 404 whose envelope carries no validation reason; a forbidden service account gives `ServiceAccountNotAllowed`; another key's run is 404 `RUN_NOT_FOUND`; a webhook to an unlisted `10.0.0.1` is 400 `CALLBACK_NOT_ALLOWED` (PLAN.md:857-866) |
-| `scripts/bench.ts` | P9.3 | 500 runs of a 10 s function; p50 and p95 submit-to-`RUNNING`, failure-detection p95, sustained runs per second; written into README and docs/OPERATIONS.md with the conditions (PLAN.md:867-870, SPEC.md:1421-1423, docs/PROBLEM.md:79-81) |
+| `scripts/bench.ts` | P9.3 | not a scenario file: `ci-release.md` "Benchmarks" (PLAN.md:867-870) |
 | `quickstart.e2e.ts` | P9.4 | `scripts/quickstart.sh` on a fresh kind cluster in both modes with `KRUN_CHART` (local path), `KRUN_IMAGE`, `KRUN_CLI` (workspace), `KRUN_SDK_VENDOR`, `KRUN_REGISTRY`; each exits 0 within 1800 s; durations recorded in README (PLAN.md:871-884, docs/PROBLEM.md:78) |
 | `restore_drill.e2e.ts` | P9.6 | embedded mode with Litestream: create a run; scale the StatefulSet to 0; delete `krun.db*` from the PVC via a throwaway pod; scale to 1; the run is readable after the restore (docs/OPERATIONS.md:94-105, PLAN.md:893-897) |
 | `scripts/check-alert-names.ts` | P9.6 | every rule name in the docs/OPERATIONS.md alerts table exists in the rendered PrometheusRule (PLAN.md:893-894) |
 
 ## Failure modes without a dedicated file yet
 
-krun classifies `oom_killed`, `evicted`, `disrupted` (SPEC.md:381, 882-887,
-`krun-scheduler-k8s` `references/failure-matrix.md`) and they are proven by
-P4.8 unit tests on the fake `Kube` layer (PLAN.md:562-575). No PLAN task asks for e2e files for them;
-adding `oom_killed.e2e.ts` (a function allocating past its memory limit
-under the LimitRange) is cheap and worthwhile but is scope the plan does not
-list: ask in the task's pull request rather than adding silently
-(PLAN.md:31-32).
+- krun classifies `oom_killed`, `evicted`, `disrupted` (SPEC.md:381,
+  882-887, `../../krun-scheduler-k8s/references/failure-matrix.md`).
+  P4.8 unit tests on the fake `Kube` layer prove them (PLAN.md:562-575).
+- No PLAN task asks for e2e files for them. `oom_killed.e2e.ts` (a
+  function allocating past its memory limit under the LimitRange) is cheap
+  but unlisted scope: ask in the task's pull request; do not add it
+  silently (PLAN.md:31-32).

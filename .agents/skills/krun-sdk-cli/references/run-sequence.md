@@ -2,10 +2,10 @@
 
 Source of truth: SPEC.md:686-729 and docs/INTERNAL-API.md sections 3-5 and
 7 (lines 106-263, 291-306). Same behaviour in `packages/sdk-node` and
-`sdk/python/krun`; language notes at the end. Both SDKs are plain code with
-no runtime dependencies and no Effect (docs/STACK.md principle 6): the
-Effect `Clock`/`Schedule` rules for krun's processes do not apply inside
-them, but the timings below are exactly the contract's.
+`sdk/python/krun`; language notes at the end. Both SDKs are plain code, no
+runtime dependencies, no Effect (docs/STACK.md principle 6). krun's Effect
+`Clock`/`Schedule` rules do not apply inside them; the timings below are
+exactly the contract's.
 
 ## 1. Environment (SPEC.md:687-690)
 
@@ -19,8 +19,8 @@ them, but the timings below are exactly the contract's.
 | `KRUN_HEARTBEAT_TIMEOUT` | decimal seconds string → int | heartbeat window (SPEC.md:614) | no heartbeat timer |
 | `KRUN_RESULT_UPLOAD_URL` | string | presigned PUT (SPEC.md:612) | over-cap result is `ResultWriteError` |
 
-Missing required variables in cluster mode: write one line to stderr and
-exit 1; there is nothing to report to.
+Required variable missing in cluster mode: write one line to stderr, exit 1.
+There is nothing to report to.
 
 ## 2. Headers on every gateway call
 
@@ -28,7 +28,7 @@ exit 1; there is nothing to report to.
 - `User-Agent: krun-sdk-node/<version>` or `krun-sdk-python/<version>`
   (SPEC.md:729). Version comes from the package's own metadata, stamped by
   `release.yml` (PLAN.md:217-218).
-- `Content-Type: application/json` on POST/PUT (415 otherwise,
+- `Content-Type: application/json` on POST/PUT (else 415,
   docs/INTERNAL-API.md:283).
 - Never on the presigned upload: no `Authorization`
   (docs/INTERNAL-API.md:218-219).
@@ -61,17 +61,16 @@ S6  close(): stop heartbeat, drop status gate; exit 0
 Any SIGTERM → exit 1 immediately (SPEC.md:718). Any 401 → exit 1 (docs/INTERNAL-API.md:258-262).
 ```
 
-Notes:
 
-- `PUT error` in S5 for a thrown error uses the error's type name
+- `PUT error` in S5 for a thrown error: type name
   (`err.constructor.name` / `type(exc).__name__`), `String(err.message)`,
-  and `details.stack` = first 20 lines of the stack (SPEC.md:708-710). For
+  `details.stack` = first 20 stack lines (SPEC.md:708-710). For
   `ResultWriteError` the message is the cause (status code or error text);
   log the cause too (SPEC.md:706-708).
-- The result or error call must have *returned* before exit; the exit is
-  what the scheduler reacts to (docs/INTERNAL-API.md:250-252).
-- Backoff is fixed 1 s, 2 s, 4 s (docs/INTERNAL-API.md:295); no jitter is
-  specified, do not add configuration for it.
+- The result or error call must have *returned* before exit. The scheduler
+  reacts to the exit (docs/INTERNAL-API.md:250-252).
+- Backoff is fixed 1 s, 2 s, 4 s (docs/INTERNAL-API.md:295). No jitter is
+  specified; add no configuration for it.
 
 ## 4. Status gate and heartbeat (SPEC.md:690-702)
 
@@ -94,21 +93,22 @@ send()           → pending = false; POST status latest, 3 s timeout, one attem
 close()          → closed = true; clear timers
 ```
 
-- Heartbeat interval: `KRUN_HEARTBEAT_TIMEOUT / 3` seconds, first tick one
-  interval after `run` started, until `close()` (SPEC.md:694-697). The run
-  window is measured from pod `Running`, so start-up work counts
-  (docs/INTERNAL-API.md:155-158); do not wait for the handler to call
+
+- Heartbeat interval: `KRUN_HEARTBEAT_TIMEOUT / 3` seconds. First tick one
+  interval after `run` started; ticks until `close()` (SPEC.md:694-697).
+  The window is measured from pod `Running`, so start-up work counts
+  (docs/INTERNAL-API.md:155-158). Never wait for the handler's first
   `ctx.status` before ticking.
-- `ctx.status` blocks at most 3 s and never throws (SPEC.md:700-702). In
-  Node it returns a promise that always resolves; in Python it returns
-  `None` and swallows every exception.
+- `ctx.status` blocks at most 3 s and never throws (SPEC.md:700-702). Node:
+  returns a promise that always resolves. Python: returns `None`, swallows
+  every exception.
 - A tick while a send is in flight sets `pending` and does nothing else.
 - `now` in the gate is a monotonic clock (`performance.now()` in Node,
-  `time.monotonic()` in Python), injected so tests can replace it; never the
-  wall clock, which jumps.
-- Unit-test with fake timers (Vitest `vi.useFakeTimers()` plus the injected
+  `time.monotonic()` in Python), injected so tests replace it. Never the
+  wall clock: it jumps.
+- Unit tests use fake timers: Vitest `vi.useFakeTimers()` plus the injected
   `now` driven by the same test; pytest with a fake clock and an `Event`
-  you control); the subprocess conformance scenarios use
+  the test controls. Subprocess conformance scenarios use
   `KRUN_HEARTBEAT_TIMEOUT=3` (1 s ticks) and real time with tolerance
   (conformance.md).
 
@@ -134,39 +134,36 @@ Prove it with a child process and a deadline on its exit, not in-process.
 - Input: file named by the first argument (`process.argv[2]`, `sys.argv[1]`),
   else all of stdin, parsed as JSON.
 - `ctx.runId`: `"local"`; `ctx.function`: `KRUN_FUNCTION` or the handler
-  file's base name. (SPEC does not fix these; keep them stable and document
-  them in the template README.)
+  file's base name. SPEC does not fix these: keep them stable, document them
+  in the template README.
 - `ctx.status` and `ctx.log`: one JSON line each on stderr.
-- Result: compact JSON of the return value on stdout, nothing for
-  `undefined`/`null`/`None`. No truncation to `KRUN_MAX_RESULT_BYTES` is
-  specified locally; keep stdout exactly the result.
-- Thrown error: the error JSON (same shape as `PUT error`) on stderr, exit 1.
+- Result: compact JSON of the return value on stdout; nothing for
+  `undefined`/`null`/`None`. Locally no truncation to
+  `KRUN_MAX_RESULT_BYTES` is specified; stdout holds exactly the result.
+- Thrown error: error JSON (same shape as `PUT error`) on stderr, exit 1.
 - Never writes files; never touches `function.yaml`.
 
 ## 7. Node specifics (`packages/sdk-node`)
 
-- ESM, `"type": "module"`, built to `dist/` by `tsc` for publishing; tests
-  `*.test.ts` next to the source run under Vitest
-  (`pnpm exec vitest run packages/sdk-node`), with `vitest` as the only
-  `devDependency` that matters and no `dependencies` at all.
-- HTTP: global `fetch` with `signal: AbortSignal.timeout(ms)`; a timeout is
-  a `DOMException` named `TimeoutError`; connection failures are
-  `TypeError: fetch failed` with a `cause`. Classify both as retryable.
+- ESM, `"type": "module"`, built to `dist/` by `tsc` for publishing. Tests
+  `*.test.ts` sit next to the source and run under Vitest
+  (`pnpm exec vitest run packages/sdk-node`). `vitest` is the only
+  `devDependency` that matters; no `dependencies` at all.
+- HTTP: global `fetch` with `signal: AbortSignal.timeout(ms)`. A timeout is
+  a `DOMException` named `TimeoutError`; a connection failure is
+  `TypeError: fetch failed` with a `cause`. Both are retryable.
 - Body: `JSON.stringify(value)` (compact); `Buffer.byteLength(str)` for the
-  byte count; upload via `fetch(url, { method: 'PUT', body: Buffer,
+  byte count. Upload via `fetch(url, { method: 'PUT', body: Buffer,
   headers: { 'content-type': 'application/json', 'content-length': String(n) } })`
   so the body is not chunked (docs/INTERNAL-API.md:217-218).
 - Heartbeat: `setInterval(tick, ms).unref()`; gate timer
   `setTimeout(...).unref()`.
-- `process.on('SIGTERM', () => process.exit(1))` registered at `run` start.
-- Exit with `process.exit(code)` only after the final gateway call has
-  returned; never `process.exit` inside a `finally` that could run before
-  `await`.
+- Register `process.on('SIGTERM', () => process.exit(1))` at `run` start.
+- Call `process.exit(code)` only after the final gateway call has returned;
+  never `process.exit` inside a `finally` that could run before `await`.
 - `ctx.log(obj)`: `process.stdout.write(JSON.stringify(obj) + "\n")` in the
   pod, `process.stderr.write` locally.
-- Node 22 API surface only (SPEC.md:664, section 14). CI runs this suite
-  on Node 22 and Node 26 with Vitest 5 (which supports Node 22.12 or
-  newer).
+- Node 22 API surface only (SPEC.md:664, section 14).
 
 ## 8. Python specifics (`sdk/python/krun`)
 
@@ -175,21 +172,21 @@ Prove it with a child process and a deadline on its exit, not in-process.
   (SPEC.md:661); tooling `uv`, `ruff`, `pytest`, `mypy --strict`
   (PLAN.md:55, docs/STACK.md section 3); stdlib only.
 - HTTP: `urllib.request.Request(url, data=body, method="PUT", headers=h)`,
-  `urllib.request.urlopen(req, timeout=10)`. `HTTPError` first (has
+  `urllib.request.urlopen(req, timeout=10)`. Catch `HTTPError` first (has
   `.code`), then `URLError`/`TimeoutError` as connection failures
   (UNVERIFIED by execution, stdlib-stable).
 - Body: `json.dumps(value, separators=(",", ":"), ensure_ascii=False).encode()`;
-  the byte length is `len(body)`. `urllib` sets `Content-Length` for a
-  `bytes` body; set `Content-Type` yourself.
+  byte length is `len(body)`. `urllib` sets `Content-Length` for a `bytes`
+  body; set `Content-Type` yourself.
 - Heartbeat: `threading.Thread(target=loop, daemon=True)` with
   `threading.Event().wait(interval)`; `close()` sets the event. The gate's
-  one-shot delay can reuse the same thread (sleep until the slot).
-- `signal.signal(signal.SIGTERM, lambda *_: os._exit(1))`; use `os._exit`
+  one-shot delay may reuse the same thread (sleep until the slot).
+- `signal.signal(signal.SIGTERM, lambda *_: os._exit(1))`. Use `os._exit`
   so a blocked main thread cannot delay it.
 - Handler may be sync or a coroutine function: if
   `inspect.iscoroutinefunction(handle)`, run it with `asyncio.run`.
 - `ctx.log(obj)`: `sys.stdout.write(json.dumps(obj) + "\n"); sys.stdout.flush()`
   in the pod, stderr locally. Flush: the pod's log tail is read after exit
   (SPEC.md:720-721 "so logTail stays readable").
-- `if __name__ == "__main__": run(handle)` in the template, a plain call,
-  never a decorator; importing the module executes nothing (PLAN.md:807-810).
+- Template: `if __name__ == "__main__": run(handle)`, a plain call, never a
+  decorator; importing the module executes nothing (PLAN.md:807-810).

@@ -3,15 +3,15 @@
 Serves PLAN P4.4 (PLAN.md:523-542), P4.8 (PLAN.md:562-575), P4.9
 (PLAN.md:576-587). Sources: SPEC.md:367-381 (error and `failureReason`
 precedence), SPEC.md:847-860 (`jobStatus` fields), SPEC.md:877-919 (failure
-detection), SPEC.md:1136-1140 (metrics). Line numbers verified against the
-working tree on 2026-10-23; re-check before citing.
+detection), SPEC.md:1136-1140 (metrics). Line numbers verified on
+2026-10-23; re-check before citing.
 
 ## Kubernetes signal -> run fields
 
 `jobStatus` is derived on every Job or Pod event from the cached Job and
 pod (SPEC.md:852-858). `failureReason`, `error.source` and `logTail` are
-fixed at the terminal transition. One row per signal; when several rows
-apply, the precedence sections below decide.
+fixed at the terminal transition. One row per signal; when several apply,
+the precedence sections below decide.
 
 | Kubernetes signal | `jobStatus` (`phase`, `reason`, `message`, `exitCode`) | run `state` | `failureReason` | `error.source` | `logTail` | Metric |
 |---|---|---|---|---|---|---|
@@ -32,46 +32,46 @@ apply, the precedence sections below decide.
 | `cancelling` run (SPEC.md:836-837) | last known | `cancelling -> cancelled` after Job (foreground) and Secret delete | none (not `failed`) | unchanged | not fetched | `krun_runs_transitions_total{to="cancelled"}` |
 
 Never derive `state` from `status.active`, `status.succeeded` or
-`status.failed` counters; only conditions `Complete=True` and `Failed=True`
+`status.failed` counters. Only conditions `Complete=True` and `Failed=True`
 are terminal (keda `pkg/scaling/executor/scale_jobs.go:231-238,438-445`).
-Kubernetes >= 1.31 also emits `SuccessCriteriaMet` and `FailureTarget`;
+Kubernetes >= 1.31 also emits `SuccessCriteriaMet` and `FailureTarget`:
 ignore them (keda.md section 1.3).
 
 ## `failureReason` precedence (SPEC.md:379-381)
 
 `oom_killed` > `deadline_exceeded` > `evicted` > `disrupted` > `exit_code`.
-Evaluate in that order over the cached Job and pod and take the first match:
+Evaluate in this order over the cached Job and pod; take the first match:
 
-1. `function` container `terminated.reason === 'OOMKilled'` -> `oom_killed`.
-2. Job condition `Failed=True` with `reason === 'DeadlineExceeded'` ->
+1. `function` container `terminated.reason === 'OOMKilled'`: `oom_killed`.
+2. Job condition `Failed=True` with `reason === 'DeadlineExceeded'`:
    `deadline_exceeded`.
-3. pod `status.reason === 'Evicted'` -> `evicted`.
+3. pod `status.reason === 'Evicted'`: `evicted`.
 4. pod condition `DisruptionTarget=True`, or Job `Failed=True` with no
-   `terminated` state on the `function` container -> `disrupted`.
-5. otherwise -> `exit_code` (the `terminated.exitCode` goes to
+   `terminated` state on the `function` container: `disrupted`.
+5. otherwise: `exit_code` (`terminated.exitCode` goes to
    `jobStatus.exitCode`).
 
-Knative orders failure evidence unschedulable > terminated exit code >
-waiting reason, and treats a waiting reason as final only after a deadline
-(serving `pkg/reconciler/revision/reconcile_resources.go:103-131,285-298`).
-krun does the same: `ImagePullBackOff` is only ever a `jobStatus.reason`
-while `scheduled`; the Job's `activeDeadlineSeconds` is the deadline that
-turns it into `deadline_exceeded`. There is no krun-side image-pull grace.
+Waiting reasons are final only after a deadline (Knative: unschedulable >
+terminated exit code > waiting reason, serving
+`pkg/reconciler/revision/reconcile_resources.go:103-131,285-298`). In krun
+`ImagePullBackOff` is only ever a `jobStatus.reason` while `scheduled`; the
+Job's `activeDeadlineSeconds` turns it into `deadline_exceeded`. No
+krun-side image-pull grace.
 
 ## `error` precedence (SPEC.md:367-373)
 
-1. The function's own `PUT error` report (`source: function`); the store
+1. The function's own `PUT error` report (`source: function`). The store
    writes `error = coalesce(error, patch.error)`, so a report accepted
    before the terminal statement survives every path (informer, heartbeat,
    deadline, `job_lost`).
 2. Kubernetes reason and message (`source: kubernetes`): the pod condition
-   or container state that produced `jobStatus.reason`/`message`, else the
-   Job `Failed` condition's reason and message.
+   or container state behind `jobStatus.reason`/`message`, else the Job
+   `Failed` condition's reason and message.
 3. krun's own reason (`source: krun`): `heartbeat_timeout`, `job_lost`,
    `job_create_failed`, `queue_timeout` messages.
 
-`failureReason` still says why krun ended the run even when `error.source`
-is `function`. A function that reports an error and exits 0 still succeeds:
+`failureReason` still says why krun ended the run when `error.source` is
+`function`. A function that reports an error and exits 0 still succeeds:
 the exit code is the truth (SPEC.md:375-376). Never log `error.details`
 (SPEC.md:1151-1153).
 
@@ -86,19 +86,21 @@ the exit code is the truth (SPEC.md:375-376). Never log `error.details`
 | terminal Job event arrives before any of the above | fetch then, once |
 | pod already gone (not in the cache) | `logTail` stays null |
 
-Call `coreV1.readNamespacedPodLog({ name, namespace, container: 'function',
-tailLines: 100, limitBytes: 16384 })` once per run, keep the string in a
-leader-local `Ref<Map<runId, string | null>>` (created in the leader
-scope) until the terminal CAS, then drop it. The call goes through the
-`Kube` service, so it is bounded by its 10 s `Effect.timeout` and the
-request is aborted on timeout; on the timeout or any `KubeApiError` leave
-`logTail` null and continue (`Effect.orElseSucceed(() => null)` or the
-Effect 4 equivalent; SPEC.md:896-897). A hanging stub in the test is
-released with `TestClock.adjust("10 seconds")`. `limitBytes` may
-cut the first line mid-way; that is acceptable. Fetch before any delete,
-always: terminal path and heartbeat path both read the log before the Job
-or Secret goes (SPEC.md:898-899, SPEC.md:906-908). `logTail` is FULL-view
-only (SPEC.md:241) and is separate from `error` (PLAN.md:567-568).
+- Call `coreV1.readNamespacedPodLog({ name, namespace, container: 'function',
+  tailLines: 100, limitBytes: 16384 })` once per run. Keep the string in a
+  leader-local `Ref<Map<runId, string | null>>` (leader scope) until the
+  terminal CAS, then drop it.
+- The call goes through `Kube`: its 10 s `Effect.timeout` bounds it and
+  aborts the request on timeout. On timeout or any `KubeApiError`, leave
+  `logTail` null and continue (`Effect.orElseSucceed(() => null)` or the
+  Effect 4 equivalent; SPEC.md:896-897). Release a hanging test stub with
+  `TestClock.adjust("10 seconds")`.
+- `limitBytes` may cut the first line mid-way; acceptable.
+- Fetch before any delete, always: terminal and heartbeat paths both read
+  the log before the Job or Secret goes (SPEC.md:898-899,
+  SPEC.md:906-908).
+- `logTail` is FULL-view only (SPEC.md:241) and separate from `error`
+  (PLAN.md:567-568).
 
 ## Metrics on this path (SPEC.md:1134-1140)
 
@@ -110,11 +112,11 @@ only (SPEC.md:241) and is separate from `error` (PLAN.md:567-568).
 | `krun_run_duration_seconds` | `running -> terminal` | `function`, `state`; `startTime` to `endTime` |
 | `krun_terminal_detect_seconds` | terminal CAS after a container exit | `function`; `terminated.finishedAt` (parsed into a `DateTime`) to the CAS time from `Clock`; target 10 s (SPEC.md:887-889, docs/PROBLEM.md) |
 
-Keep histogram label sets to `function` only; KEDA made high-cardinality
-histogram labels opt-in after they exploded (keda
+Histogram label sets: `function` only. KEDA made high-cardinality histogram
+labels opt-in after they exploded (keda
 `pkg/metricscollector/prommetrics.go:272-278`). Only the leader publishes
-these (SPEC.md:1134-1140); flip `krun_scheduler_leader` to 0 and stop
-publishing on loss.
+these (SPEC.md:1134-1140). On loss, flip `krun_scheduler_leader` to 0 and
+stop publishing.
 
 ## Acceptance cases (PLAN.md:569-575, PLAN.md:535-542)
 
@@ -122,11 +124,11 @@ publishing on loss.
   on the pod event before the Job `Failed` event.
 - Reported error survives as `error.source: function`; `failureReason`
   still set.
-- `OOMKilled` -> `oom_killed`; `DisruptionTarget` -> `disrupted`.
-- Hanging `pods/log` -> timeout, `logTail` null, run still ends `failed`.
-- Pod gone before any fetch -> `error.source: kubernetes` with the Job
+- `OOMKilled` gives `oom_killed`; `DisruptionTarget` gives `disrupted`.
+- Hanging `pods/log`: timeout, `logTail` null, run still ends `failed`.
+- Pod gone before any fetch: `error.source: kubernetes` with the Job
   condition reason, `logTail` null.
-- `ImagePullBackOff` pod -> run stays `scheduled`, `jobStatus.reason`
+- `ImagePullBackOff` pod: run stays `scheduled`, `jobStatus.reason`
   `ImagePullBackOff`, one `run_events` row with reason `job_status`.
-- `Complete` on a `scheduled` run -> `succeeded`, `startTime` from
+- `Complete` on a `scheduled` run: `succeeded`, `startTime` from
   `terminated.startedAt`, else the Job `status.startTime` (SPEC.md:359-362).

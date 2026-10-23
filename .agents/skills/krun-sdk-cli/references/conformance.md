@@ -1,9 +1,9 @@
 # `test/sdk-conformance` (P8.3)
 
 Source of truth: PLAN.md:811-818. One scenario table, read by both SDK test
-suites, that pins the exact request sequence an SDK must produce. Its job is
-to make the Node and Python SDKs indistinguishable on the wire. Reordering
-one SDK's calls must fail that SDK's suite.
+suites, pins the exact request sequence an SDK must produce, so the Node and
+Python SDKs are indistinguishable on the wire. Reordering one SDK's calls
+must fail that SDK's suite.
 
 ## Layout
 
@@ -15,9 +15,10 @@ packages/sdk-node/src/conformance.test.ts     Vitest; loads ../../../test/sdk-co
 sdk/python/tests/test_conformance.py          pytest; loads the same file
 ```
 
+
 Each suite ships its own handler fixtures keyed by name (`echo`, `void`,
-`throws`, `status_then_return`, `two_status`, `big_result`, `slow`, ...);
-the table names the fixture, never contains code.
+`throws`, `status_then_return`, `two_status`, `big_result`, `slow`, ...).
+The table names the fixture; it never contains code.
 
 ## Scenario shape
 
@@ -45,31 +46,32 @@ the table names the fixture, never contains code.
 }
 ```
 
-- `responses` are consumed in order per route; the last entry repeats.
-  An entry may carry `"delayMs"` to answer late, or be `{ "hang": true }`
-  to simulate a never-answering gateway
-  (for the 10 s / 3 s timeout cases; scale timeouts down only through an
-  SDK test hook, never a public option).
+
+- `responses` are consumed in order per route; the last entry repeats. An
+  entry may carry `"delayMs"` to answer late, or be `{ "hang": true }` to
+  simulate a never-answering gateway (for the 10 s / 3 s timeout cases).
+  Scale timeouts down only through an SDK test hook, never a public option.
 - `expect.requests` is the **ordered** list of requests to the fake, with
-  `{run}` substituted. A request entry may carry `"body"` (deep-equal after
-  JSON parse), `"bodyBytesMax"`, or `"headers"` (subset match, e.g.
-  `User-Agent` prefix `krun-sdk-`).
+  `{run}` substituted. An entry may carry `"body"` (deep-equal after JSON
+  parse), `"bodyBytesMax"`, or `"headers"` (subset match, e.g. `User-Agent`
+  prefix `krun-sdk-`).
 - `minGapMs: [[i, j, ms]]` asserts request j arrived at least `ms` after
-  request i (used for the 1 s send gate). Keep tolerances wide (900 ms for
-  a 1 s gate) so CI jitter does not flake.
+  request i (for the 1 s send gate). Keep tolerances wide (900 ms for a 1 s
+  gate) so CI jitter does not flake.
 - Upload requests go to a second fake listener; the scenario marks them
   `"target": "upload"`.
 
 ## Matcher rules
 
-- Order is strict for the requests listed. Extra heartbeat ticks are the
-  usual flake: either pick `KRUN_HEARTBEAT_TIMEOUT` and handler timing so
-  the count is deterministic, or mark a request `"repeat": "1+"` meaning
-  one or more identical consecutive requests.
-- Bodies compare parsed JSON, never bytes (key order and whitespace differ
-  between languages).
-- Headers: the `Authorization` header carrying the per-run token (scheme Bearer) must be present on every
-  internal call and **absent** on the upload (docs/INTERNAL-API.md:217-219).
+- Order is strict for the listed requests. Extra heartbeat ticks are the
+  usual flake: pick `KRUN_HEARTBEAT_TIMEOUT` and handler timing so the count
+  is deterministic, or mark a request `"repeat": "1+"` (one or more
+  identical consecutive requests).
+- Bodies compare parsed JSON, never bytes: key order and whitespace differ
+  between languages.
+- Headers: the `Authorization` header carrying the per-run token (scheme
+  Bearer) must be present on every internal call and **absent** on the
+  upload (docs/INTERNAL-API.md:217-219).
 
 ## Required scenarios (PLAN.md:812-817 plus the P8.1 matrix)
 
@@ -95,24 +97,24 @@ the table names the fixture, never contains code.
 | 401 on status | process exits 1, no further requests |
 | User-Agent | `krun-sdk-node/<v>` or `krun-sdk-python/<v>` on every internal call |
 
-Local-mode stream separation is not a wire scenario; keep it as a per-SDK
-unit test (stdout holds only the result, stderr holds log and status lines).
+Local-mode stream separation is not a wire scenario. Keep it as a per-SDK
+unit test: stdout holds only the result, stderr holds log and status lines.
 
 ## Proving the table bites
 
 Acceptance requires that reordering one SDK's calls fails its suite
-(PLAN.md:817-818). Add a self-test: run the matcher against a recorded
-sequence with two requests swapped and assert it reports a mismatch.
-Do not leave a deliberately broken SDK branch in the tree.
+(PLAN.md:817-818). Add a matcher self-test: feed a recorded sequence with
+two requests swapped and assert a mismatch. Never leave a deliberately
+broken SDK branch in the tree.
 
 ## Running
 
 - Node: `pnpm exec vitest run packages/sdk-node/src/conformance.test.ts`
   spawns the fixture as a child process (`process.execPath` on the built
-  `dist/` or on the `.ts` source through Node's type stripping) against
-  `http.createServer` fakes bound to `127.0.0.1:0`. Give these tests a
-  per-test timeout above the slowest scenario (the hanging-input case
-  waits a real 10 s unless the SDK test hook scales it down).
+  `dist/`, or on the `.ts` source through Node's type stripping) against
+  `http.createServer` fakes bound to `127.0.0.1:0`. Set a per-test timeout
+  above the slowest scenario: the hanging-input case waits a real 10 s
+  unless the SDK test hook scales it down.
 - Python: `uv run --directory sdk/python pytest tests/test_conformance.py`
   spawns `sys.executable` with the fixture module.
 - Both use real time with small `KRUN_HEARTBEAT_TIMEOUT` values (3 s gives

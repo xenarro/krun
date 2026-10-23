@@ -1,12 +1,12 @@
 # `krun init` templates (P8.4, P8.5)
 
 Source of truth: SPEC.md:733-750 (what `krun init` writes), PLAN.md:819-829
-(acceptance). Templates live in `packages/cli/templates/<lang>/` and are
-copied verbatim except for the name substitution.
+(acceptance). Templates live in `packages/cli/templates/<lang>/`, copied
+verbatim except for the name substitution.
 
-The templates are the function author's project, not krun code, and follow
+Templates are the function author's project, not krun code, and follow
 different rules on purpose: no dependency besides the SDK (no Effect, no
-Zod, no Vitest), so the Node template's own test uses `node --test` and the
+Zod, no Vitest). The Node template's own test uses `node --test`; the
 Python template's uses pytest importing `handle`. The krun stack rules
 (docs/STACK.md) apply to the CLI that writes them, not to what it writes.
 
@@ -14,38 +14,38 @@ Python template's uses pytest importing `handle`. The krun stack rules
 
 `krun init --lang node|python [--name <function>] <dir>` (SPEC.md:737-739).
 No other flags (PLAN.md:31-32). `--name` defaults to the basename of
-`<dir>`, on a TTY and off it, and is never prompted for. On a TTY a
-missing `--lang` is asked with a clack `select` (node, python). Off a TTY
-nothing is asked: a missing `--lang` fails with a usage message naming
-it, exit 1 (docs/STACK.md 2.7).
+`<dir>`, on a TTY and off it, and is never prompted for. On a TTY a missing
+`--lang` is asked with a clack `select` (node, python). Off a TTY nothing is
+asked: a missing `--lang` fails with a usage message naming it, exit 1
+(docs/STACK.md 2.7).
 
 Order (lessons from knative/func `pkg/functions/client.go:647-716`):
 
-1. Resolve `--lang` (flag, else a prompt on a TTY, else a usage error)
-   and `--name` (flag, else the basename of `<dir>`); validate `--lang`
-   (only `node`, `python`).
+1. Resolve `--lang` (flag, else a prompt on a TTY, else a usage error) and
+   `--name` (flag, else the basename of `<dir>`). Validate `--lang`: only
+   `node`, `python`.
 2. Validate the name as a DNS-1123 label with the name regex exported next
    to the Zod schema in `packages/shared/src/functions/schema.ts` (one
-   constant, imported, never copied); reject a leading `-` with a specific
-   hint, it is a mistyped flag (func `cmd/create.go:621-647`).
-3. Create `<dir>`; refuse if it contains `function.yaml` or any visible
+   constant, imported, never copied). Reject a leading `-` with a specific
+   hint: it is a mistyped flag (func `cmd/create.go:621-647`).
+3. Create `<dir>`. Refuse if it contains `function.yaml` or any visible
    (non-dot) entry; hidden files such as `.git` are fine (func
-   `client.go:1557-1609`). Error text names the offending file.
-4. Copy the template tree, substitute the name and the SDK version.
+   `client.go:1557-1609`). The error names the offending file.
+4. Copy the template tree; substitute the name and the SDK version.
 5. Re-read `function.yaml` from disk and parse it with the Zod Function
-   schema (with the placeholder image allowed); a serialisation bug fails
-   here, not at deploy (func `client.go:714-715`).
-6. Print the next steps on stderr; print nothing on stdout except an
-   optional `--json` result if a later task asks for one (none does today).
+   schema (placeholder image allowed). A serialisation bug fails here, not
+   at deploy (func `client.go:714-715`).
+6. Print next steps on stderr. Print nothing on stdout, except an optional
+   `--json` result if a later task asks for one (none does today).
 
 `init` is an Effect program like the rest of the CLI: argv from
 `node:util` `parseArgs`, prompts through the `Prompt` service over
-`@clack/prompts`, file writes through the CLI's `Fs` service, each
-failure a tagged error rendered as a "Try this:" block. A cancelled
-prompt writes nothing and exits 130.
+`@clack/prompts`, file writes through the CLI's `Fs` service, each failure a
+tagged error rendered as a "Try this:" block. A cancelled prompt writes
+nothing and exits 130.
 
-Never resolve templates relative to `process.cwd()`; use
-`new URL("../templates/", import.meta.url)` from the built `dist/` file and
+Never resolve templates relative to `process.cwd()`. Use
+`new URL("../templates/", import.meta.url)` from the built `dist/` file, and
 check the published `@krun/cli` tarball contains `templates/` (`files` in
 `package.json`).
 
@@ -64,8 +64,8 @@ check the published `@krun/cli` tarball contains `templates/` (`files` in
 | `function.yaml` | see below |
 | `README.md` | see below |
 
-Plain JavaScript keeps the template buildable with no TypeScript toolchain;
-if a TS template is wanted later it is a Decisions row, not a flag.
+Plain JavaScript keeps the template buildable without a TypeScript
+toolchain. A TS template later is a Decisions row, not a flag.
 
 ### Python (`packages/cli/templates/python/`)
 
@@ -78,32 +78,33 @@ if a TS template is wanted later it is a Decisions row, not a flag.
 | `.dockerignore`, `.gitignore` | `.venv/`, `__pycache__/`, `.pytest_cache/`; never `vendor/` |
 | `function.yaml`, `README.md` | as below |
 
-Importing `handler.py` must execute nothing (PLAN.md:810); the test suite
-proves it by importing and asserting no request was made.
+Importing `handler.py` must execute nothing (PLAN.md:810). The test suite
+proves it: import, then assert no request was made.
 
 ## Dockerfile rules (both languages)
 
-- Multi-stage; copy the **whole project** before installing dependencies so
-  a packed SDK in `vendor/` resolves without a registry (SPEC.md:743-745).
-  `COPY package*.json` then `npm install` then `COPY .` is the anti-pattern:
-  it breaks the vendored acceptance in PLAN.md:823.
-- Install from the lockfile when present; when `vendor/` holds the SDK the
-  dependency spec points at the file (the acceptance does `npm install
+- Multi-stage. Copy the **whole project** before installing dependencies,
+  so a packed SDK in `vendor/` resolves without a registry
+  (SPEC.md:743-745). `COPY package*.json`, then `npm install`, then `COPY .`
+  is the anti-pattern: it breaks the vendored acceptance in PLAN.md:823.
+- Install from the lockfile when present. When `vendor/` holds the SDK, the
+  dependency spec points at the file (the acceptance runs `npm install
   ./vendor/krun-sdk-*.tgz` / `uv add ./vendor/krun-*.whl` before building).
 - Base: distroless or slim (SPEC.md:746), pinned by digest in the template.
   Node: `node:26-slim` build (Node 26 is LTS from late October 2026, the
-  line krun itself runs on), distroless Node 26 `:nonroot` or slim
-  runtime; the distroless tag name for Node 26 is UNVERIFIED, check the
-  distroless registry before pinning. The SDK itself supports Node 22 or
-  newer, so authors may pick a Node 22 or 24 LTS base. Python: `python:3.13-slim` (func
-  uses the same, `pkg/oci/python_builder.go:19-38`).
+  line krun itself runs on); distroless Node 26 `:nonroot` or slim runtime.
+  The distroless tag name for Node 26 is UNVERIFIED: check the distroless
+  registry before pinning. The SDK supports Node 22 or newer, so authors may
+  pick a Node 22 or 24 LTS base. Python: `python:3.13-slim` (func uses the
+  same, `pkg/oci/python_builder.go:19-38`).
 - Numeric `USER 65532:65532` (SPEC.md:745): PSA `restricted` and
-  `runAsNonRoot` need a numeric UID; the Job also sets 65532 (SPEC.md section 7).
-- Read-only root filesystem safe: write only under `/tmp`; the Job sets
+  `runAsNonRoot` need a numeric UID; the Job also sets 65532 (SPEC.md
+  section 7).
+- Safe on a read-only root filesystem: write only under `/tmp`; the Job sets
   `HOME=/tmp` and mounts an emptyDir there. Python: set
-  `PYTHONDONTWRITEBYTECODE=1` and `PYTHONUNBUFFERED=1`; npm/pip caches are
+  `PYTHONDONTWRITEBYTECODE=1` and `PYTHONUNBUFFERED=1`. npm/pip caches are
   build-stage only.
-- `STOPSIGNAL SIGTERM` (default, state it), optional
+- `STOPSIGNAL SIGTERM` (the default; state it). Optional
   `LABEL org.opencontainers.image.revision=$GIT_SHA` via build-arg.
 
 ## `function.yaml` starter
@@ -125,54 +126,55 @@ spec:
   heartbeatTimeout: 5m
 ```
 
+
 `image: REPLACE_WITH_DIGEST` and `heartbeatTimeout: 5m` are required by
 SPEC.md:747-748. `krun validate function.yaml` must fail on the placeholder
 with a message naming the field and telling the user to run `krun deploy`
 (PLAN.md:824-825). The schema header URL points at the editor schema
-generated from the Zod schema with `z.toJSONSchema` (SPEC.md:126); pin it
-to the tag, not `main`.
+generated from the Zod schema with `z.toJSONSchema` (SPEC.md:126). Pin it to
+the tag, not `main`.
 
 ## README loop (SPEC.md:749-750)
 
-1. Test locally: `npm test` / `uv run pytest`; run once with
+1. Test locally: `npm test` / `uv run pytest`. Run once with
    `echo '{"name":"x"}' | node handler.js` (local mode, no cluster).
 2. `krun deploy --registry <registry>` (or `KRUN_REGISTRY`).
-3. POST a run with the curl `krun deploy` prints (uses `$KRUN_API_KEY`
+3. POST a run with the curl `krun deploy` prints (it uses `$KRUN_API_KEY`
    literally, never an inline key).
 4. Manual steps behind `krun deploy`: `docker build`, `docker push`, copy
    the digest into `image:`, `krun validate function.yaml`,
    `kubectl apply -f function.yaml -n krun`,
    `kubectl get kfn <name> -n krun -w`.
-5. Note that a CPU-bound synchronous handler starves the heartbeat timer
-   (SPEC.md:698-699) and that `heartbeatTimeout` must exceed the longest
-   gap between event-loop turns.
+5. Warn: a CPU-bound synchronous handler starves the heartbeat timer
+   (SPEC.md:698-699); `heartbeatTimeout` must exceed the longest gap between
+   event-loop turns.
 
 ## Version coupling
 
-- The template's SDK pin is the CLI's own version, one workspace version
-  per tag (SPEC.md:740-742, 1413-1416). Read it from the CLI's
-  `package.json` at build time, never hard-code.
-- Unit test: rendered template pin == workspace version; fails the build if
-  `release.yml` stamping missed a file (func
+- The template's SDK pin is the CLI's own version: one workspace version per
+  tag (SPEC.md:740-742, 1413-1416). Read it from the CLI's `package.json` at
+  build time; never hard-code it.
+- Unit test: rendered template pin == workspace version. It fails the build
+  if `release.yml` stamping missed a file (func
   `pkg/scaffolding/middleware_version.go`).
 
 ## Tests for the CLI itself
 
-Vitest with `@effect/vitest`, gate `pnpm exec vitest run packages/cli`;
-the CLI's Vitest config excludes `templates/**` (those are `node --test`
-files for the generated project).
+Vitest with `@effect/vitest`, gate `pnpm exec vitest run packages/cli`. The
+CLI's Vitest config excludes `templates/**` (those are `node --test` files
+for the generated project).
 
 - Provide fake `Fs`, `Env` and output layers, or the real `Fs` over an
   `fs.mkdtemp` dir; run `init` with `it.effect`.
-- Cases: valid node, valid python, existing `function.yaml`, visible file
-  present, hidden file present (allowed), name with uppercase, leading `-`,
-  name too long for `krun-<name>-...` labels if a length cap applies;
-  TTY with `--lang` missing answered by the `Prompt` fake; TTY with a
-  cancelled prompt (nothing written, exit 130); non-TTY with `--lang`
-  missing (usage error, no prompt call); `--name` missing on a TTY and off
-  it (the function is named after `<dir>`, no prompt call).
+- Cases: valid node; valid python; existing `function.yaml`; visible file
+  present; hidden file present (allowed); name with uppercase; leading `-`;
+  name too long for `krun-<name>-...` labels if a length cap applies. TTY
+  with `--lang` missing, answered by the `Prompt` fake. TTY with a cancelled
+  prompt (nothing written, exit 130). Non-TTY with `--lang` missing (usage
+  error, no prompt call). `--name` missing on a TTY and off it (function
+  named after `<dir>`, no prompt call).
 - After init, assert the rendered `function.yaml` parses with the Zod
-  schema, its `metadata.name` equals the requested name and the SDK pin
+  schema, its `metadata.name` equals the requested name, and the SDK pin
   equals the workspace version.
 - The templates themselves are tested only by the P8.4 and P8.5 acceptance:
   generate a project, install the vendored SDK, run its own `npm test` or

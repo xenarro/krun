@@ -1,20 +1,18 @@
 # Kubernetes test doubles: the fake `Kube` layer and `test/fake-kube`
 
-krun has two Kubernetes doubles with different jobs:
-
 | Double | Speed and time | Used for |
 |---|---|---|
 | fake `Kube` layer (Effect `Layer`) | in-process, `TestClock` | every scheduler unit test: P4.2 leader, P4.3a limiter and classification, P4.3b main loop, P4.3c cancel, P4.4 informers and terminal path, P4.5 `job_lost`, P4.7 status writer, P4.8 failure detection, P4.9 heartbeat, P4.10 sweep (PLAN.md:488-591); P2.3 Function informer (PLAN.md:336-345) |
 | `test/fake-kube` HTTP server | real sockets, real time | process tests that start `bin/krun.js` with `KUBECONFIG` at it: P3.7, P4.6, P4.11 (PLAN.md:432-441, 552-556, 592-599) |
 
-Where PLAN says "stubbed `CoordinationV1Api`" or "stubbed `BatchV1Api` and
-`CoreV1Api`" the krun form is the fake `Kube` layer: every Kubernetes call
-in application code goes through the `Kube` service (STACK.md:72, 179-186),
-so a test replaces the service, not the client-node classes.
+PLAN's "stubbed `CoordinationV1Api`" or "stubbed `BatchV1Api` and
+`CoreV1Api`" means the fake `Kube` layer. Application code makes every
+Kubernetes call through the `Kube` service (STACK.md:72, 179-186), so a
+test replaces the service, not the client-node classes.
 
 ## Part 1: the fake `Kube` layer
 
-The `Kube` service interface is owned by `krun-scheduler-k8s` (shared
+`krun-scheduler-k8s` owns the `Kube` service interface (shared
 `KubeConfig` loading in `packages/shared/src/k8s`, PLAN.md:104). The fake
 implements the same `Context.Service`:
 
@@ -45,27 +43,27 @@ export const FakeKube = {
 // exposing `actions`, `objects`, `emit(event)` for assertions
 ```
 
-Rules for the fake:
+Fake rules:
 
-- Record `[verb, resource, name]` before answering, including failed and
-  hung calls: the assertion is the ordered list (SKILL.md rule 9).
-- Failures are the same tagged errors the real adapter produces:
-  `KubeApiError` with `status` (and `reason`, `retryAfter` for 429), plus
-  the timeout/network failure the adapter maps from `TimeoutError`
+- Record `[verb, resource, name]` before answering, failed and hung calls
+  included. The assertion is the ordered list (SKILL.md rule 9).
+- Failures are the tagged errors the real adapter produces: `KubeApiError`
+  with `status` (plus `reason`, `retryAfter` for 429), and the
+  timeout/network failure the adapter maps from `TimeoutError`
   (STACK.md:168-171). The fake never throws.
 - `AlreadyExists` (409 with reason), `NotFound` (404) and `Conflict` (409
-  on a stale `resourceVersion` for Lease `update`) come from the store
-  semantics, not from scripts, so the happy-path rows exercise them.
-- `hang` returns `Effect.never`; the code under test bounds it with
-  `Effect.timeout` (10 s per call, STACK.md:180). The test forks, then
-  `TestClock.adjust("10 seconds")`, then asserts the timeout failure and
-  that the in-flight slot was released (P4.3a "at most 8 calls in flight").
+  on a stale `resourceVersion` for Lease `update`) come from store
+  semantics, not scripts, so happy-path rows exercise them.
+- `hang` returns `Effect.never`; code under test bounds it with
+  `Effect.timeout` (10 s per call, STACK.md:180). Test: fork,
+  `TestClock.adjust("10 seconds")`, assert the timeout failure and the
+  released in-flight slot (P4.3a "at most 8 calls in flight").
 - No real time: the fake reads `Clock` for `creationTimestamp` and
   `renewTime`, so `TestClock` drives them.
 
 ### Table-driven reconciler rows
 
-The knative-serving `TableTest` shape (`vendor/knative.dev/pkg/reconciler/
+knative-serving `TableTest` shape (`vendor/knative.dev/pkg/reconciler/
 testing/table.go:44-113`) with `it.effect.each`:
 
 ```ts
@@ -95,57 +93,56 @@ it.effect.each(rows)("main loop: $name", (row) =>
 ```
 
 - Canonical first rows for every reconciler-style loop: bad id, row
-  missing, already terminal, happy path; then one row per induced failure
+  missing, already terminal, happy path. Then one row per induced failure,
   asserting which actions still happened (knative-serving
   `pkg/reconciler/revision/table_test.go:62-135`).
 - Provide a fresh layer per row (`Effect.provide`), not a shared
   `layer(...)` block: shared state between rows hides ordering bugs.
 - `TestLayers` merges `FakeKube.layer`, the in-memory `Store` layer, the
-  fake object store and a `Config` layer; every service the loop needs is
-  a layer, nothing is a module mock.
-- The ordered list is where SPEC's sequences are proven: terminal path
-  object-store check, compare-and-set, Secret delete, Job delete
-  (SPEC.md:863-875); heartbeat log fetch, foreground Job delete,
-  transition, Secret delete (SPEC.md:906-911); fetch before delete, always
-  (SPEC.md:898-899).
+  fake object store and a `Config` layer. Every service the loop needs is
+  a layer; nothing is a module mock.
+- The ordered list proves SPEC's sequences: terminal path object-store
+  check, compare-and-set, Secret delete, Job delete (SPEC.md:863-875);
+  heartbeat log fetch, foreground Job delete, transition, Secret delete
+  (SPEC.md:906-911); fetch before delete, always (SPEC.md:898-899).
 
 ### Loops, informers and leases under `TestClock`
 
 - Fork the loop (`Effect.forkChild`), let it reach its first sleep
-  (`Effect.yieldNow`), then `TestClock.adjust`, then assert; adjusting
+  (`Effect.yieldNow`), then `TestClock.adjust`, then assert. Adjusting
   before the fork advances nothing.
 - Coalesced notifies (P4.3b "two notifies during an iteration yielding one
-  more"): offer two notifies to the loop's sliding `Queue` of capacity 1
-  while a hung call holds the iteration, release it, adjust, assert
-  exactly two iterations in the action log (STACK.md:183).
+  more"): while a hung call holds the iteration, offer two notifies to the
+  loop's sliding `Queue` of capacity 1. Release, adjust, assert exactly
+  two iterations in the action log (STACK.md:183).
 - 10 s iteration deadline: hang one call, `TestClock.adjust("10 seconds")`,
   assert the remaining claims were released (`Effect.ensuring`,
   STACK.md:184).
 - Informer sync gates (D33, SPEC.md:1474): the heartbeat loop and the
   `job_lost` check must not act before the fake emits the initial-list
-  event; a row adjusts past several heartbeat periods first and asserts no
+  event. A row adjusts past several heartbeat periods first and asserts no
   action.
-- Informer restart: emit a non-timeout error event; assert the code
+- Informer restart: emit a non-timeout error event. Assert the code
   re-subscribes after its backoff (`TestClock.adjust` by the backoff).
-- Lease (P4.2, SPEC.md:783-792): seed the Lease held by `other`; adjust
-  15 s with no `renewTime` change observed and assert acquisition by
-  `update` with the read `resourceVersion`; a scripted 409 retries after
-  2 s; a leader whose renew fails for 10 s ends its leader scope
-  (informers stopped, visible in the action log) and the exit is asserted
-  as a typed failure of the leader layer, not a real `process.exit`.
-  Expiry is judged from the last observed change on the local clock, never
-  by comparing `renewTime` with now: a row that seeds an old `renewTime`
-  but keeps changing it must stay standby.
+- Lease (P4.2, SPEC.md:783-792):
+  - Seed the Lease held by `other`. Adjust 15 s with no `renewTime` change
+    observed. Assert acquisition by `update` with the read
+    `resourceVersion`.
+  - A scripted 409 retries after 2 s.
+  - A leader whose renew fails for 10 s ends its leader scope (informers
+    stopped, visible in the action log). Assert the exit as a typed
+    failure of the leader layer, not a real `process.exit`.
+  - Judge expiry from the last observed change on the local clock, never
+    by comparing `renewTime` with now. A row that seeds an old `renewTime`
+    but keeps changing it must stay standby.
 
 ## Part 2: `test/fake-kube` (process tests)
 
-`test/fake-kube/` is an `http.createServer` Kubernetes API over in-memory
-objects (PLAN.md:126). It speaks enough of the real API for
-`@kubernetes/client-node` 2.x to list, watch, create, update and delete the
-objects krun touches, so P3.7, P4.6 and P4.11 can start the real
-`bin/krun.js` with `KUBECONFIG` pointing at it. Dapr's integration
-framework does the same with an `http.ServeMux` (dapr
-`tests/integration/framework/process/kubernetes/kubernetes.go:46-70`).
+`test/fake-kube/`: an `http.createServer` Kubernetes API over in-memory
+objects (PLAN.md:126), enough for `@kubernetes/client-node` 2.x to list,
+watch, create, update and delete what krun touches. P3.7, P4.6 and P4.11
+start the real `bin/krun.js` with `KUBECONFIG` at it (dapr `http.ServeMux`
+precedent: `tests/integration/framework/process/kubernetes/kubernetes.go:46-70`).
 
 ### Shape
 
@@ -160,12 +157,13 @@ test/fake-kube/
   server.test.ts   the fake's own Vitest tests (list, watch streaming, 409, 404)
 ```
 
-The fake is plain TypeScript (`node:http`, no Effect, no dependency): it is
-test infrastructure, not application code, so it may use `Date` for
-`creationTimestamp` (CLAUDE.md rule 8 binds application code). Vitest
-compiles it; the krun process under test only talks to it over HTTP. It
-never ships in the image (`.dockerignore` lists `test/`). `server.test.ts`
-runs in the root Vitest project (SKILL.md "Runner and type checking").
+- Plain TypeScript (`node:http`, no Effect, no dependency). It is test
+  infrastructure, not application code, so it may use `Date` for
+  `creationTimestamp` (CLAUDE.md rule 8 binds application code only).
+- The krun process under test talks to it only over HTTP.
+- Never ships in the image (`.dockerignore` lists `test/`).
+- `server.test.ts` runs in the root Vitest project (SKILL.md "Runner and
+  type checking").
 
 ### Kubeconfig
 
@@ -181,23 +179,24 @@ current-context: fake
 ```
 
 `insecure-skip-tls-verify: true` is required (see "client-node facts").
-The token is a constant placeholder, not a secret (PLAN.md:33); the fake
+The token is a constant placeholder, not a secret (PLAN.md:33). The fake
 ignores `Authorization`.
 
 ### Endpoint table
 
-Every list response is `{ apiVersion, kind: "<Kind>List", metadata: {
-resourceVersion }, items }`. Every object carries
-`metadata.resourceVersion` (a global incrementing integer as a string),
-`metadata.uid`, `metadata.creationTimestamp`. Errors are Kubernetes
-`Status` objects with `code` and `reason` so `ApiException.body.reason`
-reads `AlreadyExists`, `NotFound`, `Conflict`.
+- Every list response: `{ apiVersion, kind: "<Kind>List", metadata: {
+  resourceVersion }, items }`.
+- Every object carries `metadata.resourceVersion` (global incrementing
+  integer as a string), `metadata.uid`, `metadata.creationTimestamp`.
+- Errors are Kubernetes `Status` objects with `code` and `reason`, so
+  `ApiException.body.reason` reads `AlreadyExists`, `NotFound`,
+  `Conflict`.
 
 | Path | Verbs | Needed by | Semantics |
 |---|---|---|---|
 | `/apis/krun.io/v1alpha1/namespaces/{ns}/functions` | GET (list, `?watch=1`) | P3.7, P4.11 Function informer (`krun-functions-crd`) | returns the seeded Functions; 404 until `scripts.establishCrd()` ran, to test the "404 before Established" retry (SPEC.md:159-161) |
 | `/apis/krun.io/v1alpha1/namespaces/{ns}/functions/{name}/status` | PATCH (`application/merge-patch+json`) | P4.7 status writer as a process | merges `status`, bumps resourceVersion, emits `MODIFIED` |
-| `/apis/coordination.k8s.io/v1/namespaces/{ns}/leases/{name}` | GET, PUT | P4.11 leader election (`krun-scheduler-k8s` `references/lease.md`) | PUT requires `metadata.resourceVersion` equal to the stored one, else 409 `Conflict`; 404 before create |
+| `/apis/coordination.k8s.io/v1/namespaces/{ns}/leases/{name}` | GET, PUT | P4.11 leader election (`../../krun-scheduler-k8s/references/lease.md`) | PUT requires `metadata.resourceVersion` equal to the stored one, else 409 `Conflict`; 404 before create |
 | `/apis/coordination.k8s.io/v1/namespaces/{ns}/leases` | POST | P4.11 | 409 `AlreadyExists` when present |
 | `/apis/batch/v1/namespaces/{jobs}/jobs` | GET (list, watch with `labelSelector`), POST | P4.6 | POST stores the Job with `status: {}`; `AlreadyExists` on a duplicate; `scripts.completeJobs` later sets `Complete`, `succeeded: 1`, and creates a pod |
 | `/apis/batch/v1/namespaces/{jobs}/jobs/{name}` | GET, DELETE | P4.6 | DELETE also deletes pods with the Job's `krun.io/run-id` label; 404 when absent (SPEC.md:798-799 treats it as success) |
@@ -207,47 +206,50 @@ reads `AlreadyExists`, `NotFound`, `Conflict`.
 | `/api/v1/namespaces/{jobs}/secrets/{name}` | GET, DELETE | P4.6 | 404 when absent |
 | `/version`, `/api`, `/apis` | GET | client discovery if asked | static documents |
 
-`labelSelector` support: `key=value` and `key` (exists), comma separated.
-Reject any other syntax with 400 so a test does not pass by accident.
+`labelSelector` supports only `key=value` and `key` (exists), comma
+separated. Reject any other syntax with 400, so a test cannot pass by
+accident.
 
 ### Watch streaming
 
-- `?watch=1` answers `200` chunked, one JSON line per event `{ type:
+- `?watch=1` answers `200` chunked: one JSON line per event `{ type:
   "ADDED"|"MODIFIED"|"DELETED"|"ERROR", object }`, flushed immediately.
-- One open response per watcher, events pushed as the store changes (dapr
-  `informer.go:34-70`: one event per connection cost seconds per event).
+- One open response per watcher; push events as the store changes. One
+  event per connection cost seconds per event in dapr
+  (`informer.go:34-70`).
 - `?resourceVersion=N` replays events after `N` from a bounded ring
-  buffer; an unknown or too-old version answers an `ERROR` event with
-  `code: 410` so the informer re-lists.
+  buffer. An unknown or too-old version answers an `ERROR` event with
+  `code: 410`, so the informer re-lists.
 - The client's 30 s inactivity timeout reconnects at the last
-  resourceVersion; accept it. `scripts.breakWatch(kind)` closes the
-  response with `ERROR` `code: 500` once: the informer stops and krun's
-  restart logic must resubscribe (D33, SPEC.md:1474; `krun-scheduler-k8s`
-  `references/informers.md`).
+  resourceVersion; accept it.
+- `scripts.breakWatch(kind)` closes the response once with `ERROR`
+  `code: 500`. The informer stops; krun's restart logic must resubscribe
+  (D33, SPEC.md:1474; `../../krun-scheduler-k8s/references/informers.md`).
 - No bookmarks.
 
 ### Lease semantics
 
 - `holdLease({ holderIdentity: "other", renewEveryMs: 5000 })` seeds the
   Lease held by another pod and keeps bumping `renewTime` and
-  `resourceVersion`, so the scheduler under test stays standby and
-  `/readyz` reports 200 with leader false (P4.11, PLAN.md:596-598;
+  `resourceVersion`. The scheduler under test stays standby; `/readyz`
+  reports 200 with leader false (P4.11, PLAN.md:596-598;
   SPEC.md:1162-1165).
-- `releaseLease()` stops renewing; the scheduler must see the Lease
-  unchanged for 15 s on its own clock (SPEC.md:788-790) before it acquires.
-  A spawned process runs on the real clock: `TestClock` cannot reach into
-  it, and SPEC defines no shorter lease setting, so a process test either
-  waits the real 15 s (raise that test's timeout) or asserts standby only.
-  The expiry arithmetic is proven in the fake `Kube` layer (part 1).
-- On SIGTERM the scheduler clears `holderIdentity` (SPEC.md:1171-1173);
-  the test reads `store.get("leases", "krun/krun-scheduler")` and asserts
+- `releaseLease()` stops renewing. The scheduler must see the Lease
+  unchanged for 15 s on its own clock (SPEC.md:788-790) before it
+  acquires.
+- A spawned process runs on the real clock; `TestClock` cannot reach it.
+  SPEC defines no shorter lease setting. So a process test either waits
+  the real 15 s (raise that test's timeout) or asserts standby only. The
+  fake `Kube` layer (part 1) proves the expiry arithmetic.
+- On SIGTERM the scheduler clears `holderIdentity` (SPEC.md:1171-1173).
+  The test reads `store.get("leases", "krun/krun-scheduler")` and asserts
   `spec.holderIdentity` empty or absent within 5 s of the signal
   (PLAN.md:598-599).
-- P4.11 names both "`/readyz` 200 as standby" and "the Lease cleared in the
-  fake" (PLAN.md:596-599): a standby holds no Lease to clear. Run two
-  phases in one test (standby readiness, then `releaseLease()`,
-  acquisition, SIGTERM, cleared) and record the interpretation in the pull
-  request; do not invent a lease variable.
+- P4.11 names both "`/readyz` 200 as standby" and "the Lease cleared in
+  the fake" (PLAN.md:596-599), yet a standby holds no Lease to clear. Run
+  two phases in one test: standby readiness, then `releaseLease()`,
+  acquisition, SIGTERM, cleared. Record this interpretation in the pull
+  request. Do not invent a lease variable.
 
 ### Scripted behaviours
 
@@ -281,23 +283,24 @@ afterAll(async () => { child.kill("SIGKILL"); await kube.close(); await fs.rm(di
 ```
 
 - `bin/krun.js` dispatches to the built `dist/` entrypoints
-  (PLAN.md:153-154): run `pnpm -r build` first (Vitest `globalSetup` or the
-  `make test` order), or the test exercises stale code.
-- Real time here: poll with the tri-state helper from `kind-recipe.md`
-  "Wait helpers"; never a fixed sleep. A child `exit` event fails the poll
-  at once.
+  (PLAN.md:153-154). Run `pnpm -r build` first (Vitest `globalSetup` or
+  the `make test` order), or the test exercises stale code.
+- Real time: poll with the tri-state helper from `kind-recipe.md` "Wait
+  helpers"; never a fixed sleep. A child `exit` event fails the poll at
+  once.
 - Scrub `KRUN_*` from a copied env; pass every variable explicitly
   (knative-func `pkg/testing/testing.go:377-385`).
 - Ports: reserve free ports with a throwaway `net.createServer().listen(0)`
-  and pass them; do not reuse a port within one file (dapr
+  and pass them. Do not reuse a port within one file (dapr
   `ports/ports.go:40-46`).
 - Exit: `child.kill("SIGTERM")`, await `exit`, assert code 0 within 5 s
   (PLAN.md:440-441, 598-599). `NodeRuntime.runMain` turns the signal into
   fiber interruption and runs the scope finalizers (readiness 503, drain,
-  listener close, Lease clear, pool close; STACK.md:149-153); a non-zero
-  code means a finalizer failed or the cause was not interrupt-only. Drain
-  stdout and stderr before asserting on log lines (dapr `exec.go:159-236`).
-- Log-line assertions parse JSON lines and match `msg` or `reason`; never
+  listener close, Lease clear, pool close; STACK.md:149-153). A non-zero
+  code means a finalizer failed or the cause was not interrupt-only.
+- Drain stdout and stderr before asserting on log lines (dapr
+  `exec.go:159-236`).
+- Log-line assertions parse JSON lines and match `msg` or `reason`. Never
   assert on a line that would contain a key, token or input
   (SPEC.md:1149-1154).
 - Raise `testTimeout` for these files (Vitest default 5000 ms); the
@@ -305,33 +308,54 @@ afterAll(async () => { child.kill("SIGKILL"); await kube.close(); await fs.rm(di
 
 ### What the HTTP fake deliberately does not do
 
-- No RBAC, no admission, no CEL: the CRD's digest rule and PSA are proven
-  on kind (P9.2) and by the CRD file tests (P0.8).
-- No `Foreground` deletion semantics beyond deleting the pods; ordering
+- No RBAC, no admission, no CEL. kind (P9.2) and the CRD file tests (P0.8)
+  prove the CRD's digest rule and PSA.
+- No `Foreground` deletion semantics beyond deleting the pods. Ordering
   assertions belong to the fake `Kube` layer.
 - No persistence across `close()`.
+
+## Part 3: telemetry doubles (P0.7, P4.6)
+
+- Span exporter: `InMemorySpanExporter` with a `SimpleSpanProcessor`
+  (both `@opentelemetry/sdk-trace-base` 2.x, STACK.md 2.6) in a test
+  `Telemetry` layer. Assert span names. Assert the create request, the
+  iteration's per-run span and the Kubernetes calls carry the same
+  `krun.run_id` attribute. Assert a `traceparent` sent with `CreateRun`
+  becomes the parent of the request span. v1 does not join a run's spans
+  into one trace: never assert a shared `traceId` across gateway and
+  scheduler. `@effect/opentelemetry` 4.0.6 config shape for a custom span
+  processor is UNVERIFIED; read its `NodeSdk` `.d.ts` in P0.7.
+- The exporter sees only spans of its own process: a P4.6 test that
+  spawns `bin/krun.js` cannot read it. Build the gateway and scheduler
+  layers in the test process against `test/fake-kube`, or point
+  `OTEL_EXPORTER_OTLP_ENDPOINT` at a local `http.createServer` receiver.
+  Decide in P4.6.
+- P4.6 asserts exact metric names on `/metrics` as served by the
+  OpenTelemetry Prometheus exporter (no doubled `_total`, histograms in
+  seconds). Compare against the SPEC section 11 table as a literal list,
+  not a regex. Instrument naming belongs to `krun-process-runtime`.
 
 ## client-node facts (2.0.1 tarball, VERIFIED unless marked)
 
 - Non-2xx responses reject with `ApiException { code, body, headers }`
-  (`dist/gen/apis/exception.js:10-18`); network failures, `TimeoutError`
+  (`dist/gen/apis/exception.js:10-18`). Network failures, `TimeoutError`
   and `AbortError` are not `ApiException`. The `Kube` adapter maps both to
   tagged errors; the fake `Kube` layer reproduces only the tagged form.
 - An `http:` server in a kubeconfig without `skipTLSVerify` throws "HTTP
   protocol is not allowed when skipTLSVerify is not set or false"
   (`dist/config.js:506-507`).
-- Informers: watch `requestTimeoutMs` is 30000 (`dist/watch.js:8`); a
-  `TimeoutError` reconnects from the last resourceVersion, a 410 re-lists,
+- Informers: watch `requestTimeoutMs` is 30000 (`dist/watch.js:8`). A
+  `TimeoutError` reconnects from the last resourceVersion; a 410 re-lists;
   any other error invokes the `error` callbacks and the informer stops
   (`dist/cache.js:98-113`). krun restarts it; tests prove the restart with
   a non-timeout error.
 - `RequestContext.setSignal` exists and the signal reaches `fetch`
   (`dist/gen/http/http.js:110`, `dist/gen/http/isomorphic-fetch.js:12`).
-  How the `Effect.tryPromise({ try: (signal) => ... })` signal is threaded
-  into a generated API call is UNVERIFIED: spike in P4.3a. The fake `Kube`
-  layer cannot prove it, so add one `test/fake-kube` test where a hung
-  request is interrupted and the server sees the connection close.
+  How the `Effect.tryPromise({ try: (signal) => ... })` signal reaches a
+  generated API call is UNVERIFIED: spike in P4.3a. The fake `Kube` layer
+  cannot prove it. Add one `test/fake-kube` test where a hung request is
+  interrupted and the server sees the connection close.
 - `@types/node ^26` is a runtime dependency of client-node 2.0.1, and
   krun pins `@types/node` `^26` too (STACK.md section 3), so one copy
-  should resolve; if `pnpm why @types/node` shows two, dedupe with pnpm
+  should resolve. If `pnpm why @types/node` shows two, dedupe with pnpm
   `overrides`.

@@ -1,13 +1,13 @@
 # PodMonitor and PrometheusRule (SPEC.md:1374-1375, 1391-1403)
 
-Both render only under `metrics.*.enabled` (default false) because they
-need the Prometheus Operator CRDs (`monitoring.coreos.com/v1`); `helm
-lint` and `helm template` must pass with them off and on. Rule names,
-expressions, `for` and severity are fixed by SPEC; `thresholds.*` are
-the only variables. P9.6 verifies by script that every name in the
+Both render only under `metrics.*.enabled` (default false): they need the
+Prometheus Operator CRDs (`monitoring.coreos.com/v1`). `helm
+lint` and `helm template` must pass with them off and on. SPEC fixes rule
+names, expressions, `for` and severity; `thresholds.*` are the only
+variables. P9.6 verifies by script that every name in the
 docs/OPERATIONS.md table exists in the rendered PrometheusRule
-(PLAN.md:893-897), so the seven names below are a contract across SPEC,
-chart and docs.
+(PLAN.md:893-897), so the seven names are a contract across SPEC, chart
+and docs.
 
 ## PodMonitor (SPEC.md:1374-1375, 990-994)
 
@@ -32,16 +32,16 @@ spec:
     {{- end }}
 ```
 
-One endpoint per admin port NAME (SPEC.md:1374-1375): `admin` on every
-krun container, `admin-sched` on the embedded scheduler container
-(SPEC.md:1356-1358). In postgres mode both Deployments expose `admin`
-on 9090, so a single endpoint scrapes every pod. `metrics.podMonitor.labels`
-exist so the operator's `podMonitorSelector` (often `release: <prom>`)
-can match; merge, do not replace, the standard labels.
-
-The admin-port NetworkPolicy must admit the Prometheus namespace through
-`networkPolicy.metricsFrom` or scrapes fail silently (SPEC.md:1054-1056,
-references/networkpolicies.md).
+- One endpoint per admin port NAME (SPEC.md:1374-1375): `admin` on every
+  krun container, `admin-sched` on the embedded scheduler container
+  (SPEC.md:1356-1358). In postgres mode both Deployments expose `admin` on
+  9090, so one endpoint scrapes every pod.
+- `metrics.podMonitor.labels` let the operator's `podMonitorSelector`
+  (often `release: <prom>`) match. Merge them with the standard labels; do
+  not replace those.
+- The admin-port NetworkPolicy must admit the Prometheus namespace through
+  `networkPolicy.metricsFrom`, or scrapes fail silently
+  (SPEC.md:1054-1056, references/networkpolicies.md).
 
 ## PrometheusRule (SPEC.md:1391-1401)
 
@@ -62,9 +62,9 @@ Default thresholds (SPEC.md:1300): `queueWaitP95Seconds: 60`,
 `quotaRejectionsPerMinute: 1`. Metric names come from SPEC.md:1129-1147
 (`krun_runs_failed_total{function,reason}`, `krun_deliveries_total{state}`,
 `krun_quota_rejections_total{function}`, `krun_queue_wait_seconds{function}`,
-`krun_scheduler_leader`, `krun_functions_synced`); the `sum(...)` wrappers
-collapse the per-function labels. `KrunDeliveriesDead` has no `sum` in
-SPEC; keep it as written (one series per scheduler pod, only the leader
+`krun_scheduler_leader`, `krun_functions_synced`). The `sum(...)` wrappers
+collapse per-function labels. `KrunDeliveriesDead` has no `sum` in SPEC;
+keep it as written (one series per scheduler pod; only the leader
 increments it).
 
 Template skeleton:
@@ -90,11 +90,12 @@ spec:
         # ... six more in table order
 ```
 
-Quote `{{ $t.x }}` nowhere: PromQL wants a bare number. Use `for: 0m`
-literally rather than omitting `for` so the rendered rule matches the
-table a reader compares against. Annotations are free text; keep them
-one line and point at docs/OPERATIONS.md by section name (the P9.6
-script checks names only, PLAN.md:893-894).
+- Never quote `{{ $t.x }}`: PromQL wants a bare number.
+- Write `for: 0m` literally instead of omitting `for`, so the rendered rule
+  matches the table.
+- Annotations are free text. Keep them one line and point at
+  docs/OPERATIONS.md by section name (the P9.6 script checks names only,
+  PLAN.md:893-894).
 
 ## Checks
 
@@ -118,10 +119,11 @@ const documented = [...new Set(readFileSync('docs/OPERATIONS.md', 'utf8').match(
 expect(names).toEqual(documented)                         // the P9.6 name check
 ```
 
-`promtool check rules` takes a plain rules file (`groups:` at the top),
-not a `PrometheusRule` CR (PLAN.md:775). `yq` is not in PLAN.md section
-2, so the strip uses the `yaml` package the workspace already depends on
-(PLAN.md:72). The last assertion is the P9.6 name check (PLAN.md:893-894);
-the P9.6 `scripts/check-alert-names.ts` can import the same helper. Both
-need `helm` 4 and `promtool` on the path, so they run in `make helm-lint`,
-not in `make test`.
+- `promtool check rules` takes a plain rules file (`groups:` at the top),
+  not a `PrometheusRule` CR (PLAN.md:775).
+- `yq` is not in PLAN.md section 2, so the strip uses the `yaml` package
+  the workspace already depends on (PLAN.md:72).
+- The last assertion is the P9.6 name check (PLAN.md:893-894). The P9.6
+  `scripts/check-alert-names.ts` can import the same helper.
+- Both need `helm` 4 and `promtool` on the path, so they run in
+  `make helm-lint`, not in `make test`.

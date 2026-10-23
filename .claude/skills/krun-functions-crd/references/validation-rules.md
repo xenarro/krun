@@ -19,15 +19,15 @@ export type ValidationResult =
 export function validateFunction(spec: FunctionSpec, ceilings: Ceilings): ValidationResult; // FunctionSpec = z.infer<typeof FunctionSpec>
 ```
 
-A plain synchronous function, not an Effect: it has no requirements and no
-typed failure (an invalid Function is a value, not an error). Durations are
+Plain synchronous function, not an Effect: no requirements, no typed
+failure (an invalid Function is a value, not an error). Durations are
 parsed with the shared duration grammar (the Zod refinement into
 `Duration`, PLAN.md:82-86), the same code the Config layer uses.
 
 Defaults for the five variables: SPEC.md:1231, 1238-1239, 1244, 1247.
-`queueTimeout` is returned even on failure when it parses, because the
-scheduler's `expireQueued` reads the cached Function "Ready or not"
-(SPEC.md:808-811). No I/O, no env, no DNS, no clock inside the function.
+`queueTimeout` is returned even on failure when it parses: the scheduler's
+`expireQueued` reads the cached Function "Ready or not" (SPEC.md:808-811).
+No I/O, no env, no DNS, no clock inside the function.
 
 ## 1. Rule table (check order = row order; first failure wins)
 
@@ -49,18 +49,18 @@ scheduler's `expireQueued` reads the cached Function "Ready or not"
 | 14 | `new Ajv2020({ strict: true })` + ajv-formats `compile(inputSchema)` succeeds | SPEC.md:136-137 | `SchemaInvalid` | first line of the Ajv error, prefixed `spec.inputSchema: ` | `{ type: 'objekt' }` or an unknown keyword under `strict` (non-compiling schema, named in PLAN) |
 | - | all passed | SPEC.md:154 | `Valid` | `""` (SPEC.md:114 shows an empty message) | the valid fixture |
 
-Why this order: cheap string checks first, then ceilings, then the only
-expensive step (compile). Size before compile keeps a 10 MB schema from
-being compiled; the `$ref` walk before compile makes the remote-`$ref` case
-deterministic instead of depending on Ajv's `MissingRefError`
+Order: cheap string checks, then ceilings, then the only expensive step
+(compile). Size before compile keeps a 10 MB schema from being compiled.
+The `$ref` walk before compile makes the remote-`$ref` case deterministic
+instead of depending on Ajv's `MissingRefError`
 (docs/research/node-stack-facts.md:715-720).
 
 Rows 4 and 10 are layer one. In-cluster the API server rejects them before
-any informer event; `krun validate` runs the layer-one schema (the Zod spec
-schema's `safeParse`, plus the digest rule mirrored in TS; never Ajv, which
-is only for `inputSchema`) over each document FIRST and prints those failures as schema errors, then runs layer
-two only on documents that passed (SPEC.md:168-169). Do not invent reasons
-for them.
+any informer event. `krun validate` runs the layer-one schema FIRST over
+each document (the Zod spec schema's `safeParse` plus the digest rule
+mirrored in TS; never Ajv, which is only for `inputSchema`) and prints
+those failures as schema errors. It then runs layer two only on documents
+that passed (SPEC.md:168-169). Invent no reasons for them.
 
 ## 2. Ajv instance
 
@@ -72,15 +72,15 @@ const ajv = new Ajv2020({ strict: true, allErrors: false });
 addFormats(ajv);
 ```
 
-- One instance per process is fine, but Ajv caches compiled schemas by
-  object identity and `strict` rejects duplicate `$id`s: either strip `$id`
-  from `inputSchema` before compiling or use `ajv.removeSchema()` after
-  compile. Simplest: construct a fresh `Ajv2020` per compile call; compile
-  happens once per uid+generation, so cost is irrelevant.
-- `loadSchema` is never set, so `compileAsync` cannot exist; only
-  synchronous `compile` (SPEC.md:137). Reject `$async: true` schemas too
-  (an `$async` schema makes `compile` return an async validator).
-- `pattern` regexes are trusted; no timeout, no safe-regex check
+- Ajv caches compiled schemas by object identity, and `strict` rejects
+  duplicate `$id`s. With one instance per process, strip `$id` from
+  `inputSchema` before compiling or call `ajv.removeSchema()` after.
+  Simplest: a fresh `Ajv2020` per compile call; compile happens once per
+  uid+generation, so cost is irrelevant.
+- `loadSchema` is never set, so `compileAsync` cannot work; only
+  synchronous `compile` (SPEC.md:137). Reject `$async: true` schemas too:
+  an `$async` schema makes `compile` return an async validator.
+- `pattern` regexes are trusted: no timeout, no safe-regex check
   (SPEC.md:948).
 
 ## 3. Ceilings from the environment (SPEC.md:170-174, 1229-1247)
@@ -93,12 +93,12 @@ addFormats(ajv);
 | `KRUN_ALLOWED_SERVICE_ACCOUNTS` | `krun-job-default` | comma-separated |
 | `KRUN_WEBHOOK_ALLOWED_HOSTS` | empty = webhooks disabled | comma-separated globs; matcher from `packages/shared/src/webhook` (P2.1) |
 
-In the processes these come from `packages/shared/src/config` (a Zod schema
-over `process.env` exposed as an Effect Config service layer,
+In the processes these come from `packages/shared/src/config` (a Zod
+schema over `process.env`, exposed as an Effect Config service layer,
 `krun-process-runtime`). `krun validate` is an Effect program too
-(`NodeRuntime.runMain`): build the ceilings with the same Zod parsers (only
-these five variables, so a missing `KRUN_DB_DSN` never fails it) and print, on stderr, one line per variable with the value used
-(SPEC.md:173-174), for example:
+(`NodeRuntime.runMain`). Build the ceilings with the same Zod parsers, only
+these five variables, so a missing `KRUN_DB_DSN` never fails it. Print the
+values used on stderr (SPEC.md:173-174), for example:
 
 ```
 krun validate: KRUN_MAX_ACTIVE_DEADLINE=86400 KRUN_MAX_QUEUED=1000 KRUN_ALLOWED_REGISTRIES=(any) KRUN_ALLOWED_SERVICE_ACCOUNTS=krun-job-default KRUN_WEBHOOK_ALLOWED_HOSTS=(none, webhooks disabled)
@@ -109,13 +109,13 @@ Never print a secret; none of these five are secrets.
 ## 4. `krun validate` behaviour (SPEC.md:168-174, PLAN.md:351-362)
 
 - Arguments: one or more paths. A directory is walked for `*.yaml` and
-  `*.yml` (proposal: non-recursive is simpler; SPEC says "files or
-  directories" without depth; pick recursive only if P8 templates need it
-  and record it in the progress-log note).
-- Each file is parsed with `yaml.parseAllDocuments`; documents with
-  `kind: Function` and `apiVersion: krun.io/v1alpha1` are validated; other
-  kinds are skipped silently (function repositories hold other YAML);
-  `doc.errors` non-empty is an error line for that file.
+  `*.yml`. Proposal: non-recursive (SPEC says "files or directories"
+  without depth); go recursive only if P8 templates need it, and record it
+  in the progress-log note.
+- Parse each file with `yaml.parseAllDocuments`. Validate documents with
+  `kind: Function` and `apiVersion: krun.io/v1alpha1`; skip other kinds
+  silently (function repositories hold other YAML). `doc.errors` non-empty
+  is an error line for that file.
 - Apply CRD defaults to a copy of `spec` before layer two (section 1,
   row 6 depends on it).
 - `image: REPLACE_WITH_DIGEST` (the `krun init` template, SPEC.md:747) is
@@ -124,10 +124,10 @@ Never print a secret; none of these five are secrets.
   image digest` (PLAN.md:824-825 requires "a clear message").
 - Output: one line per Function on stdout (proposal, stable for tests):
   `OK   <file>: <name>` / `FAIL <file>: <name>: <reason>: <message>`.
-  Exit 1 if any line is FAIL or any file failed to parse; exit 0 otherwise.
-  Exit code when no Function document was found is not fixed by SPEC
-  (proposal: exit 1 with `no Function documents found` so CI misconfig is
-  loud; note it in the progress log).
+  Exit 1 if any line is FAIL or any file failed to parse; else exit 0.
+  SPEC does not fix the exit code when no Function document is found.
+  Proposal: exit 1 with `no Function documents found`, so CI misconfig is
+  loud; note it in the progress log.
 - No cluster access, no `KRUN_NAMESPACE`, no flags except `--help`
   (SPEC.md:1210). `bin/krun.js validate` dispatches to
   `packages/cli/dist/validate.js` (PLAN.md:354-356); `krun deploy` calls

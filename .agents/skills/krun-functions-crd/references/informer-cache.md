@@ -2,12 +2,12 @@
 
 Shared module `packages/shared/src/functions/cache.ts` (name proposal): an
 Effect `Functions` service and its layer, built once per process from the
-`Kube` service (`packages/shared/src/runtime`). The Job/Pod informers are a
-different module (`krun-scheduler-k8s` `references/informers.md`); only the
-client-node facts and the `Kube` informer `Stream` overlap.
+`Kube` service (`packages/shared/src/runtime`). Job/Pod informers are a
+different module (`../../krun-scheduler-k8s/references/informers.md`);
+only client-node facts and the `Kube` informer `Stream` overlap.
 
-Effect API names below were checked against `effect` 4.0.6; anything not
-listed in SKILL.md "Library facts": check Effect's `MIGRATION.md`.
+Effect API names below were checked against `effect` 4.0.6. Anything not
+listed in `library-facts.md`: check Effect's `MIGRATION.md`.
 
 ## 1. Entry shape and service
 
@@ -35,9 +35,9 @@ export class Functions extends Context.Service<Functions, {
 - Keep the fields above, not the raw informer object (KEDA strips
   `managedFields`/spec for memory, `pkg/util/cache_transform.go:24-65`;
   Dapr keeps a metadata-only cache, dapr.md:55-56). Functions are few, but
-  holding the informer's object graph couples you to its mutation.
+  holding the informer's object graph couples the cache to its mutation.
 - The map is a `Ref<ReadonlyMap<string, FunctionEntry>>` (or a
-  `SubscriptionRef` if `changes` is derived from it); handlers replace
+  `SubscriptionRef` if `changes` derives from it). Handlers replace
   entries, never mutate them. `changes` can equally be a `PubSub` the
   handler publishes to; pick one and test it.
 - `get` returns the entry only when `result.ok` (the "served" map,
@@ -69,14 +69,15 @@ export const FunctionsLive = Layer.effect(Functions, Effect.gen(function* () {
 ```
 
 - The `Kube.informer` shape above is a proposal; `krun-process-runtime`
-  and `krun-scheduler-k8s` own the `Kube` service. Underneath it is
-  `Stream.callback` around `makeInformer(kc, path, listFn)`: acquisition
+  and `krun-scheduler-k8s` own the `Kube` service. Underneath is
+  `Stream.callback` around `makeInformer(kc, path, listFn)`. Acquisition
   registers the `add`/`update`/`delete`/`error` handlers and calls
-  `start()`, the finalizer calls `stop()`, an `error` event fails the queue
-  with a `KubeApiError` carrying the status.
-- No label selector for Functions. If one were ever added it must go BOTH
-  into `makeInformer(..., labelSelector)` and into `listFn`; the informer
-  only adds it to the watch URL (docs/research/node-stack-facts.md:366-370, VERIFIED).
+  `start()`; the finalizer calls `stop()`; an `error` event fails the
+  queue with a `KubeApiError` carrying the status.
+- No label selector for Functions. If one is ever added, it must go BOTH
+  into `makeInformer(..., labelSelector)` and into `listFn`: the informer
+  only adds it to the watch URL (docs/research/node-stack-facts.md:366-370,
+  VERIFIED).
 - `listNamespacedCustomObject` returns `Promise<any>`; cast to
   `KubernetesListObject<FunctionObject>` (docs/research/node-stack-facts.md:279-284).
 - KubeConfig loading is `packages/shared/src/k8s` (P2.3): in-cluster first,
@@ -106,22 +107,23 @@ const upsert = (obj: FunctionObject) => Ref.update(map, (m) => {
 });
 ```
 
-- The cache key for compilation is `uid + generation` (SPEC.md:147-149).
-  `uid` guards against delete-and-recreate with the same name and
-  generation 1; `generation` changes only on `spec` edits, never on status
-  patches (KEDA relies on the same fact via `GenerationChangedPredicate`,
+- Compile cache key: `uid + generation` (SPEC.md:147-149). `uid` guards
+  against delete-and-recreate with the same name and generation 1.
+  `generation` changes only on `spec` edits, never on status patches (KEDA
+  relies on the same fact via `GenerationChangedPredicate`,
   `scaledjob_controller.go:86-106`).
-- `update` already fires only when `resourceVersion` differs
-  (docs/research/node-stack-facts.md:384-386), but a status patch does change
-  `resourceVersion`, so the generation short-circuit above is what the P2.3
-  acceptance "a status-only update does not recompile" tests. Prove it by
-  injecting a counting `validateFunction` into the layer under test.
-- Handlers are idempotent; the initial list replays every object through
-  `add` (docs/research/node-stack-facts.md:374-378), and so does every retry of the
-  stream. Dapr skips initial-list adds as "new" events
-  (`pkg/operator/api/informer/informer.go:115-127`); krun has no per-event
-  side effect except the status writer, which diffs first, so no
-  special-casing is needed.
+- `update` fires only when `resourceVersion` differs
+  (docs/research/node-stack-facts.md:384-386), but a status patch does
+  change `resourceVersion`. So the generation short-circuit above is what
+  the P2.3 acceptance "a status-only update does not recompile" tests.
+  Prove it by injecting a counting `validateFunction` into the layer under
+  test.
+- Handlers are idempotent: the initial list replays every object through
+  `add` (docs/research/node-stack-facts.md:374-378), and so does every
+  stream retry. Dapr skips initial-list adds as "new" events
+  (`pkg/operator/api/informer/informer.go:115-127`). krun needs no
+  special-casing: its only per-event side effect is the status writer,
+  which diffs first.
 - `afterChange` recomputes `krun_functions{ready="true"|"false"}` from the
   map (two gauge series, SPEC.md:1177) and publishes the changed entry to
   `changes` (read only by the scheduler leader's status writer).
@@ -145,34 +147,35 @@ const logInformerError = (e: KubeApiError) =>
 
 - client-node stops the ListWatch for good on any error other than 410,
   watch `TimeoutError` or a clean close; something must start it again
-  (docs/research/node-stack-facts.md:387-397, 869-871, VERIFIED). Here that is
-  `Stream.retry`: it re-runs the stream's acquisition (a fresh `start()`)
-  on every failure. A LIST failure (404 while the CRD is not Established,
-  403 before RBAC lands) also arrives as a stream failure
+  (docs/research/node-stack-facts.md:387-397, 869-871, VERIFIED). Here
+  that is `Stream.retry`: it re-runs the stream's acquisition (a fresh
+  `start()`) on every failure. A LIST failure (404 while the CRD is not
+  Established, 403 before RBAC lands) also arrives as a stream failure
   (docs/research/node-stack-facts.md:405-407).
-- `Stream.retry` resets the schedule once an element flows again, which is
-  the old "reset the delay on `connect`": a flapping API server does not
-  leave the informer at the 60 s cap forever.
-- `synced` is a `Deferred<void>` completed once, after the first successful
-  LIST, and never failed: a failed `synced` would make `/readyz` fail
-  instead of answering 503 (SPEC.md:158-160, 188). Readiness reads
+- `Stream.retry` resets the schedule once an element flows again (the old
+  "reset the delay on `connect`"): a flapping API server does not leave
+  the informer at the 60 s cap forever.
+- `synced` is a `Deferred<void>` completed once, after the first
+  successful LIST, never failed: a failed `synced` would make `/readyz`
+  fail instead of answering 503 (SPEC.md:158-160, 188). Readiness reads
   `isSynced` into its `Ref`; the scheduler's start gate awaits `synced`.
   Until then `krun_functions_synced` is 0 and the `KrunFunctionsNotSynced`
   alert fires after 2 m (SPEC.md:1451).
 - UNVERIFIED: whether `informer.start()` resolves after the LIST completed
-  or returns earlier. Check `dist/cache.js` `doneHandler`; if it returns
-  early, emit the `Synced` marker from the first `connect` followed by the
-  LIST's `add` replay, and write the test against the stubbed `Kube` layer
-  so the behaviour is pinned either way.
-- Never `Effect.die` or exit from the error path; the rest of the gateway
-  keeps serving its other listeners and `/readyz` reports the unsynced
+  or earlier. Check `dist/cache.js` `doneHandler`. If it returns early,
+  emit the `Synced` marker from the first `connect` followed by the LIST's
+  `add` replay. Write the test against the stubbed `Kube` layer, so the
+  behaviour is pinned either way.
+- Never `Effect.die` or exit from the error path. The rest of the gateway
+  keeps serving its other listeners; `/readyz` reports the unsynced
   target (Dapr idles the informer on a missing CRD for install-order skew,
   `pkg/operator/api/informer/informer.go:94-113`). The retrying stream has
-  no terminal failure, so the forked fiber only ends on scope close.
-- Do not log watch `TimeoutError`s as failures; the 30 s inactivity timeout
-  is by design and reconnects from the last RV (docs/research/node-stack-facts.md:872-873).
+  no terminal failure, so the forked fiber ends only on scope close.
+- Do not log watch `TimeoutError`s as failures: the 30 s inactivity
+  timeout is by design and reconnects from the last RV
+  (docs/research/node-stack-facts.md:872-873).
 - Tests: `it.effect` with a stub `Kube` layer whose informer `Stream` the
-  test drives (a `Queue` turned into a stream); fail it, then
+  test drives (a `Queue` turned into a stream). Fail it, then
   `TestClock.adjust('1 second')` and assert a second acquisition. No
   `setTimeout`, no real sleeps.
 
@@ -186,8 +189,7 @@ const logInformerError = (e: KubeApiError) =>
 Both are Effect `Metric.gauge`s defined once in the shared Metrics module
 and updated with `Metric.update` (the `ready` label through
 `Metric.withAttributes`); the OpenTelemetry Prometheus exporter serves them
-on each process's admin listener (`krun-process-runtime`
-`references/metrics-table.md`). No per-function label on either
+on each process's admin listener (`../../krun-process-runtime/references/metrics-table.md`). No per-function label on either
 (cardinality rule, keda.md section 4.7).
 
 ## 6. Status writer (P4.7, SPEC.md:153-158, 776-779)
@@ -226,37 +228,37 @@ const statusWriter = Effect.gen(function* () {
 
 - `kube.call` stands for the `Kube` service's wrapper (semaphore,
   `Effect.timeout('10 seconds')`, `Effect.tryPromise` mapping to
-  `KubeApiError`); its real name is set by `krun-process-runtime`.
-  `listAll` (every entry, Ready or not) is a proposal; add it to the
-  service only for the writer.
-- Leader only: forked into the leader scope after Lease acquisition and
-  interrupted with it on loss or SIGTERM (SPEC.md:776-779); the gateway
-  never builds it and its Role has no `status` verb (SPEC.md:1050-1057).
+  `KubeApiError`); `krun-process-runtime` sets its real name. `listAll`
+  (every entry, Ready or not) is a proposal; add it to the service only
+  for the writer.
+- Leader only: forked into the leader scope after Lease acquisition,
+  interrupted with it on loss or SIGTERM (SPEC.md:776-779). The gateway
+  never builds it; its Role has no `status` verb (SPEC.md:1050-1057).
 - On start, iterate the whole map once (a new leader converges objects it
   never saw change; Knative enqueues a full pass on promotion,
   `revision/controller.go:71-92`), then follow `changes`. Subscribe before
-  the full pass (or accept one duplicate check) so no change between the
+  the full pass (or accept one duplicate check), so no change between the
   two is lost; `needsPatch` makes duplicates free.
-- The diff is against the object's own `status` as seen by the informer,
-  not against an in-memory "last written" value, so a status wiped by
-  `kubectl edit` or a lost patch is repaired on the next event
-  (Knative compares `original.Status` vs desired, `revision/reconciler.go:279-300`;
-  KEDA `pkg/scaling/scale_handler.go:461-466`).
-- `observedGeneration` is written on every patch, including `Ready=False`
-  (Knative `reconcile_common.go:74-82`): clients tell "rejected" from
-  "not yet seen".
+- Diff against the object's own `status` as seen by the informer, not an
+  in-memory "last written" value. A status wiped by `kubectl edit` or a
+  lost patch is then repaired on the next event (Knative compares
+  `original.Status` vs desired, `revision/reconciler.go:279-300`; KEDA
+  `pkg/scaling/scale_handler.go:461-466`).
+- Write `observedGeneration` on every patch, including `Ready=False`
+  (Knative `reconcile_common.go:74-82`): clients tell "rejected" from "not
+  yet seen".
 - Content-Type MUST be overridden: the generated client defaults to
   `application/json-patch+json` and a merge body is rejected
-  (docs/research/node-stack-facts.md:285-295, VERIFIED). No `resourceVersion`, so no 409
-  loop for a merge patch (keda.md section 2.3).
-- Failures: log warn `{ name, code }`, count nothing new (no metric in SPEC
-  for status patches), never fail the writer fiber; the next event or the
-  5-minute leader reconcile (`krun-scheduler-k8s`) can re-run the pass over
-  the cache.
-- Test (PLAN.md:559-561): stub `Kube` layer recording patch calls; feed an
-  invalid Function -> one call with `Ready=False` and the reason; replay
-  the same event (same uid/generation, and then the update carrying the
-  patched status) -> still one call.
+  (docs/research/node-stack-facts.md:285-295, VERIFIED). No
+  `resourceVersion`, so no 409 loop for a merge patch (keda.md section
+  2.3).
+- Failures: log warn `{ name, code }`, add no metric (SPEC has none for
+  status patches), never fail the writer fiber. The next event or the
+  5-minute leader reconcile (`krun-scheduler-k8s`) can re-run the pass.
+- Test (PLAN.md:559-561): stub `Kube` layer recording patch calls. Feed an
+  invalid Function: one call with `Ready=False` and the reason. Replay the
+  same event (same uid/generation, then the update carrying the patched
+  status): still one call.
 
 ## 7. Shutdown and leader loss
 
@@ -268,7 +270,7 @@ const statusWriter = Effect.gen(function* () {
 | SIGTERM | layer scope closes: consumer fiber interrupted, informer `stop()` in the finalizer | interrupted first (leader scope closes before the app layers) |
 | CRD deleted while running | stream fails -> `Stream.retry` with backoff; map keeps the last state until the next successful LIST replay diff empties it | patches fail 404, logged at warn |
 
-Note on the last row: a re-list replays `add` for objects that exist but
-emits no `delete` for ones that vanished while the watch was down unless
-client-node's cache diff does so; check `dist/cache.js` and, if it does
-not, rebuild the map from the LIST result on each `Synced` marker.
+Last row: a re-list replays `add` for objects that exist. It emits no
+`delete` for ones that vanished while the watch was down, unless
+client-node's cache diff does so. Check `dist/cache.js`; if it does not,
+rebuild the map from the LIST result on each `Synced` marker.

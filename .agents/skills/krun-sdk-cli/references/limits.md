@@ -1,8 +1,9 @@
 # Byte limits and truncation (SDK side)
 
-Source of truth: docs/INTERNAL-API.md section 8 (lines 308-324) and SPEC.md:710-715.
-The gateway enforces these limits; the SDK truncates *before* sending so a
-well-behaved function never sees a 400 or 413 for its own reports.
+Source of truth: docs/INTERNAL-API.md section 8 (lines 308-324) and
+SPEC.md:710-715. The gateway enforces these limits. The SDK truncates
+*before* sending, so a well-behaved function never sees a 400 or 413 for its
+own reports.
 
 ## Limits by field
 
@@ -15,7 +16,7 @@ well-behaved function never sees a 400 or 413 for its own reports.
 | ReportStatus | whole body | 16384 bytes | cannot happen after the field rules | 413 `REQUEST_TOO_LARGE`, body unread |
 | SetError | `message` | 4096 bytes, at least 1 byte | truncate; `"error"` when empty | 400 `REQUEST_INVALID` |
 | SetError | `type` | 128 bytes | truncate | 400 `REQUEST_INVALID` |
-| SetError | `details` | 8192 bytes serialised | drop `details.stack` lines from the end until it fits; if still over, send `{}`-less body without `details` | 400 `REQUEST_INVALID` |
+| SetError | `details` | 8192 bytes serialised | drop `details.stack` lines from the end until it fits; if still over, omit `details` entirely | 400 `REQUEST_INVALID` |
 | SetError | whole body | 32768 bytes | cannot happen after the field rules | 413 `REQUEST_TOO_LARGE` |
 | SetResult | whole body | `KRUN_MAX_RESULT_BYTES` (default 262144, hard 1048576) | switch to the presigned upload, or `ResultWriteError` when no URL | 413 `RESULT_TOO_LARGE` |
 | SetResult | body `null` | forbidden | a `null`/`undefined`/`None` return sends no request at all (SPEC.md:702-703) | 400 `REQUEST_INVALID` |
@@ -26,21 +27,20 @@ well-behaved function never sees a 400 or 413 for its own reports.
 
 - Measure the **field's compact JSON serialisation in UTF-8 bytes**
   (SPEC.md:711-712, docs/INTERNAL-API.md:90-94; the gateway's measure is
-  authoritative): Node `Buffer.byteLength(JSON.stringify(v), "utf8")`;
-  Python `len(json.dumps(v, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))`.
-  `ensure_ascii=False` matters: the default escapes non-ASCII as `\uXXXX`, which
-  changes the byte count and the bytes the gateway receives.
-- For a string field that serialisation includes the two quotes and every
-  escape (`\"`, `\n`, `\u0001`), so a 1024-byte `message` limit leaves at
-  most 1022 bytes of plain ASCII text and fewer for text full of quotes or
-  control characters. Truncate the raw string, re-measure the serialised
-  form, and repeat until it fits; pin it with one conformance case
-  containing quotes and newlines.
-- The result cap applies to the whole serialised body, the same bytes that
-  are sent.
+  authoritative). Node: `Buffer.byteLength(JSON.stringify(v), "utf8")`.
+  Python: `len(json.dumps(v, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))`.
+  `ensure_ascii=False` matters: the default escapes non-ASCII as `\uXXXX`,
+  which changes the byte count and the bytes the gateway receives.
+- For a string field the serialisation includes the two quotes and every
+  escape (`\"`, `\n`, `\u0001`). A 1024-byte `message` limit leaves at most
+  1022 bytes of plain ASCII, fewer for text full of quotes or control
+  characters. Truncate the raw string, re-measure the serialised form,
+  repeat until it fits. Pin it with one conformance case containing quotes
+  and newlines.
+- The result cap applies to the whole serialised body: the bytes sent.
 - `KRUN_MAX_RESULT_BYTES` arrives as a decimal string; parse once with
-  `Number.parseInt(v, 10)` / `int(v)`. Missing or unparseable in pod mode is a
-  bug in the scheduler: fall back to 262144 and log at warn.
+  `Number.parseInt(v, 10)` / `int(v)`. Missing or unparseable in pod mode is
+  a scheduler bug: fall back to 262144 and log at warn.
 
 ## Truncating on a character boundary
 
@@ -59,6 +59,7 @@ function truncateUtf8(s: string, maxBytes: number): string {
 }
 ```
 
+
 Python:
 
 ```python
@@ -69,25 +70,27 @@ def truncate_utf8(s: str, max_bytes: int) -> str:
     return b[:max_bytes].decode("utf-8", errors="ignore")
 ```
 
-These cut the raw string to a byte budget; the caller lowers the budget
+
+These cut the raw string to a byte budget. The caller lowers the budget
 until the field's serialised form (quotes and escapes included) fits.
 
-Both versions must produce identical output for the same input; add the
-same four cases to both suites: ASCII at the limit, a 2-byte character
-straddling the limit, a 4-byte emoji straddling the limit, a string of
-`"` characters whose escaped form is twice its raw length. In the Node
-suite a fast-check property is cheap: for any string and budget, the result
-is a prefix of the input, valid UTF-8, and within the budget.
+Both versions must produce identical output for the same input. Add the
+same four cases to both suites: ASCII at the limit; a 2-byte character
+straddling the limit; a 4-byte emoji straddling the limit; a string of `"`
+characters whose escaped form is twice its raw length. Node suite: add a
+fast-check property: for any string and budget, the result is a prefix of
+the input, valid UTF-8, and within the budget.
 
 ## Stack dropping
 
 1. `stack = error.stack.split("\n").slice(0, 20)` (Node) /
-   `traceback.format_exception(e)` joined then split into lines, first 20 (Python).
+   `traceback.format_exception(e)` joined then split into lines, first 20
+   (Python).
 2. While `bytes(details) > 8192` and `stack.length > 0`: `stack.pop()`.
-3. If still over (other keys in `details`), drop `details` entirely.
+3. Still over (other keys in `details`): drop `details` entirely.
 
-Never truncate *inside* a stack line to make it fit; drop whole lines from the
-end (SPEC.md:714-715).
+Never truncate *inside* a stack line; drop whole lines from the end
+(SPEC.md:714-715).
 
 ## Tests that pin this (P8.1, P8.2, P8.3)
 

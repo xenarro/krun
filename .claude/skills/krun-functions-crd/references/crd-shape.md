@@ -1,8 +1,8 @@
 # Function resource and CRD shape (SPEC.md:72-128, PLAN.md:198-212)
 
-Everything here derives from `packages/shared/src/functions/schema.ts`.
-Edit the Zod schema, run `make generate`; never hand-edit the three
-generated files (SPEC.md:120-128).
+Everything derives from `packages/shared/src/functions/schema.ts`. Edit
+the Zod schema, run `make generate`; never hand-edit the three generated
+files (SPEC.md:120-128).
 
 ## 1. The Function resource (SPEC.md:80-115, verbatim)
 
@@ -86,12 +86,12 @@ The spec is a `z.strictObject`; Zod checks map to OpenAPI v3 keywords
 | `imagePullSecrets` | `array` of `{ name: string }` | - | SPEC.md:108; shape of `LocalObjectReference` |
 | `callback` | `object` `{ url: string (required), format: uri }` | - | host allowlist is layer two (SPEC.md:109-110, 144) |
 
-`minimum` for `maxConcurrency` covers "at least 1" at layer one; layer two
-re-checks it because `krun validate` runs on files that never met the API
+`minimum` for `maxConcurrency` covers "at least 1" at layer one. `krun
+validate` re-checks it, because it runs on files that never met the API
 server (SPEC.md:140, 168-169).
 
-Generation details for `scripts/gen-crd.ts` (facts VERIFIED against the
-Zod 4.6.7 source, CRD rules from apiextensions as noted in SKILL.md
+Generation details for `scripts/gen-crd.ts` (Zod facts VERIFIED against
+the 4.6.7 source; CRD rules from apiextensions, see SKILL.md
 Limitations):
 
 - Call `z.toJSONSchema(FunctionResource, { target: "openapi-3.0", io:
@@ -103,9 +103,9 @@ Limitations):
   instead). Keep it in the editor schema.
 - Set the `inputSchema` node, the CEL rule and any other `x-kubernetes-*`
   key either with `.meta({ "x-kubernetes-...": ... })` (meta keys are
-  copied verbatim; never put `id` in meta, it moves the node to `$defs`) or
-  in the `override` callback / a post-processing walk. Pick one place and
-  keep it in `gen-crd.ts` if the keys would otherwise leak into the editor
+  copied verbatim; never put `id` in meta, it moves the node to `$defs`)
+  or in the `override` callback / a post-processing walk. Pick one place.
+  Keep it in `gen-crd.ts` if the keys would otherwise leak into the editor
   schema.
 - `openapi-3.0` emits no `$schema` and no `propertyNames`; assert in the
   test that the CRD output contains no `$ref`, `$defs`, `$schema`,
@@ -121,16 +121,17 @@ x-kubernetes-validations:
     message: "spec.image must be pinned by digest (<repo>@sha256:<64 hex>); tags are not accepted"
 ```
 
-- SPEC requires only "rejects an `image` without `@sha256:`" (SPEC.md:133-134).
-  A stricter `matches('^[^@]+@sha256:[a-f0-9]{64}$')` is the Knative-style
-  message quality suggestion (knative-serving.md section 2.3); if you tighten
-  it, keep the TypeScript mirror in `IMAGE_DIGEST_RULE` identical.
+- SPEC requires only "rejects an `image` without `@sha256:`"
+  (SPEC.md:133-134). A stricter `matches('^[^@]+@sha256:[a-f0-9]{64}$')` is
+  the Knative-style suggestion (knative-serving.md section 2.3). When
+  tightening it, keep the TypeScript mirror in `IMAGE_DIGEST_RULE`
+  identical.
 - The rule sits on the `spec` object (`self.image`), so it runs on create
   and every update. `messageExpression` is not needed.
-- Defaults live in the schema (`.default()` -> `default:`) so stored objects
-  are complete and `kubectl get -o yaml` shows effective values; code
-  defaults exist only as a fallback for objects created before a default
-  existed (KEDA `scaledobject_types.go:138`, `scale_jobs.go:41-42`).
+- Defaults live in the schema (`.default()` -> `default:`), so stored
+  objects are complete and `kubectl get -o yaml` shows effective values.
+  Code defaults exist only as a fallback for objects created before a
+  default existed (KEDA `scaledobject_types.go:138`, `scale_jobs.go:41-42`).
 
 ## 5. Printer columns (SPEC.md:76, PLAN.md:205-206)
 
@@ -147,8 +148,8 @@ additionalPrinterColumns:
     jsonPath: .metadata.creationTimestamp
 ```
 
-KEDA adds a `priority: 1` REASON column (keda.md section 3.4); SPEC lists
-three columns, so adding REASON needs a Decisions row.
+KEDA adds a `priority: 1` REASON column (keda.md section 3.4). SPEC lists
+three columns: adding REASON needs a Decisions row.
 
 ## 6. `status` schema (SPEC.md:111-114, 153-157)
 
@@ -169,10 +170,10 @@ status:
           message: { type: string }
 ```
 
-Build `reason` as `z.enum(READY_REASONS)` so the CRD enum and the tuple in
-`schema.ts` cannot drift; the P0.8 test can still assert the equality
-cheaply. Remember the KEDA lesson: adding a reason later is additive
-(fine); removing one breaks stored objects on the next apply.
+Build `reason` as `z.enum(READY_REASONS)`, so the CRD enum and the tuple
+in `schema.ts` cannot drift; the P0.8 test can still assert equality
+cheaply. KEDA lesson: adding a reason later is additive (fine); removing
+one breaks stored objects on the next apply.
 
 ## 7. Chart template wrapper (SPEC.md:123-125, 1419-1423)
 
@@ -196,11 +197,11 @@ to `krun-helm-chart` (P7.1 completes the P0.8 stub, PLAN.md:680).
 
 ## 8. Editor schema `docs/schemas/function-v1alpha1.json` (SPEC.md:125-126)
 
-A JSON Schema document for the whole resource: `apiVersion` literal
-`krun.io/v1alpha1`, `kind` literal `Function`, `metadata` with `name`, and
-`spec`/`status` from the same Zod objects, generated with
+JSON Schema for the whole resource: `apiVersion` literal
+`krun.io/v1alpha1`, `kind` literal `Function`, `metadata` with `name`,
+`spec`/`status` from the same Zod objects. Generated with
 `z.toJSONSchema(..., { target: "draft-2020-12", io: "input" })`, which sets
-`$schema` to draft 2020-12. It is documentation; no process reads it
+`$schema` to draft 2020-12. Documentation only; no process reads it
 (SPEC.md:126-127).
 
 ## 9. RBAC the CRD implies (SPEC.md:1050-1062)
@@ -211,13 +212,13 @@ A JSON Schema document for the whole resource: `apiVersion` literal
 | gateway | krun | `get list watch`, nothing else |
 | `krun-function-author` | krun | `get list watch create update patch delete`; rendered without a binding |
 
-The chart renders these (`krun-helm-chart`); this skill only requires that
+The chart renders these (`krun-helm-chart`). This skill only requires that
 the status writer never runs in the gateway, whose Role lacks `patch`.
 
 ## 10. P0.8 acceptance test outline (PLAN.md:209-212)
 
-An `@effect/vitest` (or plain Vitest; the test does no Effect work) test
-next to `scripts/gen-crd.ts` or in `packages/shared/src/functions`:
+A Vitest test (plain or `@effect/vitest`; it does no Effect work) next to
+`scripts/gen-crd.ts` or in `packages/shared/src/functions`:
 
 1. Load `deploy/crds/functions.krun.io.yaml` with `yaml.parse`.
 2. Load the chart template, strip the `{{- if ... }}`/`{{- end }}` lines

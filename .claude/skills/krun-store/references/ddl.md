@@ -1,16 +1,14 @@
 # DDL, indexes and claim queries (SPEC.md:402-487)
 
-The Postgres DDL below is verbatim from SPEC.md:402-465 (re-verify the
-lines against the current file). The SQLite DDL is the same schema with the
-type mapping from SPEC.md:390-397 applied; keep table and column names
-identical (SPEC.md:385). Both live as raw SQL inside `sql` templates in the
-first migration of each dialect folder (PLAN.md:236-238):
+Postgres DDL is verbatim from SPEC.md:402-465 (re-verify lines). SQLite
+DDL is the same schema with the SPEC.md:390-397 type mapping; table and
+column names identical (SPEC.md:385). Both live as raw SQL in `sql`
+templates in the first migration of each dialect folder (PLAN.md:236-238):
 `packages/shared/src/store/migrations/postgres/` and
 `packages/shared/src/store/migrations/sqlite/` (SPEC.md:386-387).
 
-The application generates every id and timestamp; no database default for
-time (SPEC.md:399-400). The only column defaults are `priority 0`,
-`attempt 0` on `runs` and `attempt 0` on `deliveries`.
+No database default for time (SPEC.md:399-400). The only column defaults
+are `priority 0`, `attempt 0` on `runs` and `attempt 0` on `deliveries`.
 
 ## Postgres DDL (SPEC.md:402-465, verbatim)
 
@@ -85,13 +83,13 @@ batched delete on `runs_finished_idx` (SPEC.md:467-468).
 
 ## SQLite DDL (derived: SPEC.md:390-397 mapping applied to the above)
 
-Only the types change: `uuid` -> `text`, `jsonb` -> `text`,
-`timestamptz` -> `text` (RFC 3339 UTC with milliseconds), `int` -> `integer`.
-`on delete cascade` needs `pragma foreign_keys = ON` on every connection
-(SPEC.md:557). Partial indexes, `check`, and `returning` work on SQLite
-3.35+ (SPEC.md:397). `node:sqlite` in Node 24.22 bundles SQLite 3.53.4
-(observed with `select sqlite_version()`); the version in Node 26 is
-UNVERIFIED, so P1.9 asserts it is at least 3.35.
+Only types change: `uuid` -> `text`, `jsonb` -> `text`, `timestamptz` ->
+`text` (RFC 3339 UTC with milliseconds), `int` -> `integer`. `on delete
+cascade` needs `pragma foreign_keys = ON` on every connection
+(SPEC.md:557). Partial indexes, `check` and `returning` work on SQLite
+3.35+ (SPEC.md:397). Node 24.22's `node:sqlite` bundles SQLite 3.53.4
+(observed with `select sqlite_version()`). Node 26's version is
+UNVERIFIED: P1.9 asserts at least 3.35.
 
 ```sql
 create table runs (
@@ -128,9 +126,9 @@ create table runs (
 -- Postgres, with uuid -> text, timestamptz -> text, jsonb -> text, int -> integer.
 ```
 
-Do not add `strict` tables, `without rowid`, generated columns or triggers:
-no task asks for them (PLAN.md:31-32), and `subscribe` relies on the
-implicit `rowid` of `run_events` (SPEC.md:541-543).
+Add no `strict` tables, `without rowid`, generated columns or triggers:
+no task asks (PLAN.md:31-32), and `subscribe` relies on the implicit
+`rowid` of `run_events` (SPEC.md:541-543).
 
 ## Index to query map
 
@@ -164,17 +162,17 @@ returning *;
 
 `$1` owner, `$2` leaseUntil, `$3` fn, `$4` now, `$5` limit
 (`claimQueued(fn, owner, leaseUntil, limit)`, SPEC.md:502). `now` is not a
-parameter of the method: read it from `Clock` / `DateTime.now` inside
+method parameter: read it from `Clock` / `DateTime.now` inside
 `claimQueued`, so `TestClock.adjust` controls lease expiry without
 changing the SPEC signature.
 
 ## Claim query, SQLite (SPEC.md:485-487)
 
-Same statement without `for update skip locked`, run inside a transaction
-that the `SqliteDriver` subclass opens with `begin immediate`
-(SPEC.md:485-486, 562). `begin immediate` takes the write lock up front, so
-two claimers serialise instead of one failing with `SQLITE_BUSY` on the
-upgrade from a deferred read (docs/research/node-stack-facts.md:678-681).
+Same statement without `for update skip locked`, inside a transaction the
+`SqliteDriver` subclass opens with `begin immediate` (SPEC.md:485-486,
+562). `begin immediate` takes the write lock up front: two claimers
+serialise instead of one failing with `SQLITE_BUSY` on the upgrade from a
+deferred read (docs/research/node-stack-facts.md:678-681).
 
 ```sql
 update runs
@@ -188,19 +186,18 @@ where  id in (
 returning *;
 ```
 
-Timestamps compare as text, which is correct only because every timestamp
-is written as RFC 3339 UTC with a fixed millisecond width (SPEC.md:394):
-`2026-10-23T08:00:00.000Z`. Never write a local-offset or a variable-width
+Timestamps compare as text. That is correct only because every timestamp
+is RFC 3339 UTC with fixed millisecond width (SPEC.md:394):
+`2026-10-23T08:00:00.000Z`. Never write a local-offset or variable-width
 string into a timestamp column.
 
-The claim takes a lease only; state changes after the Job exists
-(`markScheduled`); an expired lease (`lease_until < now`) makes the row
-claimable again (SPEC.md:486-487). `attempt` counts scheduler claims
-(SPEC.md:365).
+Lease only; state changes after the Job exists (`markScheduled`); an
+expired lease (`lease_until < now`) makes the row claimable again
+(SPEC.md:486-487). `attempt` counts scheduler claims (SPEC.md:365).
 
 ## Delivery claim statement (SPEC.md:515, 921-925)
 
-Lease in the same statement that selects, 60 s, so a crash between select
+60 s lease in the same statement that selects, so a crash between select
 and update cannot strand a row:
 
 ```sql
@@ -216,10 +213,10 @@ where  id in (
 returning *;
 ```
 
-SQLite: same without `for update skip locked`, inside `begin immediate`;
-compute `now + 60s` in the application (`DateTime.addDuration`, check
-the Effect 4 name) and bind it as an RFC 3339 string from
-`DateTime.formatIso` instead of using `interval`.
+SQLite: same without `for update skip locked`, inside `begin immediate`.
+Compute `now + 60s` in the application (`DateTime.addDuration`, check the
+Effect 4 name) and bind it as an RFC 3339 string from `DateTime.formatIso`
+instead of `interval`.
 
 ## Delivery row inserted by every terminal path (SPEC.md:348-351, D29)
 
@@ -242,7 +239,7 @@ where id in (
 ```
 
 Return the affected row count. SQLite: `pragma incremental_vacuum` after
-each batch (SPEC.md:517), which only reclaims pages because
-`auto_vacuum = INCREMENTAL` was set before the tables were created
-(SPEC.md:558; `auto_vacuum` cannot be changed on a populated database
-without `vacuum`, so set it in the open sequence before `migrate()`).
+each batch (SPEC.md:517). It reclaims pages only because `auto_vacuum =
+INCREMENTAL` was set before the tables were created (SPEC.md:558).
+`auto_vacuum` cannot change on a populated database without `vacuum`: set
+it in the open sequence before `migrate()`.

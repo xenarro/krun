@@ -14,13 +14,13 @@ the `ObjectStore` layer is wired in `packages/shared/src/runtime`.
 | chart | `objectStorage: { enabled, endpoint, bucket, region, existingSecret, egress }`; `fail` when enabled with empty `endpoint`, `bucket` or `existingSecret` | SPEC.md:1302, :1311-1312 |
 
 Build one `S3Client({ endpoint, region, credentials, forcePathStyle: true, requestChecksumCalculation: 'WHEN_REQUIRED' })`
-in the `ObjectStore` layer (acquire builds it, release calls `destroy()`).
+in the `ObjectStore` layer: acquire builds it, release calls `destroy()`.
 `forcePathStyle` is required for MinIO and harmless for AWS when the bucket
-name is DNS-safe. Both processes build the layer; the gateway only presigns
-GET and the scheduler only presigns PUT and calls `exists`. "Not
-configured" (all five variables empty) is an `Option` in the Config
-service, not a stub that throws: callers branch on it, and with `None` the
-Job gets no `KRUN_RESULT_UPLOAD_URL` and no `exists` call happens.
+name is DNS-safe. Both processes build the layer: the gateway only presigns
+GET; the scheduler only presigns PUT and calls `exists`. "Not configured"
+(all five variables empty) is an `Option` in the Config service, not a stub
+that throws. Callers branch on it; with `None` the Job gets no
+`KRUN_RESULT_UPLOAD_URL` and no `exists` call happens.
 
 ## Keys and URLs
 
@@ -33,8 +33,8 @@ Job gets no `KRUN_RESULT_UPLOAD_URL` and no `exists` call happens.
 | GET presign | `getSignedUrl(client, new GetObjectCommand({ Bucket, Key }), { expiresIn: 300 })` | SPEC.md:652-653 |
 | exists | `HeadObjectCommand`; `err.name === 'NotFound'` → `false`; any other rejection → `ObjectStoreError` | SPEC.md:872-873 |
 
-Service shape (keep it this small, PLAN.md:31-32). An Effect
-`Context.Service` (class syntax per Effect 4 `MIGRATION.md`); every AWS SDK
+Service shape: keep it this small (PLAN.md:31-32). An Effect
+`Context.Service` (class syntax per Effect 4 `MIGRATION.md`). Every AWS SDK
 call is an adapter through `Effect.tryPromise`, passing the provided
 `signal` as `abortSignal` so interruption cancels the request:
 
@@ -50,6 +50,7 @@ interface ObjectStoreShape {
 // ObjectStore: Context.Service tag for ObjectStoreShape; ObjectStoreLive: Layer built from Config
 ```
 
+
 ```ts
 const exists = (runId: string) =>
   Effect.tryPromise({
@@ -62,40 +63,42 @@ const exists = (runId: string) =>
   )
 ```
 
-Use the combinator names Effect 4 actually exports (check `MIGRATION.md`
-for renames); the shape, not the spelling, is the rule here.
 
-Only the host is signed on the PUT so a function may send any
-`Content-Type` and any length; the P6.1 acceptance uploads with
+Use the combinator names Effect 4 actually exports (check `MIGRATION.md`
+for renames). The rule is the shape, not the spelling.
+
+Only the host is signed on the PUT, so a function may send any
+`Content-Type` and any length. The P6.1 acceptance uploads with
 `Content-Type: application/json` against the URL and must succeed
-(PLAN.md:659-661). Adding `ContentType` to the command would make the
-header part of the signature and break plain `curl -T` uploads.
+(PLAN.md:659-661). Adding `ContentType` to the command would make the header
+part of the signature and break plain `curl -T` uploads.
 
 ## `result_ref` flow
 
-1. Scheduler, Job creation (P6.2, `krun-scheduler-k8s` owns the manifest):
-   when configured, `KRUN_RESULT_UPLOAD_URL = presignPut(id, ttl)` goes
-   into the function container env (SPEC.md:612). The env list is never
-   logged (SPEC.md:1153-1154).
-2. Function: result up to `KRUN_MAX_RESULT_BYTES` → `PUT .../result` on the
-   internal API; larger → HTTP PUT the body to `KRUN_RESULT_UPLOAD_URL`
-   (SPEC.md:636-638). The URL expires with the TTL.
+1. Scheduler, Job creation (P6.2; `krun-scheduler-k8s` owns the manifest):
+   when configured, `KRUN_RESULT_UPLOAD_URL = presignPut(id, ttl)` goes into
+   the function container env (SPEC.md:612). The env list is never logged
+   (SPEC.md:1153-1154).
+2. Function: result up to `KRUN_MAX_RESULT_BYTES` goes to `PUT .../result`
+   on the internal API; larger, HTTP PUT the body to
+   `KRUN_RESULT_UPLOAD_URL` (SPEC.md:636-638). The URL expires with the TTL.
 3. Terminal transition on `Complete` (SPEC.md:863-869), in this order:
    - object storage configured AND Job completed AND run row has no inline
-     `result` → `exists(id)`;
-   - `true` → add `result_ref: ref(id)` to the CAS patch; `false` → no
+     `result`: call `exists(id)`;
+   - `true`: add `result_ref: ref(id)` to the CAS patch. `false`: no
      `result_ref` (a succeeded run with neither is `RESULT_MISSING` on
      read);
-   - `exists` failed with `ObjectStoreError` → return without writing; the
-     next informer event or the 5-minute reconcile retries (SPEC.md:872-873);
-     no in-process `Effect.retry` here, the reconcile is the retry;
+   - `exists` failed with `ObjectStoreError`: return without writing. The
+     next informer event or the 5-minute reconcile retries
+     (SPEC.md:872-873). No in-process `Effect.retry` here; the reconcile is
+     the retry;
    - `transition(id, from, 'succeeded', null, patch)` inserts the delivery
      in the same transaction, so the payload carries `resultUri`
      (SPEC.md:646, PLAN.md:666).
 4. A run with an inline `result` skips the check (SPEC.md:647-648,
-   PLAN.md:666-667); a run never carries both, and only `succeeded` runs
-   carry `result_ref` (SPEC.md:648-649, docs/API.md:109). `cancelled` and `failed` never get
-   the check even when an object exists.
+   PLAN.md:666-667). A run never carries both, and only `succeeded` runs
+   carry `result_ref` (SPEC.md:648-649, docs/API.md:109). `cancelled` and
+   `failed` never get the check, even when an object exists.
 5. Gateway `GetRunResult` (P3.6, docs/API.md:271-281):
 
 | Run | Response |
@@ -112,24 +115,24 @@ The client follows the 307 without `Authorization` or any krun header
 ## Why exists-before-CAS
 
 The delivery row is inserted inside the terminal transaction
-(SPEC.md:348-351). If the object check ran after the CAS, the payload
-stored in `deliveries.payload` would lack `resultUri` and receivers would
-get a `SUCCEEDED` run with no way to reach the result. The check is also
-the only point where a missing upload is detected: a function that exited
-0 without uploading yields a `succeeded` run with no result, and
-`GetRunResult` answers `RESULT_MISSING` (docs/API.md:277-278).
+(SPEC.md:348-351). An object check after the CAS would leave
+`deliveries.payload` without `resultUri`: receivers would get a `SUCCEEDED`
+run with no way to reach the result. The check is also the only point that
+detects a missing upload: a function that exited 0 without uploading yields
+a `succeeded` run with no result, and `GetRunResult` answers
+`RESULT_MISSING` (docs/API.md:277-278).
 
 ## Lifecycle and retention
 
 - krun never deletes objects (SPEC.md:654). The sweep (`krun-scheduler-k8s`)
   removes rows only.
 - Set a bucket lifecycle expiration of at least `KRUN_RETENTION`
-  (`config.retention`, default `720h`); object age counts from upload,
-  which precedes `finishedAt`, so "at least" matters (docs/OPERATIONS.md:58-60).
-- A swept run row leaves an object behind until the rule fires; a rule
+  (`config.retention`, default `720h`). Object age counts from upload, which
+  precedes `finishedAt`, so "at least" matters (docs/OPERATIONS.md:58-60).
+- A swept run row leaves an object behind until the rule fires. A rule
   shorter than retention leaves a row whose `GetRunResult` 307 points at a
-  deleted object (the client sees the store's error, calls `:getResult`
-  again and gets a fresh URL to the same missing key).
+  deleted object: the client sees the store's error, calls `:getResult`
+  again, and gets a fresh URL to the same missing key.
 
 ## Egress policy (jobs namespace, chart owns the rendering)
 
@@ -138,26 +141,27 @@ Function pods need egress to the object store only when
 namespaceSelector + podSelector for in-cluster MinIO) on the port parsed
 from `objectStorage.endpoint`, default 443 or 80 (SPEC.md:1018-1021). The
 gateway and scheduler pods sit in the krun namespace, which has no egress
-policy in v1 (SPEC.md:1056). The P6.3 e2e uses a raw NetworkPolicy
-manifest in the pre-chart jobs namespace allowing egress to the MinIO pods
+policy in v1 (SPEC.md:1056). The P6.3 e2e uses a raw NetworkPolicy manifest
+in the pre-chart jobs namespace allowing egress to the MinIO pods
 (PLAN.md:668-670).
 
 ## Tests
 
 Vitest with `@effect/vitest`; gate `pnpm exec vitest run packages/shared/src/objstore`.
 
-- P6.1 (PLAN.md:659-661): MinIO testcontainer through `@testcontainers/minio`
-  (`MinioContainer`, image pinned by tag), started in a `beforeAll` or a
-  scoped layer shared with `layer(...)`; `presignPut` then a raw
+- P6.1 (PLAN.md:659-661): MinIO testcontainer through
+  `@testcontainers/minio` (`MinioContainer`, image pinned by tag), started
+  in a `beforeAll` or a scoped layer shared with `layer(...)`. `presignPut`
+  then a raw
   `fetch(url, { method: 'PUT', body, headers: { 'content-type': 'application/json' } })`
-  returns 200; `exists` false before and true after; `presignGet` URL serves
-  the bytes; `exists` on another bucket name fails with `ObjectStoreError`
-  rather than returning false.
-- P6.2 (PLAN.md:665-667): a fake `ObjectStore` layer (`Layer.succeed`);
-  the delivery payload carries `resultUri`; an inline result skips `exists`
-  (the fake counts calls); `ttlSeconds` equals the parsed
-  `KRUN_S3_PRESIGN_TTL` when set and `activeDeadlineSeconds` otherwise; an
-  `exists` failure leaves the run in its previous state.
+  returns 200. `exists` is false before and true after. The `presignGet` URL
+  serves the bytes. `exists` on another bucket name fails with
+  `ObjectStoreError` rather than returning false.
+- P6.2 (PLAN.md:665-667): a fake `ObjectStore` layer (`Layer.succeed`). The
+  delivery payload carries `resultUri`. An inline result skips `exists` (the
+  fake counts calls). `ttlSeconds` equals the parsed `KRUN_S3_PRESIGN_TTL`
+  when set, `activeDeadlineSeconds` otherwise. An `exists` failure leaves the
+  run in its previous state.
 - P3.6 (PLAN.md:428-430): the branches above with a fake `ObjectStore`
-  layer; assert `Cache-Control: no-store` and no `Authorization` echo on
-  the 307.
+  layer; assert `Cache-Control: no-store` and no `Authorization` echo on the
+  307.

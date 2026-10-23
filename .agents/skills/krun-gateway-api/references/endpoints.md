@@ -1,18 +1,17 @@
 # Gateway endpoints, CreateRun order and error tables
 
-Rewritten from docs/API.md sections 1-4 and docs/INTERNAL-API.md sections
-1-6 as of 2026-10-23, with the Fastify route pattern, Zod schema notes, the
-tagged error per row (section 7 lists the tags) and the PLAN task. The docs are normative; re-verify a
-line number before citing it in code or tests. Every listener answers 404
-`ROUTE_NOT_FOUND` for the other listeners' paths (SPEC.md:178-181).
+From docs/API.md sections 1-4 and docs/INTERNAL-API.md sections 1-6
+(2026-10-23), plus Fastify pattern, Zod notes, tagged error per row
+(section 7) and PLAN task. The docs are normative; re-verify a line number
+before citing it. Every listener answers 404 `ROUTE_NOT_FOUND` for other
+listeners' paths (SPEC.md:178-181).
 
 ## 1. Admin listener (`KRUN_ADMIN_LISTEN_ADDR`, default `:9090`)
 
 No authentication, no rate limit, never exposed outside the cluster
 (SPEC.md:183-189). Built by `packages/shared/src/health` (P0.7,
-PLAN.md:191-197; owned by `krun-process-runtime`); the gateway only wires
-it as `AdminServer` (P3.7) and shares the `Readiness` service with the
-drain.
+PLAN.md:191-197, `krun-process-runtime`). The gateway only wires it as
+`AdminServer` (P3.7) and shares the `Readiness` service with the drain.
 
 | Path | Notes |
 |---|---|
@@ -22,9 +21,9 @@ drain.
 
 ## 2. Public API (`KRUN_LISTEN_ADDR`, default `:8080`, base `/v1`)
 
-Methods: docs/API.md:167-177 (SPEC.md:200-210). Fastify patterns tested
-against find-my-way 9 / Fastify 5.12.7; `R` is `:run(^[^:]+)`, used on
-every run route so `.../runs/x:bogus` is 404 instead of matching `GetRun`.
+Methods: docs/API.md:167-177 (SPEC.md:200-210). Patterns tested on
+find-my-way 9 / Fastify 5.12.7. `R` is `:run(^[^:]+)`, used on every run
+route so `.../runs/x:bogus` is 404 instead of matching `GetRun`.
 
 | Method | HTTP | Fastify pattern | Scope | Success | PLAN |
 |---|---|---|---|---|---|
@@ -48,9 +47,8 @@ noted):
   run custom methods (docs/API.md:18-22). `-` on `GetFunction` or
   `CreateRun` names no function: 404 `FUNCTION_NOT_FOUND` (reading).
 - `{run}`: lowercase UUIDv7. A run of another function under a concrete
-  `{function}` is 404 `RUN_NOT_FOUND`. A malformed id is not fixed by the
-  docs; this skill answers 404 `RUN_NOT_FOUND` (it cannot exist) and pins
-  it in a test.
+  `{function}` is 404 `RUN_NOT_FOUND`. The docs do not fix a malformed id;
+  answer 404 `RUN_NOT_FOUND` (it cannot exist) and pin it in a test.
 
 Query and body schemas (all `z.strictObject`, `.optional()` only):
 
@@ -66,8 +64,8 @@ Query and body schemas (all `z.strictObject`, `.optional()` only):
 | `GetRunResult` | none | none |
 | `WatchRun` | none | none |
 
-Query strings arrive as strings: `pageSize` is `z.coerce.number().int()`
-with 0 meaning default, negative 400, above 200 coerced to 200
+Query values arrive as strings: `pageSize` is `z.coerce.number().int()`,
+0 means default, negative 400, above 200 coerced to 200
 (docs/API.md:55-60). Duration grammar `^\d+(ms|s|m|h)$` is the shared Zod
 refinement into `Duration` (docs/STACK.md 4.3).
 
@@ -128,24 +126,25 @@ docs/API.md:199-221, SPEC.md:225-235. First failing check answers. Every
 | any: store or informer not ready at startup | 503 `NOT_READY` (never during the SIGTERM drain) | `NotReady` | handler / `onRequest` |
 
 docs/API.md:204-206 put authentication, scope, rate limit, function
-resolution and body parsing (the cap is part of it, SPEC.md:274-275) before
-the `requestId` lookup; Fastify's lifecycle gives exactly this order with
-auth in `onRequest` (Fastify checks the media type, then `Content-Length`
-against `bodyLimit`, then reads). So an unauthenticated oversized body is
-401, never 413, and is never read. Step 4 before 6: a non-Ready function
-answers 404 even for a malformed body. Step 7 after 3: a replay still
-spends a rate token.
-`Store.createRun` also dedupes on `runs_idem_idx` and returns
-`ConflictError` on a concurrent mismatch: map it to `IdempotencyConflict`
-and `created: false` to the replay response (SPEC.md:494, 433-434).
+resolution and body parsing (cap included, SPEC.md:274-275) before the
+`requestId` lookup. Fastify's lifecycle gives exactly this order with auth
+in `onRequest`: it checks media type, then `Content-Length` against
+`bodyLimit`, then reads. Consequences:
 
-Fingerprint (SPEC.md:226-228, 527-529, docs/API.md:199-204): lowercase
-hex SHA-256 of `canonicalize({ input, priority: body.priority ?? 0,
-callback: body.callback ?? null })` over the parsed body before the
-Function default callback is applied; `requestId` and `wait` excluded;
-stored in `request_hash`. Property test with fast-check: key order and
-whitespace never change the hash; any change to `input`, `priority` or
-`callback.url` does.
+- unauthenticated oversized body: 401, never 413, never read;
+- step 4 before 6: a non-Ready function answers 404 even for a malformed
+  body;
+- step 7 after 3: a replay still spends a rate token.
+
+`Store.createRun` also dedupes on `runs_idem_idx` and returns
+`ConflictError` on a concurrent mismatch. Map it to `IdempotencyConflict`;
+map `created: false` to the replay response (SPEC.md:494, 433-434).
+
+Fingerprint: SKILL.md Rule 11, with `canonicalize({ input, priority:
+body.priority ?? 0, callback: body.callback ?? null })` (SPEC.md:226-228,
+527-529, docs/API.md:199-204). Property test with fast-check: key order
+and whitespace never change the hash; any change to `input`, `priority`
+or `callback.url` does.
 
 ## 4. Public error table (docs/API.md:322-342)
 
@@ -179,14 +178,14 @@ Envelope (docs/API.md:302-320): `{ "error": { "code": <http>, "message",
 | 503 | `UNAVAILABLE` | `NOT_READY` | `NotReady` | database or informer not ready at startup; `Retry-After: 1`; during the drain `/v1` serves normally, after close connections are refused | P3.1a, P3.7 |
 
 The rate limit applies to every authenticated `/v1` call (docs/API.md:361-
-366), not only `CreateRun`; the admission metric counts only `CreateRun`
-rejections with the four reasons (SPEC.md:1165).
+366), not only `CreateRun`. The admission metric counts only `CreateRun`
+rejections, with the four reasons (SPEC.md:1165).
 
 ## 5. Internal API (`KRUN_INTERNAL_LISTEN_ADDR`, default `:8081`, base `/internal/v1`), P3.8
 
-Per-run token only, API keys rejected; valid for the run in the path while
-`queued` with a token, `scheduled` or `running` (INTERNAL-API.md:48-66,
-SPEC.md:301-305). Not resource-oriented; sub-resource paths, no custom
+Per-run token only, API keys rejected. Valid for the run in the path
+while `queued` with a token, `scheduled` or `running` (INTERNAL-API.md:48-66,
+SPEC.md:301-305). Not resource-oriented: sub-resource paths, no custom
 methods (INTERNAL-API.md:382-384).
 
 | Operation | HTTP | Fastify `bodyLimit` | Body schema | Success |
@@ -228,11 +227,10 @@ Check order, first failing check answers (INTERNAL-API.md:97-104):
 | 7. guarded store write (state in queued-with-token, scheduled, running) | zero rows: 401 `TOKEN_INVALID`, nothing written or notified | `TokenInvalid` | handler |
 | each store call | `Effect.timeout("5 seconds")` from after validation, query aborted: 503 `NOT_READY` | `NotReady` | handler |
 
-Step 2 runs before the body is read, so a request with a bad token and an
-oversized body is 401, not 413. The doc starts the 5 s timer after the body
-is validated; the step 2 token read is not covered by that sentence, so
-bound it with the same `Effect.timeout` and answer 503 `NOT_READY`
-(reading, pin it in a test).
+Step 2 runs before the body is read: bad token plus oversized body is
+401, not 413. The doc starts the 5 s timer after body validation and does
+not cover the step 2 token read. Bound that read with the same
+`Effect.timeout` and answer 503 `NOT_READY` (reading, pin it in a test).
 
 ## 6. Internal error table (INTERNAL-API.md:275-286)
 
@@ -252,7 +250,7 @@ body-size and content-type errors are rewritten into it.
 | 500 | `INTERNAL` | `INTERNAL` | defect | unexpected |
 | 503 | `UNAVAILABLE` | `NOT_READY` | `NotReady` | database not ready, or a store call over 5 s; `Retry-After: 1`; serves normally during the drain, refused after close |
 
-Every 401 is the same `TOKEN_INVALID`, indistinguishable by design; the
+Every 401 is the same `TOKEN_INVALID`, indistinguishable by design. The
 token is never logged, echoed or rotated (INTERNAL-API.md:63-66,
 SPEC.md:990).
 

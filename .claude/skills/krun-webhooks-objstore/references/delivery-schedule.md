@@ -27,7 +27,7 @@ section 4.3 (SPEC rules mapped to Effect). Store semantics and SQL belong to
 ## Schedule
 
 `attempt` counts failed attempts so far (DDL default 0). After a failed
-attempt with the row at `attempt = n` before the increment:
+attempt, with the row at `attempt = n` before the increment:
 
 | Failed attempt | `attempt` after | `next_at` | Elapsed since insert (approx.) |
 |---|---|---|---|
@@ -45,16 +45,16 @@ const SCHEDULE = [
 ] as const
 ```
 
-Index by the attempt number before increment; `next_at` is
-`DateTime.addDuration(now, SCHEDULE[d.attempt])` with `now` from
-`DateTime.now`; when `attempt` (after increment) reaches 6 the state is
-`dead` (SPEC.md:926-927). The first attempt happens at the next tick after
-insert because `next_at = created_at` on insert.
 
-The schedule lives in the row, not in a fiber: this is the one retry in
-krun that is not `Effect.retry` with a `Schedule`, because the waits span
-hours and must survive restarts and leader changes. No jitter, no
-`Schedule.exponential`.
+Index by the attempt number before increment:
+`next_at` = `DateTime.addDuration(now, SCHEDULE[d.attempt])`, `now` from
+`DateTime.now`. When `attempt` (after increment) reaches 6, the state is
+`dead` (SPEC.md:926-927). The first attempt happens at the next tick after
+insert, because `next_at = created_at` on insert.
+
+The schedule lives in the row, not in a fiber. It is the one krun retry
+that is not `Effect.retry` with a `Schedule`: the waits span hours and must
+survive restarts and leader changes. No jitter, no `Schedule.exponential`.
 
 ## Tick
 
@@ -75,50 +75,54 @@ const deliveriesLoop = drain.pipe(
 )
 ```
 
+
 `attemptOne(d)` never fails; it records every outcome itself:
 
-1. `resolveAndCheck(d.url)` (references/ssrf-check.md); a `CallbackNotAllowed`
-   failure is a failed attempt with `last_error` naming the reason
-   (SPEC.md:1069).
+1. `resolveAndCheck(d.url)` (references/ssrf-check.md). A
+   `CallbackNotAllowed` failure is a failed attempt with `last_error` naming
+   the reason (SPEC.md:1069).
 2. `nowMillis = yield* Clock.currentTimeMillis`;
    `headers = { 'content-type', 'x-krun-delivery': d.id, 'x-krun-run-id': d.runId, 'x-krun-signature': sign(bodyBytes, secrets, nowMillis), traceparent }`
-   (references/signature.md); `bodyBytes` is `d.payload` serialised once.
-   `x-krun-delivery` is the same row id on every attempt; `traceparent`
-   is this attempt's span (steps 1-5 run inside `Effect.withSpan("webhook.deliver")`).
+   (references/signature.md). `bodyBytes` is `d.payload`, serialised once.
+   `x-krun-delivery` is the same row id on every attempt. `traceparent` is
+   this attempt's span: steps 1-5 run inside `Effect.withSpan("webhook.deliver")`.
 3. POST through the pinned dispatcher, `redirect: 'manual'`, under
    `Effect.timeout("10 seconds")` (the scoped `post` in
    references/ssrf-check.md).
-4. `2xx` → `updateDelivery(d.id, 'delivered', d.attempt, null, null)`;
+4. `2xx`: `updateDelivery(d.id, 'delivered', d.attempt, null, null)`;
    increment `krun_deliveries_total{state="delivered"}`.
-5. otherwise `n = d.attempt + 1`; `n >= 6` → `updateDelivery(d.id, 'dead', n, null, err)`,
-   increment `{state="dead"}`; else `updateDelivery(d.id, 'pending', n, now + SCHEDULE[d.attempt], err)`,
-   increment `{state="pending"}`. Label values are the three DDL states
-   written by the attempt (`delivered`, `pending`, `dead`, SPEC.md:459);
-   invent no fourth value without the P4.6 metrics task agreeing.
+5. Otherwise `n = d.attempt + 1`.
+   - `n >= 6`: `updateDelivery(d.id, 'dead', n, null, err)`, increment
+     `{state="dead"}`.
+   - else: `updateDelivery(d.id, 'pending', n, now + SCHEDULE[d.attempt], err)`,
+     increment `{state="pending"}`.
+
+   Label values are the three DDL states the attempt writes (`delivered`,
+   `pending`, `dead`, SPEC.md:459). Invent no fourth value without the P4.6
+   metrics task agreeing.
 6. `last_error` is a short string: `status 500`, `status 302`, `timeout`,
-   `address rejected: private`, `ECONNREFUSED`; never the response body.
+   `address rejected: private`, `ECONNREFUSED`. Never the response body.
    Map the timeout failure and the `DeliveryTransportError` cause to these
    strings in one function.
 
 Interrupted (SIGTERM, or leadership lost and the leader scope closed): the
-fiber stops before `updateDelivery`; the row stays `pending` under its lease
+fiber stops before `updateDelivery`. The row stays `pending` under its lease
 and the next leader re-claims it after 60 s. Never mark `dead` because of
 shutdown (dapr pkg/runtime/subscription/subscription.go:394-405 makes the
-same choice), and never wrap the POST plus `updateDelivery` in
+same choice). Never wrap the POST plus `updateDelivery` in
 `Effect.uninterruptible`: shutdown must not wait 10 s per attempt.
 
 ## Lease arithmetic
 
-- Claim sets `next_at = now + 60s` so a concurrent or restarted leader
+- Claim sets `next_at = now + 60s`, so a concurrent or restarted leader
   cannot re-claim within the lease (P1.7 acceptance, PLAN.md:287-289).
-- A successful attempt overwrites `next_at` through `updateDelivery`; a
-  failed one sets the scheduled `next_at`, which is always later than the
-  lease end except for the 1m step, where it is 60 s too and therefore
-  still correct.
-- A crash mid-attempt leaves the lease to expire; the attempt counter was
-  not incremented, so the schedule is not consumed by crashes, only by
-  real failures. Receivers may therefore see the same `X-Krun-Delivery`
-  twice (docs/API.md:374-376).
+- A successful attempt overwrites `next_at` through `updateDelivery`. A
+  failed one sets the scheduled `next_at`, always later than the lease end
+  except for the 1m step, which equals the 60 s lease and is still correct.
+- A crash mid-attempt leaves the lease to expire. The attempt counter was
+  not incremented, so crashes do not consume the schedule; only real
+  failures do. Receivers may therefore see the same `X-Krun-Delivery` twice
+  (docs/API.md:374-376).
 
 ## Logging
 
@@ -126,21 +130,22 @@ same choice), and never wrap the POST plus `updateDelivery` in
   `next_at`, `last_error`; never the url query string, body or signature.
 - debug: the underlying cause.
 - info: `delivery delivered` with `delivery_id`, `run_id`, `attempt`.
-  (Pattern from dapr pkg/resiliency/policy.go:345-354.) Log through the
-  Effect `Logger`, which writes to the pino sink (docs/STACK.md section 2.5).
+
+Pattern from dapr pkg/resiliency/policy.go:345-354. Log through the Effect
+`Logger`, which writes to the pino sink (docs/STACK.md section 2.5).
 
 ## Acceptance (PLAN.md:642-645)
 
 `@effect/vitest` test (`it.effect`, `TestClock` by default) with
-`http.createServer` on `127.0.0.1` and `127.0.0.0/8` in the allowed CIDRs,
-a fake Store layer, and the real `post`:
+`http.createServer` on `127.0.0.1`, `127.0.0.0/8` in the allowed CIDRs, a
+fake Store layer, and the real `post`:
 
-- receiver returns 500 then 200: row goes `pending` (`attempt` 1,
-  `next_at` + 1m) then `delivered` after `TestClock.adjust("1 minute")` and
-  the next tick;
+- receiver returns 500 then 200: row goes `pending` (`attempt` 1, `next_at`
+  + 1m), then `delivered` after `TestClock.adjust("1 minute")` and the next
+  tick;
 - receiver returns 302: counted as failure;
-- six failures: `dead`, `last_error` set; the five waits are crossed with
-  `TestClock.adjust`, never slept;
+- six failures: `dead`, `last_error` set; cross the five waits with
+  `TestClock.adjust`, never sleep;
 - 40 pending rows: all delivered, at most 8 in flight (count concurrent
   open requests in the receiver);
 - a receiver that never answers: `TestClock.adjust("10 seconds")` fails the
@@ -151,4 +156,4 @@ a fake Store layer, and the real `post`:
 
 Gate: `pnpm exec vitest run apps/scheduler/src` (and
 `packages/shared/src/webhook` for the helpers). Drive ticks by running
-`drain` directly rather than through the repeat.
+`drain` directly, not through the repeat.

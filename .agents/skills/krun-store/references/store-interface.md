@@ -1,13 +1,12 @@
 # Store interface (SPEC.md:489-520) with the PLAN task per method
 
-Copied from the working tree on the day this skill was written. Re-verify
-against the current SPEC.md before relying on a line number; SPEC.md is the
-source of truth (SPEC.md:3-5) and the interface changes only with a
-Decisions row.
+Copied from the working tree (2026-10-23). Re-verify a line number
+against SPEC.md before relying on it. SPEC.md is the source of truth
+(SPEC.md:3-5); the interface changes only with a Decisions row.
 
-Module: `packages/shared/src/store` (SPEC.md:489, PLAN.md:97). Implemented
-for both dialects, verified by one shared contract suite in
-`packages/shared/src/store/contract/` (SPEC.md:489-490, PLAN.md:102).
+Module: `packages/shared/src/store` (SPEC.md:489, PLAN.md:97). Both
+dialects, one shared contract suite in `packages/shared/src/store/contract/`
+(SPEC.md:489-490, PLAN.md:102).
 
 ## Interface verbatim (SPEC.md:492-520)
 
@@ -46,10 +45,9 @@ Error classes next to it: `NotFoundError`, `ConflictError` (PLAN.md:234).
 
 ## Effect form (docs/STACK.md 2.3, 4.2, 4.4)
 
-SPEC writes the interface with Promises. krun runs on Effect 4, so the
-implementation is a `Context.Service` whose methods return Effects. Names,
-parameters, order and semantics stay exactly as above; only these types
-change:
+SPEC writes Promises; krun's implementation is a `Context.Service` whose
+methods return Effects. Names, parameters, order and semantics stay exactly
+as above. Only these types change:
 
 | SPEC | Effect form |
 |---|---|
@@ -77,9 +75,10 @@ Each method body: compute `at`, ids and hashes in Effect, then run one
 Kysely function (a single statement or one `db.transaction().execute`)
 inside `Effect.tryPromise`, `catch` mapping to `DatabaseError`. In
 `createRun` a unique violation on `runs_idem_idx` is not a
-`DatabaseError`: re-read the existing row, return it when the hash matches,
-fail with `ConflictError` when it does not. Kysely rows go through the dialect mapper into `Run`; the
-wire shape comes only from `toRun` / `toRunSummary`.
+`DatabaseError`: re-read the existing row; return it when the hash
+matches, else fail with `ConflictError`. Kysely rows go through the
+dialect mapper into `Run`; the wire shape comes only from `toRun` /
+`toRunSummary`.
 
 ## Method by method: task, semantics, acceptance
 
@@ -116,9 +115,9 @@ wire shape comes only from `toRun` / `toRunSummary`.
 | `setRuntimeStatus`, `setResult`, `setError` | false | write | write | write | false | false |
 | `setJobStatus` | false | false | write on change | write on change | write on change | false |
 
-Source: SPEC.md:508-511, PLAN.md:301-308. "false" means the method returns
-`false` and writes nothing; the internal API maps that to 401/409 as
-docs/INTERNAL-API.md says (not this skill's concern).
+Source: SPEC.md:508-511, PLAN.md:301-308. "false": the method returns
+`false` and writes nothing. The internal API maps that to 401/409 per
+docs/INTERNAL-API.md (not this skill's concern).
 
 ## Notify payloads (Postgres only, SPEC.md:344-347)
 
@@ -128,6 +127,6 @@ docs/INTERNAL-API.md says (not this skill's concern).
 | `setRuntimeStatus` | `<id>:status` | `status` |
 | `setJobStatus` | `<id>:job_status` | `job_status` |
 
-`NOTIFY` inside a transaction is delivered on commit, so issue it inside
-the same transaction as the write (docs/research/node-stack-facts.md:693-694, UNVERIFIED
-API detail but standard Postgres behaviour).
+`NOTIFY` inside a transaction is delivered on commit: issue it in the
+same transaction as the write (docs/research/node-stack-facts.md:693-694,
+UNVERIFIED API detail, standard Postgres behaviour).

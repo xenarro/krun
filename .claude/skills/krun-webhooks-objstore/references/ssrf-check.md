@@ -1,7 +1,7 @@
 # Webhook host allowlist and SSRF address check (P2.1)
 
-Source: SPEC.md:1076-1087, D31, PLAN.md:319-328,
-docs/OPERATIONS.md (Security operations), docs/STACK.md sections 2.2, 2.5 and 4.3. Module:
+Source: SPEC.md:1076-1087, D31, PLAN.md:319-328, docs/OPERATIONS.md
+(Security operations), docs/STACK.md sections 2.2, 2.5 and 4.3. Module:
 `packages/shared/src/webhook`.
 
 ## Inputs (parsed by the Zod Config schema in `packages/shared/src/config`, P0.5)
@@ -12,15 +12,15 @@ docs/OPERATIONS.md (Security operations), docs/STACK.md sections 2.2, 2.5 and 4.
 | allowed CIDRs | `KRUN_WEBHOOK_ALLOWED_CIDRS` | comma-separated CIDRs; a CIDR that does not parse exits 1 at startup | SPEC.md:1183, :1215 |
 | secrets | `KRUN_WEBHOOK_SECRET` | comma-separated; required on the scheduler when hosts are set | SPEC.md:1181, :1216 |
 
-Glob grammar: `picomatch`, the same library as the API key function
-globs (docs/STACK.md 2.5): `picomatch(hostGlobs, { nocase: false, dot:
-true })`, compiled once when the Config is parsed. `*` matches any run of
-characters except `/`, so dots included (`*.acme.com` matches
-`hooks.acme.com` and `a.b.acme.com`, not `acme.com`), anchored both ends.
-Host globs are lowercased at parse because `URL.hostname` is lowercase
-for DNS names and matching is case-sensitive. Match against
-`url.hostname` with IPv6 brackets removed. No port, no path, no scheme in
-the glob. Never translate globs to a RegExp by hand (docs/STACK.md 2.5).
+Glob grammar: `picomatch`, the same library as the API key function globs
+(docs/STACK.md 2.5): `picomatch(hostGlobs, { nocase: false, dot: true })`,
+compiled once when the Config is parsed. `*` matches any run of characters
+except `/`, dots included: `*.acme.com` matches `hooks.acme.com` and
+`a.b.acme.com`, not `acme.com`. Anchored both ends. Host globs are
+lowercased at parse: `URL.hostname` is lowercase for DNS names and matching
+is case-sensitive. Match against `url.hostname` with IPv6 brackets removed.
+No port, path or scheme in the glob. Never translate globs to a RegExp by
+hand (docs/STACK.md 2.5).
 
 ## Algorithm
 
@@ -42,33 +42,36 @@ resolveAndCheck(url: string, cfg): Effect<Pinned, CallbackNotAllowed>
   7. return { address: addrs[0], family }  -- the pinned address
 ```
 
+
 The pure part is `checkAddress(addrs: string[], cidrs: Cidr[]): boolean`;
 test it without DNS. `resolveAndCheck` composes DNS with it as an Effect
-whose failure is the tagged `CallbackNotAllowed` carrying the reason; the
-DNS lookup sits behind a small `Resolver` service so tests provide a stub
-layer. The gateway runs `resolveAndCheck` at create and maps the tag to 400
-`CALLBACK_NOT_ALLOWED`, `fieldViolations[0].field` = `callback.url`
-(docs/API.md:327, PLAN.md:402). The scheduler runs it again before every
-attempt (SPEC.md:1069) and treats a rejection as a failed attempt with
-`last_error` naming the reason, never as `dead` at once (the DNS may be
-fixed before the next attempt).
+whose failure is the tagged `CallbackNotAllowed` carrying the reason. The
+DNS lookup sits behind a small `Resolver` service, so tests provide a stub
+layer.
+
+- Gateway: runs `resolveAndCheck` at create and maps the tag to 400
+  `CALLBACK_NOT_ALLOWED`, `fieldViolations[0].field` = `callback.url`
+  (docs/API.md:327, PLAN.md:402).
+- Scheduler: runs it again before every attempt (SPEC.md:1069). A rejection
+  is a failed attempt with `last_error` naming the reason, never `dead` at
+  once: DNS may be fixed before the next attempt.
 
 Why `unicast` only: ipaddr.js names every special block (`loopback`,
 `private`, `linkLocal`, `carrierGradeNat`, `uniqueLocal`, `multicast`,
 `unspecified`, `reserved`, `broadcast`, `ipv4Mapped`, `6to4`, `teredo`); a
-denylist would miss the next one. The allowlist of CIDRs is the only
-escape hatch, which D31 chose so in-cluster receivers work when the
-operator lists the pod or Service CIDR (docs/OPERATIONS.md:120-121).
+denylist would miss the next one. The CIDR allowlist is the only escape
+hatch. D31 chose it so in-cluster receivers work when the operator lists
+the pod or Service CIDR (docs/OPERATIONS.md:120-121).
 
-Split the CIDR list by family before `subnetMatch`: match a v4 address
-only against v4 CIDRs and a v6 address only against v6 CIDRs, after
-`process()` has turned `::ffff:10.0.0.1` into v4. An allowlisted
-`10.0.0.0/8` must admit `::ffff:10.0.0.1` through the unwrapped v4 form.
+Split the CIDR list by family before `subnetMatch`: match a v4 address only
+against v4 CIDRs and a v6 address only against v6 CIDRs, after `process()`
+has turned `::ffff:10.0.0.1` into v4. An allowlisted `10.0.0.0/8` must admit
+`::ffff:10.0.0.1` through the unwrapped v4 form.
 
 ## Required test vectors (PLAN.md:324-328 plus SPEC.md:1066-1068)
 
-Every row is a Vitest case on `checkAddress` (`it.each` over the table);
-the "reason" column is the expected ipaddr.js `range()` so a naming
+Every row is a Vitest case on `checkAddress` (`it.each` over the table).
+The "reason" column is the expected ipaddr.js `range()`, so a naming
 mismatch fails loudly. Gate: `pnpm exec vitest run packages/shared/src/webhook`.
 
 | Address | CIDRs | Expect | Reason |
@@ -94,8 +97,8 @@ mismatch fails loudly. Gate: `pnpm exec vitest run packages/shared/src/webhook`.
 | `10.1.0.1` | `10.0.0.0/16` | reject | outside the listed CIDR, still `private` |
 | `169.254.169.254` | `169.254.0.0/16` | accept | listed; the operator chose to allow it |
 
-Host-level vectors (on `resolveAndCheck` with a stub `Resolver` layer, run
-with `it.effect` from `@effect/vitest`):
+Host-level vectors: on `resolveAndCheck` with a stub `Resolver` layer, run
+with `it.effect` from `@effect/vitest`.
 
 | URL | Hosts | Expect |
 |---|---|---|
@@ -114,7 +117,8 @@ Property tests (fast-check, docs/STACK.md section 3), next to the table:
   `127.0.0.0/8`, `100.64.0.0/10`, `169.254.0.0/16`: rejected with no CIDR
   listed, accepted when its enclosing block is listed;
 - for every IPv4 `a`: `checkAddress(['::ffff:' + a], c) === checkAddress([a], c)`;
-- a list containing any rejected address is rejected, whatever else it holds.
+- a list containing any rejected address is rejected, whatever else it
+  holds.
 
 ## Pinned dispatcher
 
@@ -146,12 +150,13 @@ const post = (url: string, pinned: Pinned, body: Uint8Array, headers: Record<str
   )
 ```
 
-One `Agent` per attempt (the pinned address differs per delivery), closed
-by the scope's release after the response. Node's global `fetch` carries
-its own bundled undici and ignores this dispatcher, so the import above is
-load-bearing. The `connect.timeout` bounds the TCP and TLS handshake; the
+
+One `Agent` per attempt (the pinned address differs per delivery), closed by
+the scope's release after the response. Node's global `fetch` carries its
+own bundled undici and ignores this dispatcher, so the import above is
+load-bearing. `connect.timeout` bounds the TCP and TLS handshake;
 `Effect.timeout` bounds the whole attempt (SPEC.md:922).
 
 Any status outside 200-299 fails the attempt, 3xx included
-(SPEC.md:1072-1073). The body is cancelled unread in every case so the
+(SPEC.md:1072-1073). The body is cancelled unread in every case, so the
 socket is released before the scope closes.

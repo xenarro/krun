@@ -13,18 +13,17 @@ docs/OPERATIONS.md:114-117.
 | `X-Krun-Signature` | `t=<unix seconds at send>,v1=<hex>,v1=<hex>...` | no; `t` is the send time of this attempt | SPEC.md:1075-1078 |
 | `traceparent` | W3C trace context of this attempt's span, `00-<32 hex trace id>-<16 hex span id>-<flags>` | no; a new span per attempt | SPEC section 11 |
 
-`traceparent` is not signed and carries no krun data; receivers may use
-it to join their own trace and must not require it. Set it from the
-attempt span (`Effect.withSpan("webhook.deliver")` around re-check, sign
-and POST), never from the tick span, and add no `tracestate` or
-`baggage`.
+`traceparent` is not signed and carries no krun data. Receivers may use it
+to join their own trace and must not require it. Set it from the attempt
+span (`Effect.withSpan("webhook.deliver")` around re-check, sign and POST),
+never from the tick span. Add no `tracestate` or `baggage`.
 
 Body: the stored `deliveries.payload` bytes, the BASIC `Run` (`RunSummary`
-from `toRunSummary`, SPEC.md:1082-1083, SPEC.md:529-533). It omits
-`input`, `result`, `logTail` and `error.details`; receivers fetch the
-result with `GetRunResult` (docs/API.md:384). `resultUri` appears only on
-a `SUCCEEDED` run whose result went to object storage, never beside an
-inline `result` (docs/API.md:109).
+from `toRunSummary`, SPEC.md:1082-1083, SPEC.md:529-533). It omits `input`,
+`result`, `logTail` and `error.details`; receivers fetch the result with
+`GetRunResult` (docs/API.md:384). `resultUri` appears only on a `SUCCEEDED`
+run whose result went to object storage, never beside an inline `result`
+(docs/API.md:109).
 
 ## Signing (sender, scheduler)
 
@@ -40,11 +39,12 @@ export function sign(body: Uint8Array, secrets: readonly string[], nowMillis: nu
 }
 ```
 
+
 - `secrets` is `KRUN_WEBHOOK_SECRET` split on `,`, in order, empty entries
   dropped; one `v1=` per entry (SPEC.md:1077-1078).
-- The signed string is `<t>.<body>` where `<body>` is the exact bytes sent;
-  compute it on the `Buffer`/`Uint8Array` that goes into `fetch`, never on
-  a re-stringified object.
+- The signed string is `<t>.<body>`, where `<body>` is the exact bytes sent.
+  Compute it on the `Buffer`/`Uint8Array` that goes into `fetch`, never on a
+  re-stringified object.
 - Call `sign` inside the attempt, after the address re-check and before
   `fetch`, with the time read there:
 
@@ -53,12 +53,12 @@ export function sign(body: Uint8Array, secrets: readonly string[], nowMillis: nu
   const signature = sign(bodyBytes, cfg.webhookSecrets, nowMillis)
   ```
 
+
   A retry 12 hours later carries a fresh `t` (SPEC.md:927-928). Never
   `Date.now()` (CLAUDE.md rule 8): under `TestClock` the header must follow
   the test's clock.
-- A bare `KRUN_WEBHOOK_SECRET` with hosts set and no secret is a startup
-  error (SPEC.md:1180-1181); the signer therefore always has at least one
-  secret.
+- Hosts set with no `KRUN_WEBHOOK_SECRET` is a startup error
+  (SPEC.md:1180-1181), so the signer always has at least one secret.
 
 ## Verification (receiver guidance, docs/API.md:379-382)
 
@@ -82,44 +82,44 @@ export function verify(header: string, rawBody: Buffer, secret: string, nowMilli
 }
 ```
 
+
 - Verify against the raw request bytes, before JSON parsing; a framework
   that re-serialises the body breaks the check.
-- Accept when any `v1=` matches (SPEC.md:1078); compare in constant time,
-  and guard the length first because `timingSafeEqual` throws on unequal
-  lengths.
+- Accept when any `v1=` matches (SPEC.md:1078). Compare in constant time,
+  and guard the length first: `timingSafeEqual` throws on unequal lengths.
 - Reject `|now - t| > 300` seconds (SPEC.md:1081, D29): replay window.
-- Dedupe on `X-Krun-Delivery`: at-least-once means the same delivery can
+- Dedupe on `X-Krun-Delivery`. At-least-once means the same delivery can
   arrive twice when a 2xx was sent but the scheduler crashed before
   `updateDelivery` (docs/API.md:374-376).
-- Answer 2xx fast; anything else, including 3xx, is retried on the schedule
-  (SPEC.md:923, :926). Do the work after acknowledging if it is slow; the
-  attempt times out at 10 s.
+- Answer 2xx fast; anything else, 3xx included, is retried on the schedule
+  (SPEC.md:923, :926). Do slow work after acknowledging: the attempt times
+  out at 10 s.
 
 The e2e receiver (P5.4, PLAN.md:646-649) implements this with a 10-line
-`http.createServer` and asserts a constant `X-Krun-Delivery` across a
-retried attempt and two `v1=` entries during rotation.
+`http.createServer`. It asserts a constant `X-Krun-Delivery` across a
+retried attempt, and two `v1=` entries during rotation.
 
 ## Rotation (docs/OPERATIONS.md:114-117, D29)
 
 1. Set the `secret` key of `webhooks.existingSecret` to `new,old`.
 2. `kubectl rollout restart deployment/krun-scheduler` (postgres) or
-   `statefulset/krun` (embedded); the value reaches the pod as env, there is
+   `statefulset/krun` (embedded). The value reaches the pod as env; there is
    no hot reload for this Secret.
-3. Every attempt now carries two `v1=`; receivers still verifying `old`
-   keep passing. Roll receivers to `new`.
+3. Every attempt now carries two `v1=`; receivers still verifying `old` keep
+   passing. Roll receivers to `new`.
 4. Drop `old` from the Secret, restart again.
 
 Order of `v1=` entries follows the env order; receivers must not depend on
-position. No `v2=` scheme exists; a new scheme would be a Decisions row.
+position. No `v2=` scheme exists; a new scheme is a Decisions row.
 
 ## Tests (PLAN.md:327-328)
 
 Vitest in `packages/shared/src/webhook`, gate
 `pnpm exec vitest run packages/shared/src/webhook`:
 
-- `sign` with two secrets yields two `v1=` and `verify` passes with each.
-- `verify` fails on a tampered byte, on a wrong secret, on `t` 301 s old
-  (fixed `nowMillis` values, no clock), and on a header with no `v1=`.
+- `sign` with two secrets yields two `v1=`; `verify` passes with each.
+- `verify` fails on a tampered byte, a wrong secret, `t` 301 s old (fixed
+  `nowMillis` values, no clock), and a header with no `v1=`.
 - Signing the same body at `nowMillis` and `nowMillis + 1000` yields
   different headers.
 - fast-check properties: for any body bytes and any non-empty list of
@@ -130,7 +130,7 @@ Vitest in `packages/shared/src/webhook`, gate
   `TestClock` time in seconds after `TestClock.adjust`.
 - The receiver sees a `traceparent` matching
   `^00-[0-9a-f]{32}-[0-9a-f]{16}-0[01]$` on every attempt, with a different
-  span id on the retry of the 500-then-200 case; with an in-memory span
+  span id on the retry of the 500-then-200 case. With an in-memory span
   exporter, the span ids match the exported `webhook.deliver` spans.
 - Never commit a real secret; tests generate theirs with `randomBytes`
   (PLAN.md:33).

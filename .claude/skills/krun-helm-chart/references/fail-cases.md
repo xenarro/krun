@@ -1,23 +1,24 @@
 # Chart `fail` cases and the NOTES.txt warning
 
-Every case comes from SPEC.md:1352-1361 (plus the embedded replica rule
-SPEC.md:1314-1315 and the quota rule SPEC.md:1108). Each `fail` needs a
-message that names the value and what to set (PLAN.md:692-693 "fails with
-a clear message"). Implement them in one helper
-(`templates/_validate.tpl`, called once from a template that always
-renders, for example the gateway or StatefulSet template) so no mode or
-flag skips a check. Use `fail`, not `required`: `required` only tests
-emptiness and cannot express the cross-key conditions.
+Source: SPEC.md:1352-1361, plus the embedded replica rule SPEC.md:1314-1315
+and the quota rule SPEC.md:1108. Each `fail` message names the value and
+what to set (PLAN.md:692-693 "fails with a clear message"). Put them in one
+helper, `templates/_validate.tpl`, called once from a template that always
+renders (gateway or StatefulSet), so no mode or flag skips a check. Use
+`fail`, not `required`: `required` only tests emptiness and cannot express
+cross-key conditions.
 
-Do not add a case the SPEC does not list (PLAN.md:31-32): no digest
-check on `litestream.image`, no consistency check between
-`config.shutdownDelay` and `terminationGracePeriodSeconds` (see SPEC
-RISK in SKILL.md). The Gateway API, admission policy, telemetry and
-user-namespace values add no case either (SPEC.md:1352-1359): no `fail` for
-`gatewayApi.httpRoute.enabled` with empty `parentRefs`, no
-`.Capabilities` check for the Gateway API or ValidatingAdmissionPolicy
-APIs, no check of `observability.otlpEndpoint` or
-`tracesSampleRatio`, nothing for `jobsNamespace.userNamespaces`.
+Add no case SPEC does not list (PLAN.md:31-32):
+
+- no digest check on `litestream.image`;
+- no consistency check between `config.shutdownDelay` and
+  `terminationGracePeriodSeconds` (see SPEC RISK in SKILL.md);
+- nothing for the Gateway API, admission policy, telemetry or
+  user-namespace values (SPEC.md:1352-1359): no `fail` for
+  `gatewayApi.httpRoute.enabled` with empty `parentRefs`, no
+  `.Capabilities` check for the Gateway API or ValidatingAdmissionPolicy
+  APIs, no check of `observability.otlpEndpoint` or `tracesSampleRatio`,
+  nothing for `jobsNamespace.userNamespaces`.
 
 ## Fail table
 
@@ -32,14 +33,15 @@ APIs, no check of `observability.otlpEndpoint` or
 | F7 | `and (eq $v.db.mode "embedded") (or (gt (int $v.gateway.replicas) 1) (gt (int $v.scheduler.replicas) 1))` | `embedded mode runs one replica; set gateway.replicas and scheduler.replicas to 1 or use db.mode=postgres` | SPEC.md:1314-1315, 1349 | P7.3 (PLAN.md:716-717) |
 
 Also reject an unknown `db.mode` (`not (has $v.db.mode (list "postgres" "embedded"))`)
-with `db.mode must be postgres or embedded`; otherwise neither workload
-renders and `helm install` succeeds with nothing running. This is an
-input-validation message, not a new option.
+with `db.mode must be postgres or embedded`. Without it neither workload
+renders and `helm install` succeeds with nothing running. This is input
+validation, not a new option.
 
-Type notes for F6 and F7: `--set` produces int64, `values.yaml` may hold
-int or string (`quota.pods: "200"` is a string by SPEC); normalise with
-`int` and `atoi (toString ...)` before `gt`. `quota` keys contain dots,
-so only `index` reaches them.
+F6 and F7 types: `--set` produces int64; `values.yaml` may hold int or
+string (`quota.pods: "200"` is a string by SPEC). Normalise with `int` and
+`atoi (toString ...)` before `gt` (`atoi` parses the string form). UNVERIFIED against Helm 4; test both
+input paths. `quota` keys contain dots (`requests.cpu`), so only `index`
+reaches them in templates; in `--set` write `requests\.cpu`.
 
 ## NOTES.txt warning (SPEC.md:1021-1025, 1316-1317)
 
@@ -55,20 +57,19 @@ CIDRs (docs/OPERATIONS.md, "Internet egress for functions").
 {{- end }}
 ```
 
-The recipe text is docs/OPERATIONS.md:122-126; D32 (SPEC.md:1473)
-explains why a bare `0.0.0.0/0` is a problem. A warning, not a `fail`:
-the owner chose to allow it (SPEC.md:1316-1317). Tested by P7.4c
-(PLAN.md:749-750): `helm template --set 'jobsNamespace.egressCIDRs[0].cidr=0.0.0.0/0'`
-must print the warning in NOTES; the same with an `except` entry must
-not.
+Recipe text: docs/OPERATIONS.md:122-126. D32 (SPEC.md:1473) says why a bare
+`0.0.0.0/0` is a problem. A warning, not a `fail`: the owner chose to allow
+it (SPEC.md:1316-1317). P7.4c test (PLAN.md:749-750):
+`helm template --set 'jobsNamespace.egressCIDRs[0].cidr=0.0.0.0/0'` must
+print the warning in NOTES; the same with an `except` entry must not.
 
 ## Acceptance checks per case
 
 Each case is one row in the Vitest chart test (SKILL.md "Testing the
 chart"): run `helm template` with the flags below, expect a non-zero exit
-and the message on stderr; the "skipped" row expects exit 0 (P7.1-P7.4a
-acceptance, PLAN.md:689-693, 701-705, 716-722, 731-734). The shell form
-below is the same check for a quick local run under the pinned Helm 4:
+and the message on stderr. The "skipped" row expects exit 0 (P7.1-P7.4a
+acceptance, PLAN.md:689-693, 701-705, 716-722, 731-734). Shell form for a
+quick local run under pinned Helm 4:
 
 ```sh
 C=deploy/helm/krun
@@ -84,6 +85,6 @@ helm template t $C $base --set config.maxRunning=300 --set jobsNamespace.create=
 helm template t $C --set apiKeys.existingSecret=keys --set db.mode=embedded 2>&1 | grep -q 'one replica'           # F7 (gateway.replicas defaults to 2)
 ```
 
-F7 note: the default `gateway.replicas: 2` makes a bare
-`--set db.mode=embedded` fail; the e2e embedded install must pass
-`gateway.replicas=1` (PLAN.md:758-760). Say so in the README (P7.5).
+F7: default `gateway.replicas: 2` makes a bare `--set db.mode=embedded`
+fail. The e2e embedded install must pass `gateway.replicas=1`
+(PLAN.md:758-760). The README says so (P7.5).
