@@ -5,6 +5,7 @@ ENV PATH="/opt/pnpm/node_modules/.bin:${PATH}"
 
 FROM toolchain AS manifests
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .node-version ./
+COPY patches/ ./patches/
 COPY packages/shared/package.json ./packages/shared/package.json
 COPY packages/sdk-node/package.json ./packages/sdk-node/package.json
 COPY packages/cli/package.json ./packages/cli/package.json
