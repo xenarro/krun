@@ -1,0 +1,26 @@
+# Only workspace build inputs enter the context, never workflow artifacts.
+**
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!.node-version
+!tsconfig.base.json
+!bin/
+!bin/krun.js
+!packages/
+!packages/**
+!apps/
+!apps/**
+
+**/node_modules
+**/dist
+**/*.test.ts
+**/testing
+**/vitest.config.ts
+**/.env
+**/.env.*
+**/.npmrc
+**/*.pem
+**/*.key
+**/.git
+**/.agent-state

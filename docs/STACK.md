@@ -158,6 +158,7 @@ for the CLI.
 |---|---|---|
 | `typescript` | `^7.0` | `tsc` (native compiler) for type-checking and emitting `dist/` |
 | `vitest` | `^5.0` | test runner for every TypeScript package; requires Node 22.12, 24 or 26 |
+| `vite` | `^8.3` | required peer of Vitest 5, development only (SPEC D37); never used to bundle application code or shipped in the runtime image |
 | `@effect/vitest` | `~4.0.6` | `it.effect` (already scoped; there is no `it.scoped` in 4.x), `layer(...)`, `TestClock` for every Effect test |
 | `fast-check` | `^4.10` | property tests: request fingerprint, filter parser, duration grammar, address checks |
 | `testcontainers` | `^12.2` | Postgres and MinIO in integration tests |

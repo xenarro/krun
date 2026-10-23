@@ -76,7 +76,7 @@ allowlist an agent checks before adding an import.
 | `picomatch` | key and webhook host globs |
 | `@clack/prompts`, `picocolors`, `tinyexec` | CLI only: prompts, colour, running `docker` and `kubectl` |
 
-Dev dependencies: `typescript`, `vitest`, `@effect/vitest`, `fast-check`,
+Dev dependencies: `typescript`, `vitest`, `vite` (Vitest's required peer, SPEC D37), `@effect/vitest`, `fast-check`,
 `testcontainers`, `@testcontainers/postgresql`, `@testcontainers/minio`,
 `@biomejs/biome`, `@types/node`, `@types/pg`, `knip`, `publint`,
 `@arethetypeswrong/cli`; `hypothesis` for the Python SDK.
@@ -149,7 +149,7 @@ documents (P3.1c, P3.8), chart README (P7.5).
 
 Gate: `make check` green in CI on an empty but wired repository.
 
-- [ ] P0.1 pnpm workspace: root `package.json`, `pnpm-workspace.yaml`,
+- [x] P0.1 pnpm workspace: root `package.json`, `pnpm-workspace.yaml`,
       `tsconfig.base.json`, `.gitignore`, packages `packages/shared`,
       `packages/sdk-node`, `packages/cli`, `apps/gateway`, `apps/scheduler`,
       each with a strict `tsconfig.json` and a `build` script; `sdk/python`
@@ -160,27 +160,27 @@ Gate: `make check` green in CI on an empty but wired repository.
       `@effect/vitest` smoke test. Acceptance:
       `pnpm -r build && node bin/krun.js gateway` prints `gateway`;
       `make test` passes.
-- [ ] P0.2 Makefile with all targets in section 3 (`generate` runs only the
+- [x] P0.2 Makefile with all targets in section 3 (`generate` runs only the
       steps whose scripts exist), `biome.json` with the recommended rules;
       `lint` runs `biome check` and `tsc --noEmit` in every package; a
       minimal `deploy/helm/krun/Chart.yaml` (apiVersion v2, name krun,
       version and appVersion 0.0.0) and `values.yaml` with
       `crds: {install: true, keep: true}` so `make helm-lint` passes.
       Acceptance: `make check` and `make helm-lint` pass.
-- [ ] P0.3 Dockerfile: multi-stage, `pnpm -r build`, then
+- [x] P0.3 Dockerfile: multi-stage, `pnpm -r build`, then
       `pnpm install --prod --frozen-lockfile` and every workspace package's
       `dist/` (`packages/cli/dist` included) copied onto a distroless Node.js 26 base pinned by digest (no native
       addons, so no build toolchain in any stage), non-root 65532, entrypoint
       runs `bin/krun.js`. Acceptance: `make docker` builds and
       `docker run <image> gateway` prints `gateway`.
-- [ ] P0.4 GitHub Actions `ci.yml` on push and pull request: `make check`
+- [x] P0.4 GitHub Actions `ci.yml` on push and pull request: `make check`
       (including `knip`), `make generate` then `git diff --exit-code`, `make docker`,
       `make helm-lint`, `pnpm audit --prod --audit-level=critical`, Trivy on
       the image (`--severity CRITICAL --ignore-unfixed --exit-code 1`);
       `renovate.json` for npm, Docker digests and Actions. Acceptance:
       `actionlint` passes on `.github/workflows/`; the first push shows a
       green run (`gh run watch`).
-- [ ] P0.5 `packages/shared/src/config`: a Zod schema over `process.env`,
+- [x] P0.5 `packages/shared/src/config`: a Zod schema over `process.env`,
       exposed as an Effect `Config` service layer, for every variable from
       SPEC section 12 with defaults, the duration grammar, CIDR parsing for
       `KRUN_WEBHOOK_ALLOWED_CIDRS`, and the startup validation rules (exit 1
@@ -188,7 +188,7 @@ Gate: `make check` green in CI on an empty but wired repository.
       defaults, one invalid duration, one invalid CIDR, DSN empty in
       postgres mode, webhook hosts without secret, a size above 1 MiB, and
       `KRUN_S3_PRESIGN_TTL=""` yielding the default.
-- [ ] P0.6 Verify `CLAUDE.md` matches PLAN section 1 and SPEC D15: read
+- [x] P0.6 Verify `CLAUDE.md` matches PLAN section 1 and SPEC D15: read
       order, `make check` before every commit, no non-goals, no
       Co-Authored-By trailer, TypeScript on Node.js 26; edit only on drift.
       Acceptance: the rules match.
@@ -926,4 +926,13 @@ Gate: all e2e scenarios green; README states measured numbers and the
 
 ## 6. Progress log
 
-(append one line per completed task: date, task id, short sha, note)
+2026-10-23 P0.1 d07922c Strict workspace and finite Effect entrypoints; TS/Python acceptance green.
+2026-10-23 P0.2 d07922c Make targets, Biome/type checks and minimal Helm chart verified.
+2026-10-23 P0.3 d07922c Current-source distroless image builds; numeric non-root command smoke verified in hosted CI.
+2026-10-23 P0.4 d07922c CI run 39973106100 passed; syntax, generated-clean tree, container, audit and Trivy green.
+2026-10-23 P0.5 d07922c 95 config tests and independent boundary/layer reviews passed; full make check green.
+2026-10-23 P0.6 d07922c CLAUDE rules match required PLAN/SPEC constraints; no rule edit needed.
+
+Delivery: implementation commit d07922c is pushed in PR #2; hosted CI is green.
+Merge to protected main awaits the required independent repository approval.
+Next task: P0.7. Full Phase 0 and v1 acceptance remain incomplete.

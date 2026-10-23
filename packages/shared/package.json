@@ -1,0 +1,27 @@
+{
+  "name": "@krun/shared",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=26 <27"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "lint": "biome check . && tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@effect/platform-node": "~4.0.6",
+    "effect": "~4.0.6",
+    "ipaddr.js": "^2.5",
+    "zod": "^4.6"
+  },
+  "devDependencies": {
+    "@effect/vitest": "~4.0.6",
+    "vitest": "^5.0"
+  }
+}

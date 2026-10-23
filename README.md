@@ -1,1 +1,58 @@
 # krun
+
+HTTP-triggered functions, executed as one-off Kubernetes Jobs. Callers submit JSON input over HTTP and observe durable status, results and failures without holding Kubernetes credentials.
+
+## Development status
+
+The initial scaffold and configuration layer are implemented. This is not a runnable function platform yet:
+
+- Strict TypeScript workspace on Node.js 26, with Effect 4 process entrypoints.
+- Zod configuration schemas and Effect services for gateway and scheduler settings.
+- Dependency-free Node.js and Python SDK package skeletons; SDK runtime behavior is pending.
+- Digest-pinned, non-root distroless container packaging.
+- CI checks for types, formatting, tests, unused code, generated files, container packaging, chart lint and critical vulnerabilities.
+
+The four server-image commands currently print their names and exit successfully. They do not start listeners, migrate a database or validate Function resources yet. Admin health/telemetry, Function schemas, storage and the actual gateway/scheduler are the next implementation steps. See [PLAN.md](PLAN.md) for acceptance criteria and progress.
+
+## Check the current implementation
+
+Prerequisites: Node.js matching `.node-version`, pnpm matching `package.json`, [uv](https://docs.astral.sh/uv/), Docker, Helm 4 and actionlint.
+
+```sh
+pnpm install --frozen-lockfile
+uv sync --directory sdk/python --frozen
+make check
+make helm-lint
+actionlint
+make docker
+```
+
+Run a finite scaffold command from source build output or the container:
+
+```sh
+make build
+node bin/krun.js gateway
+docker run --rm --read-only --network none krun:local gateway
+```
+
+Both commands print `gateway` and exit 0. The `scheduler`, `migrate` and `validate` scaffold commands behave the same way. The kind/e2e Make targets fail explicitly until their planned harness is implemented; the Helm chart is currently a minimal lintable skeleton.
+
+Tests include configuration defaults and boundaries, process-specific validation, namespace resolution, typed/redacted failures, Effect layers, command dispatch and build/CI contracts. `make check` also runs Python lint/type checks and Knip.
+
+## Dependency policy
+
+[docs/STACK.md](docs/STACK.md) is the dependency allowlist. Automatic peer installation is disabled so unused Redis integration is not pulled in by the platform package. Process entrypoints import its public `NodeRuntime` subpath. Vite is development-only because Vitest 5 requires it (SPEC D37); neither Vite nor Redis belongs in the production image.
+
+The release-age guard remains enabled. Repository-local exceptions cover only the explicitly approved Effect 4.0.6 packages, and strict mode prevents installs from silently adding other exceptions.
+
+## Design and operations
+
+- [Problem and boundaries](docs/PROBLEM.md)
+- [Behavioral specification and decisions](SPEC.md)
+- [Public API contract](docs/API.md)
+- [Internal container API contract](docs/INTERNAL-API.md)
+- [Technology stack](docs/STACK.md)
+- [Build plan](PLAN.md)
+- [Operations](docs/OPERATIONS.md)
+
+Non-goals include workflows/DAGs, a product web UI, automatic retries and a pool executor. The private local agent dashboard and orchestration checkpoints are Git-excluded development tooling, not part of krun or its container image.

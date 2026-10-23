@@ -1,0 +1,35 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.6.2/schema.json",
+  "files": {
+    "includes": [
+      "package.json",
+      "tsconfig*.json",
+      "vitest.config.ts",
+      "biome.json",
+      "knip.json",
+      "renovate.json",
+      "bin/**",
+      "scripts/**",
+      "test/**/*.ts",
+      "packages/*/package.json",
+      "packages/*/tsconfig*.json",
+      "packages/*/vitest.config.ts",
+      "packages/*/src/**/*.ts",
+      "apps/*/package.json",
+      "apps/*/tsconfig*.json",
+      "apps/*/vitest.config.ts",
+      "apps/*/src/**/*.ts",
+      "!!**/.agent-state",
+      "!!**/node_modules",
+      "!!**/dist",
+      "!!**/.venv",
+      "!!**/__pycache__",
+      "!!**/.pytest_cache",
+      "!!**/.mypy_cache",
+      "!!**/.ruff_cache",
+      "!!**/coverage"
+    ]
+  },
+  "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },
+  "linter": { "rules": { "preset": "recommended" } }
+}

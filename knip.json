@@ -1,0 +1,27 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "includeEntryExports": true,
+  "ignoreBinaries": ["make"],
+  "workspaces": {
+    ".": {
+      "entry": ["bin/krun.js", "test/**/*.test.ts"],
+      "project": ["bin/**/*.js", "test/**/*.ts"]
+    },
+    "packages/shared": {
+      "entry": ["src/store/migrate.ts"],
+      "project": ["src/**/*.ts"]
+    },
+    "packages/cli": {
+      "entry": ["src/validate.ts"],
+      "project": ["src/**/*.ts"]
+    },
+    "packages/sdk-node": {
+      "entry": ["src/index.ts"],
+      "project": ["src/**/*.ts"]
+    },
+    "apps/*": {
+      "entry": ["src/main.ts"],
+      "project": ["src/**/*.ts"]
+    }
+  }
+}

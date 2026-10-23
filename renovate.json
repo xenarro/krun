@@ -1,0 +1,31 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":pinDigests", "helpers:pinGitHubActionDigests"],
+  "enabledManagers": ["npm", "nodenv", "dockerfile", "github-actions"],
+  "automerge": false,
+  "packageRules": [
+    {
+      "matchManagers": ["npm"],
+      "matchDepTypes": ["dependencies", "devDependencies"],
+      "rangeStrategy": "bump"
+    },
+    {
+      "matchPackageNames": [
+        "effect",
+        "@effect/platform-node",
+        "@effect/vitest",
+        "@effect/opentelemetry"
+      ],
+      "groupName": "effect"
+    },
+    {
+      "matchPackageNames": ["node", "gcr.io/distroless/nodejs26-debian13"],
+      "groupName": "node"
+    },
+    {
+      "matchUpdateTypes": ["major"],
+      "matchDepTypes": ["dependencies"],
+      "dependencyDashboardApproval": true
+    }
+  ]
+}
