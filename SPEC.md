@@ -662,7 +662,7 @@ working at the terminal transition.
 ### 7.1 Function SDKs
 
 Two SDKs implement docs/INTERNAL-API.md: `@krun/sdk` for Node.js 22 or
-newer (`packages/sdk-node`, npm) and `krun` for Python 3.11 or newer
+newer (`sdk/node`, npm; migration from the initial `packages/sdk-node` scaffold is scheduled at the start of PLAN P8.1) and `krun` for Python 3.11 or newer
 (`sdk/python`, PyPI). Neither has runtime dependencies beyond the standard
 library. Both are optional: the contract is plain HTTP.
 

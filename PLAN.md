@@ -86,7 +86,7 @@ Node built-ins for everything else: `node:crypto` for SHA-256, HMAC,
 `node:util` `parseArgs` for the CLI. Written in house, no package: token
 bucket, SSE on `reply.raw`, Lease leader election (a scoped
 Effect layer on `CoordinationV1Api`), the duration grammar (a Zod
-refinement into `Duration`). The SDKs (`packages/sdk-node`, `sdk/python`)
+refinement into `Duration`). The SDKs (`sdk/node`, `sdk/python`)
 have no runtime dependencies and do not use Effect.
 
 Before writing code for a task, load the Claude Code skills docs/STACK.md
@@ -111,7 +111,7 @@ packages/shared/src/health/          Fastify admin plugin: /healthz, /readyz, /m
 packages/shared/src/runtime/         Effect layers: Config, Logger (pino sink), Database, Kube, ObjectStore, Metrics; error-to-envelope mapping
 packages/shared/src/objstore/        presigned PUT and GET, object exists
 packages/shared/src/webhook/         host allowlist, address check with CIDR allowlist, pinned dispatcher, signing
-packages/sdk-node/src/               @krun/sdk: run(), context, local mode
+sdk/node/src/                        @krun/sdk: run(), context, local mode
 packages/cli/src/                    @krun/cli: init, deploy, validate
 packages/cli/templates/node/         function project template
 packages/cli/templates/python/       function project template
@@ -802,7 +802,25 @@ Gate: `krun init` for both languages yields a project whose tests pass and
 whose image builds against vendored packed SDKs; e2e runs one SDK-built
 function per language on kind.
 
-- [ ] P8.1 `packages/sdk-node`: `run(handler)` per SPEC section 7.1 and
+SDK layout correction (owner-approved): both language SDKs belong under
+`sdk/`: Node at `sdk/node`, Python at `sdk/python`. The completed P0.1
+entry records the historical scaffold path `packages/sdk-node`; it is not
+the target layout. Perform the migration at the start of P8.1, before new
+Node SDK behavior, as a separate reviewed structural commit on a typed
+feature branch. Move the existing package with its tests and TypeScript
+configs; keep the npm identity `@krun/sdk` and its public API unchanged.
+Update pnpm workspace membership/lockfile importers, build/test and Knip
+configuration, Docker manifest/copy paths and ignore rules, CI, packing,
+CLI templates, fixtures and active documentation/agent guidance together.
+Do not include `sdk/python` as a pnpm package. Acceptance: a fresh frozen
+install, `make build`, `make check`, current-source container build and
+Node SDK packing pass; packed contents/exports are correct and no active
+configuration references `packages/sdk-node`. Historical progress and
+superseded decision records may retain the old path, explicitly labeled.
+Do not mark P8.1 complete on the move alone; its behavior acceptance below
+still applies.
+
+- [ ] P8.1 `sdk/node`: `run(handler)` per SPEC section 7.1 and
       docs/INTERNAL-API.md, no runtime dependencies, `/internal/v1`, local
       mode (result on stdout, logs and status on stderr), the status send
       gate (latest payload, at most once per second, pending on 429, no
