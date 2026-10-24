@@ -238,7 +238,7 @@ both green.
       `resultUri`, `reportTime`, `observeTime`) and the `Store` interface exactly as SPEC section 6 (`transition`
       takes the optional `event` payload), with error classes `NotFoundError`, `ConflictError`. Acceptance: `tsc --noEmit`
       passes, no implementation yet.
-- [ ] P1.2 Migrations for both dialects with the Kysely `Migrator` and
+- [x] P1.2 Migrations for both dialects with the Kysely `Migrator` and
       `FileMigrationProvider`, one directory per dialect, each migration
       runs raw SQL through `sql` templates; `krun migrate` first reads
       `kysely_migration` and diffs it against the binary's names: unknown
@@ -965,10 +965,13 @@ Gate: all e2e scenarios green; README states measured numbers and the
 
 2026-10-24 P1.1 82d3a69239e728e0954dedf27ea7add2cee021e7 Store model and plain Kysely-compatible table interfaces, sole FULL/BASIC mappers, tagged errors and all 23 Effect Store method contracts; no database implementation. Both independent reviews and repair report no material findings. Task/root tsc --noEmit, 33 focused tests and make check (232 TypeScript/one Python) pass; independent probes pass 512 optional-field combinations, 42 result/state cases and 147 mapper/contract cases. Exact code-head CI https://github.com/xenarro/krun/actions/runs/40072000762 passes all hosted gates in stacked PR #6 against build/release-preconditions, including current-source container build/smoke, generation, Helm, audit and scan. No installed-Kysely query integration or Phase 1 dual-backend gate claimed; actual migrations/Store implementations remain later tasks.
 
+2026-10-24 P1.2 d862527a4dcf6c66f3400dae3850925b42af1485 Forward-only raw-SQL Kysely Migrator/FileMigrationProvider migrations for Postgres and built-in SQLite, scoped production database layers and the DB-only migrate command. Both independent reviews and repair found no material defects. Real temp-file SQLite and digest-pinned Postgres 18 Testcontainers acceptance verifies idempotency, unknown-only warning/zero exit, unknown-plus-pending one exit, rollback, schema isolation and sanitized resource failures. Store suite 61 and make check (263 TypeScript/one Python) pass. Exact code-head CI https://github.com/xenarro/krun/actions/runs/40097891636 passes all hosted gates in stacked PR #7 against feat/store-contract, including frozen install, generated-clean, rebuilt non-root image with actual embedded migration smoke, Helm, audit and scan. D43/D44 preserve transactional SQLite DDL and explicit denial of unused transitive scripts. No layer merged or auto-merged; P1.9 and the full Phase 1 Store-method gate remain open.
+
 Delivery: bootstrap PR #2 merged to main as 3952108982b2fea4b37c9d9677da60ad22c17ca6.
 P0.7 is pushed and green in https://github.com/xenarro/krun/pull/3 (base main), not merged.
-Its required independent repository approval is pending; the stack continues without bypass or auto-merge.
+The stack remains unmerged by instruction; required repository protections still apply and no layer is auto-merged.
 P0.8 code is pushed and green in https://github.com/xenarro/krun/pull/4 (base feat/admin-health-telemetry), not merged.
 P1.1 is pushed and green in https://github.com/xenarro/krun/pull/6 (base build/release-preconditions), not merged.
-Next task: P1.2 migrations from the committed, verified P1.1 lineage. Install the approved Kysely dependency through the normal security/approval path and verify its actual APIs before executable SQL work; do not bypass a failed gate or infer backend acceptance from structural table types. P0.9 remains independently owner-blocked and unchecked; preserve its release branch and require nonsecret ownership/name/publisher evidence before release execution.
+P1.2 is pushed and green in https://github.com/xenarro/krun/pull/7 (base feat/store-contract), not merged.
+Next task: P1.3 createRun/idempotency from the committed, verified P1.2 lineage; fork a new typed feature branch only when that new feature begins. The full dual-backend Store-method gate remains pending. P0.9 remains independently owner-blocked and unchecked; preserve its release branch and require nonsecret ownership/name/publisher evidence before release execution.
 Full Phase 0 and v1 acceptance remain incomplete.
