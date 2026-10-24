@@ -246,6 +246,12 @@ both green.
       pending exit 1. Acceptance: migrate up twice is idempotent on both; a
       database with one extra migration recorded yields exit 0 and the
       warning; extra plus pending yields exit 1.
+      Implementation prerequisite: P1.2 owns the minimal `node:sqlite`
+      adapter, immediate-transaction driver and scoped database open/close
+      plumbing needed to execute its SQLite migrations. P1.9 retains its
+      complete WAL/pragmas, second-connection contention and Store gate;
+      the earlier plumbing does not close P1.9. The migration command uses
+      DB-only configuration, not gateway/scheduler namespace acquisition.
 - [ ] P1.3 `createRun` with idempotency: composite unique index on
       (`created_by`, `function_name`, `idempotency_key`), `request_hash` the
       SHA-256 of the RFC 8785 serialisation of `{ input, priority,

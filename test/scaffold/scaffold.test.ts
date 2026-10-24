@@ -24,7 +24,8 @@ function run(args: string[], cwd = root) {
 }
 
 describe("scaffold acceptance", () => {
-  it.each(["gateway", "scheduler", "migrate", "validate"])(
+  // migrate has real database/exit-code coverage in shared's migration suite.
+  it.each(["gateway", "scheduler", "validate"])(
     "dispatches finite %s without production configuration",
     (command) => {
       const result = run([command], tmpdir());

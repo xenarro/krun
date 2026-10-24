@@ -76,6 +76,12 @@ The container copies the patch before both frozen installs.
 | `pg` | `^8.23` | Postgres driver for Kysely's `PostgresDialect`; a dedicated client for `LISTEN` | Pool size 5 plus the `LISTEN` client; `query_timeout` 10000. |
 | `node:sqlite` | built into Node 26 | SQLite in embedded mode | Release candidate in Node 26. Kysely reaches it through an in-house `SqliteDialect`-compatible adapter (`packages/shared/src/store/sqlite/dialect.ts`, about 40 lines over `Database.prepare`); synchronous; transactions open with `begin immediate`. |
 
+SPEC D43 requires the in-house SQLite adapter to override
+`SqliteAdapter.supportsTransactionalDdl` to `true`, alongside the
+`begin immediate` driver. Kysely 0.29.7 otherwise leaves partial schema
+changes after a failed multi-statement migration. Preserve its existing
+single-connection mutex and normal migration-history validation.
+
 Alternatives not used: `better-sqlite3` (native addon); Drizzle ORM (1.0 still a release candidate; its Effect
 integration is beta); `@effect/sql-kysely` (supports Effect 3 and
 Kysely 0.28 only); `@effect/sql-pg` with `@effect/sql-sqlite-node` (Effect
@@ -176,6 +182,12 @@ for the CLI.
 | `@types/pg` | latest | |
 | `knip` | `^6.42` | unused files, exports and dependencies; runs in `make check` |
 | `publint`, `@arethetypeswrong/cli` | `^0.3`, `^0.18` | package export checks for `@krun/sdk` and `@krun/cli` before publish (P9.5) |
+
+Testcontainers' transitive `cpu-features`, `ssh2` and `protobufjs` install
+scripts are explicitly denied by pnpm 12's `allowBuilds` map (SPEC D44).
+The SSH/CPU accelerators are optional and protobufjs only warns about
+version notation; local Docker/Postgres tests require none of these scripts.
+Preserve the deny rules, strict release-age policy and disabled automatic peers.
 
 Editor only, never in CI: `@effect/tsgo` (Effect diagnostics on the
 TypeScript 7 language server; alpha).

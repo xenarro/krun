@@ -150,6 +150,10 @@ export const SchedulerEnv = all
 export type GatewayConfig = z.output<typeof GatewayEnv>;
 export type SchedulerConfig = z.output<typeof SchedulerEnv>;
 
+const DatabaseEnv = all
+  .pick({ KRUN_DB_MODE: true, KRUN_DB_DSN: true, KRUN_DB_PATH: true })
+  .superRefine(validateDatabase);
+
 const FunctionCeilingsEnv = all.pick({
   KRUN_MAX_QUEUED: true,
   KRUN_MAX_ACTIVE_DEADLINE: true,
@@ -170,6 +174,7 @@ const parse = <S extends z.ZodType>(
     return Effect.fail(new ConfigInvalid({ variable: String(variable) }));
   });
 
+export const parseDatabaseConfig = (env: Environment) => parse(DatabaseEnv, env);
 export const parseGatewayConfig = (env: Environment) => parse(GatewayEnv, env);
 export const parseSchedulerConfig = (env: Environment) => parse(SchedulerEnv, env);
 export const parseFunctionCeilings = (env: Environment) => parse(FunctionCeilingsEnv, env);
