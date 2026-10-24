@@ -5,6 +5,8 @@
 !pnpm-workspace.yaml
 !.node-version
 !tsconfig.base.json
+!patches/
+!patches/**
 !bin/
 !bin/krun.js
 !packages/

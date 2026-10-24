@@ -61,6 +61,13 @@ exact versions.
 | `@fastify/swagger` | `^9.9` | OpenAPI 3.1 documents generated from the routes into `docs/api/` | Generation only; no UI is served. |
 | `undici` | `^8.12` | webhook delivery through a pinned-address `Agent` (`connect.lookup`) | Also the transport under `@kubernetes/client-node`. |
 
+Fastify's pino dependency currently resolves `thread-stream@4.2.0`. Its
+published `TransferListItem` declaration is incompatible with Node 26 types.
+SPEC D39 records the tracked, declaration-only pnpm patch deriving that type
+from `Worker.postMessage`; runtime JavaScript is unchanged. Do not replace
+this with `skipLibCheck`, a Node-type downgrade or a supply-chain exception.
+The container copies the patch before both frozen installs.
+
 ### 2.3 Data
 
 | Package | Range | Use | Rules |
@@ -101,7 +108,7 @@ Schema, against principle 2). Revisit when `effect/sql` is stable.
 | Package | Range | Use | Rules |
 |---|---|---|---|
 | `@effect/opentelemetry` | `~4.0.6` | Effect spans and metrics to OpenTelemetry (`NodeSdk.layer`) | Same version as `effect`. |
-| `@opentelemetry/api` | `^1.10` | | peer of the above |
+| `@opentelemetry/api` | `~1.9.0` | | SDK 2.12 peers require `<1.10.0`; a caret on 1.9 would still admit 1.10 (SPEC D38). |
 | `@opentelemetry/sdk-trace-node`, `@opentelemetry/sdk-trace-base` | `^2.12` | tracer provider, batch span processor | Stay on 2.x: `@effect/opentelemetry` 4.0.6 peers on `<3`. |
 | `@opentelemetry/sdk-metrics`, `@opentelemetry/resources` | `^2.12` | meter provider, service resource | 2.x, same reason. |
 | `@opentelemetry/exporter-prometheus` | `~0.223` | `/metrics` on the admin listener | 0.2xx line (peer `<0.300`); mounted on the admin Fastify instance, not its own port. |

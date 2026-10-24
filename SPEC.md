@@ -662,7 +662,7 @@ working at the terminal transition.
 ### 7.1 Function SDKs
 
 Two SDKs implement docs/INTERNAL-API.md: `@krun/sdk` for Node.js 22 or
-newer (`packages/sdk-node`, npm) and `krun` for Python 3.11 or newer
+newer (`sdk/node`, npm; migration from the initial `packages/sdk-node` scaffold is scheduled at the start of PLAN P8.1) and `krun` for Python 3.11 or newer
 (`sdk/python`, PyPI). Neither has runtime dependencies beyond the standard
 library. Both are optional: the contract is plain HTTP.
 
@@ -1539,3 +1539,5 @@ the number is unused.
 | D35 | Effect 4 is the foundation of every process (services, layers, typed errors, scopes, schedules, streams, clock) with Fastify 5 as the HTTP engine inside it; Zod 4 is the only schema language for krun's own schemas and generates the CRD and OpenAPI; Ajv compiles only user `inputSchema`; time comes from Effect `Clock`, `DateTime`, `Duration`; tests run on Vitest with `@effect/vitest` | every concurrency rule in section 8 maps to an Effect primitive and every timer is testable with `TestClock`; one schema source for routes, CRD, config and OpenAPI |
 | D36 | Data through Kysely on `pg` and Node's built-in `node:sqlite`; telemetry through OpenTelemetry (`@effect/opentelemetry`: Prometheus `/metrics`, OTLP traces when configured); Kubernetes 1.33 minimum with Litestream as a native sidecar, a digest ValidatingAdmissionPolicy, optional user namespaces and an optional Gateway API HTTPRoute; Postgres 16 minimum, CI on 18 | no native addons in the image; a run is traceable across gateway, store and Kubernetes; image policy enforced by the API server |
 | D37 | Vite 8 is a development-only dependency supplying Vitest 5's required peer; automatic peer installation stays disabled and process entrypoints import `@effect/platform-node/NodeRuntime` directly | Vitest 5 cannot start or type-check without Vite; disabling automatic peers avoids installing unused Redis support from the platform-node barrel; no Vite or Redis enters the runtime image |
+| D38 | Pin the OpenTelemetry API range to `~1.9.0` with the allowed stable SDK 2.12 / experimental 0.223 family, and import `@effect/opentelemetry/NodeSdk` directly | SDK 2.12 declares API `<1.10.0`; `^1.9.0` would still admit incompatible 1.10. The browser SDK is an optional peer, not a Node runtime dependency. Declared peer compatibility does not waive release-age checks or prove installation/runtime acceptance. |
+| D39 | Apply a tracked pnpm declaration-only patch to Fastify/pino's transitive `thread-stream@4.2.0`, deriving its transfer-list type from `Worker.postMessage` | Its published declaration references `worker_threads.TransferListItem`, removed from Node 26 types. The installed graph otherwise fails strict compilation. Keep library checking, package integrity and release-age policy enabled, change no runtime JavaScript, and include the patch before both container installs; remove the patch when upstream supplies the compatible declaration. |

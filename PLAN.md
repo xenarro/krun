@@ -86,7 +86,7 @@ Node built-ins for everything else: `node:crypto` for SHA-256, HMAC,
 `node:util` `parseArgs` for the CLI. Written in house, no package: token
 bucket, SSE on `reply.raw`, Lease leader election (a scoped
 Effect layer on `CoordinationV1Api`), the duration grammar (a Zod
-refinement into `Duration`). The SDKs (`packages/sdk-node`, `sdk/python`)
+refinement into `Duration`). The SDKs (`sdk/node`, `sdk/python`)
 have no runtime dependencies and do not use Effect.
 
 Before writing code for a task, load the Claude Code skills docs/STACK.md
@@ -111,7 +111,7 @@ packages/shared/src/health/          Fastify admin plugin: /healthz, /readyz, /m
 packages/shared/src/runtime/         Effect layers: Config, Logger (pino sink), Database, Kube, ObjectStore, Metrics; error-to-envelope mapping
 packages/shared/src/objstore/        presigned PUT and GET, object exists
 packages/shared/src/webhook/         host allowlist, address check with CIDR allowlist, pinned dispatcher, signing
-packages/sdk-node/src/               @krun/sdk: run(), context, local mode
+sdk/node/src/                        @krun/sdk: run(), context, local mode
 packages/cli/src/                    @krun/cli: init, deploy, validate
 packages/cli/templates/node/         function project template
 packages/cli/templates/python/       function project template
@@ -192,7 +192,7 @@ Gate: `make check` green in CI on an empty but wired repository.
       order, `make check` before every commit, no non-goals, no
       Co-Authored-By trailer, TypeScript on Node.js 26; edit only on drift.
       Acceptance: the rules match.
-- [ ] P0.7 Admin listener plugin in `packages/shared/src/health`:
+- [x] P0.7 Admin listener plugin in `packages/shared/src/health`:
       `/healthz`, `/readyz`, `/metrics` on `KRUN_ADMIN_LISTEN_ADDR` for both
       processes (a readiness route over an Effect `Ref`; the OpenTelemetry
       Prometheus exporter serving `/metrics`; the `Telemetry` layer with OTLP
@@ -802,7 +802,25 @@ Gate: `krun init` for both languages yields a project whose tests pass and
 whose image builds against vendored packed SDKs; e2e runs one SDK-built
 function per language on kind.
 
-- [ ] P8.1 `packages/sdk-node`: `run(handler)` per SPEC section 7.1 and
+SDK layout correction (owner-approved): both language SDKs belong under
+`sdk/`: Node at `sdk/node`, Python at `sdk/python`. The completed P0.1
+entry records the historical scaffold path `packages/sdk-node`; it is not
+the target layout. Perform the migration at the start of P8.1, before new
+Node SDK behavior, as a separate reviewed structural commit on a typed
+feature branch. Move the existing package with its tests and TypeScript
+configs; keep the npm identity `@krun/sdk` and its public API unchanged.
+Update pnpm workspace membership/lockfile importers, build/test and Knip
+configuration, Docker manifest/copy paths and ignore rules, CI, packing,
+CLI templates, fixtures and active documentation/agent guidance together.
+Do not include `sdk/python` as a pnpm package. Acceptance: a fresh frozen
+install, `make build`, `make check`, current-source container build and
+Node SDK packing pass; packed contents/exports are correct and no active
+configuration references `packages/sdk-node`. Historical progress and
+superseded decision records may retain the old path, explicitly labeled.
+Do not mark P8.1 complete on the move alone; its behavior acceptance below
+still applies.
+
+- [ ] P8.1 `sdk/node`: `run(handler)` per SPEC section 7.1 and
       docs/INTERNAL-API.md, no runtime dependencies, `/internal/v1`, local
       mode (result on stdout, logs and status on stderr), the status send
       gate (latest payload, at most once per second, pending on 429, no
@@ -933,6 +951,10 @@ Gate: all e2e scenarios green; README states measured numbers and the
 2026-10-23 P0.5 d07922c 95 config tests and independent boundary/layer reviews passed; full make check green.
 2026-10-23 P0.6 d07922c CLAUDE rules match required PLAN/SPEC constraints; no rule edit needed.
 
-Delivery: implementation commit d07922c is pushed in PR #2; hosted CI is green.
-Merge to protected main awaits the required independent repository approval.
-Next task: P0.7. Full Phase 0 and v1 acceptance remain incomplete.
+2026-10-23 P0.7 afc0375308920b271dd44340db6523a15ac120cc Scoped admin health and real Prometheus/conditional OTLP; P07-C1/C2 repaired. 43 health/runtime tests and make check (162 TypeScript/one Python) pass. Reconciled head 9f870d460898ac63e9221b497a9ce5887611e006 passed hosted CI https://github.com/xenarro/krun/actions/runs/40019565091 in PR #3; protected-main approval remains pending.
+
+Delivery: bootstrap PR #2 merged to main as 3952108982b2fea4b37c9d9677da60ad22c17ca6.
+P0.7 is pushed and green in https://github.com/xenarro/krun/pull/3 (base main), not merged.
+Its required independent repository approval is pending; the stack continues without bypass or auto-merge.
+Next task: P0.8, on feat/function-schema-crd forked from the committed, verified P0.7 head.
+Full Phase 0 and v1 acceptance remain incomplete.
