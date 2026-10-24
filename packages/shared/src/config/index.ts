@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { Context, Data, Duration, Effect, Layer } from "effect";
 import ipaddr from "ipaddr.js";
 import { z } from "zod";
-import { durationStringSchema } from "./duration.js";
+import { durationStringSchema, durationToMilliseconds } from "./duration.js";
 
 type Environment = Readonly<Record<string, string | undefined>>;
 
@@ -25,10 +25,8 @@ const csv = z.string().transform((value) =>
     .filter(Boolean),
 );
 const duration = durationStringSchema.transform((value, ctx) => {
-  const unit = value.endsWith("ms") ? "ms" : value.slice(-1);
-  const scale = { ms: 1, s: 1000, m: 60000, h: 3600000 };
-  const millis = Number(value.slice(0, -unit.length)) * scale[unit as keyof typeof scale];
-  if (!Number.isSafeInteger(millis)) {
+  const millis = durationToMilliseconds(value);
+  if (millis === undefined) {
     ctx.addIssue({ code: "custom", message: "duration is not representable" });
     return z.NEVER;
   }
