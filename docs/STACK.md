@@ -94,7 +94,7 @@ Schema, against principle 2). Revisit when `effect/sql` is stable.
 
 | Package | Range | Use | Rules |
 |---|---|---|---|
-| `ajv` | `^8.20` | compile Function `inputSchema` (`Ajv2020`, `strict: true`, no `loadSchema`) | Never for krun's own schemas. |
+| `ajv` | `^8.20` | compile Function `inputSchema` (`Ajv2020`, `strict: true`, no `loadSchema`) | Never for krun's own application/runtime schema validation. Development-only tests may evaluate generated editor JSON Schema for standards conformance (SPEC D41); its sole definition remains Zod. |
 | `ajv-formats` | `^3.0` | `format` keywords in `inputSchema` | |
 | `uuid` | `^14.0` | UUIDv7 run, delivery and request ids | `v7({ msecs })` with the time from `Clock`, so ids are deterministic under `TestClock`. |
 | `canonicalize` | `^5.1` | RFC 8785 (JCS) serialisation for `request_hash` | Reference implementation by the RFC's author. |

@@ -200,7 +200,7 @@ Gate: `make check` green in CI on an empty but wired repository.
       when the database check exceeds 2 seconds, and from the start of
       shutdown. Acceptance: `@effect/vitest` test with Fastify `inject` and `TestClock`,
       including a stalled database check.
-- [ ] P0.8 `packages/shared/src/functions/schema.ts`: Function spec as a Zod
+- [x] P0.8 `packages/shared/src/functions/schema.ts`: Function spec as a Zod
       `strictObject` including `runAsUser`, `runAsGroup`, `heartbeatTimeout`, the
       duration pattern; `scripts/gen-crd.ts` (`z.toJSONSchema`, target `openapi-3.0`) writes
       the plain manifest
@@ -953,8 +953,11 @@ Gate: all e2e scenarios green; README states measured numbers and the
 
 2026-10-23 P0.7 afc0375308920b271dd44340db6523a15ac120cc Scoped admin health and real Prometheus/conditional OTLP; P07-C1/C2 repaired. 43 health/runtime tests and make check (162 TypeScript/one Python) pass. Reconciled head 9f870d460898ac63e9221b497a9ce5887611e006 passed hosted CI https://github.com/xenarro/krun/actions/runs/40019565091 in PR #3; protected-main approval remains pending.
 
+2026-10-24 P0.8 263c22b60108d5b022767cefd8eb30fa36c10719 Canonical strict Function schemas/types and native CRD/Helm/editor generation; P08-C1/C2 repaired and reviewer-authored regressions pass. 37 focused tests, make check (199 TypeScript/one Python), stable committed generation and Helm pass. Repaired-source Kubernetes acceptance passed 75 server checks; callback parity passed 317 cases. Exact code-head CI https://github.com/xenarro/krun/actions/runs/40067784483 passed all gates in stacked PR #4 against feat/admin-health-telemetry; no layer merged or auto-merged.
+
 Delivery: bootstrap PR #2 merged to main as 3952108982b2fea4b37c9d9677da60ad22c17ca6.
 P0.7 is pushed and green in https://github.com/xenarro/krun/pull/3 (base main), not merged.
 Its required independent repository approval is pending; the stack continues without bypass or auto-merge.
-Next task: P0.8, on feat/function-schema-crd forked from the committed, verified P0.7 head.
+P0.8 code is pushed and green in https://github.com/xenarro/krun/pull/4 (base feat/admin-health-telemetry), not merged.
+Next task: P0.9 release ownership/OIDC preconditions and dry-run workflow, from the committed, verified P0.8 lineage. If actual owner-only prerequisites are unresolved, record evidence and take independent P1.1 work without claiming P0.9 accepted.
 Full Phase 0 and v1 acceptance remain incomplete.

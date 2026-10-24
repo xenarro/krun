@@ -1,11 +1,11 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "includeEntryExports": true,
-  "ignoreBinaries": ["make"],
+  "ignoreBinaries": ["make", "helm"],
   "workspaces": {
     ".": {
-      "entry": ["bin/krun.js", "test/**/*.test.ts"],
-      "project": ["bin/**/*.js", "test/**/*.ts"]
+      "entry": ["bin/krun.js", "test/**/*.test.ts", "scripts/gen-crd.ts"],
+      "project": ["bin/**/*.js", "test/**/*.ts", "scripts/**/*.ts"]
     },
     "packages/shared": {
       "entry": ["src/store/migrate.ts"],
