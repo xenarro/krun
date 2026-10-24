@@ -33,6 +33,7 @@
     "ipaddr.js": "^2.5",
     "kysely": "^0.29.7",
     "pg": "^8.23.1",
+    "uuid": "^14.0.3",
     "zod": "^4.6"
   },
   "devDependencies": {
