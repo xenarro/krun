@@ -1,3 +1,4 @@
+import type { Generated } from "kysely";
 import type {
   DeliveryState,
   FailureReason,
@@ -14,8 +15,9 @@ type JsonColumn<Value, Serialized extends boolean> = Serialized extends true ? s
 type StoredRuntimeStatus = Omit<RuntimeStatus, "at"> & { at: string };
 type StoredJobStatus = Omit<JobStatus, "observedAt"> & { observedAt: string };
 
-// Kysely consumes plain table interfaces. No generated ids/time columns:
-// callers supply ids, timestamps and numeric defaults explicitly. Driver
+// Kysely consumes plain table interfaces. Domain ids/times are application-issued;
+// D46 adds only the SQLite-generated storage cursor, never a public/domain id.
+// Callers supply numeric defaults explicitly. Driver
 // encoding/decoding is a later dialect-adapter responsibility, not wire mapping.
 interface RunsTable<Timestamp, Serialized extends boolean> {
   id: string;
@@ -73,4 +75,6 @@ interface Tables<Timestamp, Serialized extends boolean> {
 }
 
 export type PostgresTables = Tables<Date, false>;
-export type SqliteTables = Tables<string, true>;
+export type SqliteTables = Omit<Tables<string, true>, "run_events"> & {
+  run_events: RunEventsTable<string, true> & { rowid: Generated<number> };
+};

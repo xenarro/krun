@@ -592,6 +592,20 @@ kind `job_status`, others `state`; runtime status reaches SSE clients there
 through the handler's 1 second re-read. Both modes keep a 1 second poll
 fallback in the wait and SSE handlers.
 
+SQLite `run_events` additionally declares an internal `rowid INTEGER PRIMARY KEY
+AUTOINCREMENT` alias. Its committed cursor allocation must not reuse deleted
+rowids: retention may delete the highest event or empty the table while a
+subscriber remains active. The existing strict `rowid > last` query, initial
+history skip, one-second interval and no-replay behavior are unchanged. This
+integer is storage-only, not a run identifier, timestamp or public field;
+application-issued run ids and event timestamps remain unchanged. Forward
+migration `0002_event_rowid` atomically rebuilds the SQLite event table,
+preserving every existing rowid and all six shared columns, foreign-key cascade
+and index. SQLite's internal `sqlite_sequence` maintains the allocator across
+retention, incremental vacuum and connection restarts; application code does not
+reset or update it. Previous code inserting the six shared columns continues to
+work. Postgres schema and behavior are unchanged (D46).
+
 Postgres pool: 5 connections per process, plus one dedicated client for
 `LISTEN` outside the pool.
 
@@ -1594,3 +1608,4 @@ the number is unused.
 | D43 | The in-house node:sqlite Kysely adapter declares transactional DDL support, retaining single-connection serialization and `begin immediate` | Kysely 0.29.7's default SQLite adapter declares it false; a reproduced late initial-migration failure left earlier tables behind. Node 26 SQLite supports transactional schema changes, so the adapter must let Migrator atomically roll back DDL and migration history. This changes no public contract, dependency policy or migration-history checks. |
 | D44 | Explicitly deny the dev-only Testcontainers transitive install scripts for `cpu-features`, `ssh2` and `protobufjs` through pnpm 12 `allowBuilds` | Parent-authorized inspection found optional native SSH/CPU acceleration and a dependency-notation warning, none required by local Docker/Postgres tests. A frozen install and real Testcontainers acceptance validate the script-free path; no native addon, global script bypass, release-age exception or automatic peer installation is enabled. |
 | D45 | Build implemented Store methods as typed Database-backed factories until the full declared Store can be assembled; do not stub later methods. Keep JCS request hashing shared and separate from `createRun(NewRun)` | P1.3 is the first method slice and NewRun already carries application-issued id, time and request_hash. A shared helper hashes only API 3.3's fixed input/priority/callback projection (absent priority as 0 and absent callback as null), before applying the Function's default callback; requestId and wait stay excluded. `makeCreateRun` supplies exactly StoreShape's createRun signature; later tasks compose real methods into the unchanged Store service. This changes no public interface, idempotency policy or remaining acceptance gates. |
+| D46 | SQLite event rowids are a storage-only `INTEGER PRIMARY KEY AUTOINCREMENT` alias, introduced by compatible forward migration `0002_event_rowid` without rewriting `0001_init` | Independent P1.8 probes reproduce a live strict rowid cursor missing new transitions after normal retention deletes the old maximum/all events. SQLite documents that ordinary rowids may be reused, while AUTOINCREMENT preserves committed allocation in `sqlite_sequence` (https://www.sqlite.org/autoinc.html). Accept its per-insert bookkeeping cost for this required invariant. Atomically copy existing rowids and all six shared event columns, preserving index/cascade and old writers; test rollback, restart, empty-table and deleted-maximum retention with no replay. No cursor reset, public API/security/non-goal change, new dependency or Postgres change. |
