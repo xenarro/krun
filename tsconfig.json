@@ -1,5 +1,5 @@
 {
   "extends": "./tsconfig.base.json",
-  "compilerOptions": { "noEmit": true },
-  "include": ["vitest.config.ts", "test/scaffold/**/*.test.ts"]
+  "compilerOptions": { "noEmit": true, "allowImportingTsExtensions": true },
+  "include": ["vitest.config.ts", "test/scaffold/**/*.test.ts", "scripts/**/*.ts"]
 }
