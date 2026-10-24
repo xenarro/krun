@@ -252,7 +252,7 @@ both green.
       complete WAL/pragmas, second-connection contention and Store gate;
       the earlier plumbing does not close P1.9. The migration command uses
       DB-only configuration, not gateway/scheduler namespace acquisition.
-- [ ] P1.3 `createRun` with idempotency: composite unique index on
+- [x] P1.3 `createRun` with idempotency: composite unique index on
       (`created_by`, `function_name`, `idempotency_key`), `request_hash` the
       SHA-256 of the RFC 8785 serialisation of `{ input, priority,
       callback }`, returns the existing run on same key and hash,
@@ -967,11 +967,14 @@ Gate: all e2e scenarios green; README states measured numbers and the
 
 2026-10-24 P1.2 d862527a4dcf6c66f3400dae3850925b42af1485 Forward-only raw-SQL Kysely Migrator/FileMigrationProvider migrations for Postgres and built-in SQLite, scoped production database layers and the DB-only migrate command. Both independent reviews and repair found no material defects. Real temp-file SQLite and digest-pinned Postgres 18 Testcontainers acceptance verifies idempotency, unknown-only warning/zero exit, unknown-plus-pending one exit, rollback, schema isolation and sanitized resource failures. Store suite 61 and make check (263 TypeScript/one Python) pass. Exact code-head CI https://github.com/xenarro/krun/actions/runs/40097891636 passes all hosted gates in stacked PR #7 against feat/store-contract, including frozen install, generated-clean, rebuilt non-root image with actual embedded migration smoke, Helm, audit and scan. D43/D44 preserve transactional SQLite DDL and explicit denial of unused transitive scripts. No layer merged or auto-merged; P1.9 and the full Phase 1 Store-method gate remain open.
 
+2026-10-24 P1.3 8a189d466286bb5721c916b7db5011cc70963509 Database-backed createRun factory uses the composite partial unique index and one transaction for queued run/event insertion and Postgres notify. Both independent reviews found the same API3.3 fingerprint-default defect; repair reproduces and resolves P13-C1/P13-CONTRACT-1 with priority=0/callback=null normalization before Function callback fallback, preserving the supplied NewRun hash contract. Real temp-file SQLite/Postgres18 acceptance covers20 concurrent duplicates including mixed omitted/explicit-zero requests,one run/event,reordered JSON replay,genuine hash conflicts,owner/function scope,rollback,current-row decoding and committed notifications. Store suite87 and make check (289 TypeScript/one Python) pass. Exact code-head CI https://github.com/xenarro/krun/actions/runs/40102991839 passes all hosted gates in stacked PR #8 against feat/store-migrations, including frozen install,generated-clean,rebuilt non-root image/migration smoke,Helm,audit and scan. Local rebuilt current-source image additionally passes compiled both-dialect normalized golden/replay/concurrency integration. D45 records real incremental factories without later-method stubs. No layer merged or auto-merged; full Store assembly,P1.4-P1.11 and the complete Phase1 gate remain open.
+
 Delivery: bootstrap PR #2 merged to main as 3952108982b2fea4b37c9d9677da60ad22c17ca6.
 P0.7 is pushed and green in https://github.com/xenarro/krun/pull/3 (base main), not merged.
 The stack remains unmerged by instruction; required repository protections still apply and no layer is auto-merged.
 P0.8 code is pushed and green in https://github.com/xenarro/krun/pull/4 (base feat/admin-health-telemetry), not merged.
 P1.1 is pushed and green in https://github.com/xenarro/krun/pull/6 (base build/release-preconditions), not merged.
 P1.2 is pushed and green in https://github.com/xenarro/krun/pull/7 (base feat/store-contract), not merged.
-Next task: P1.3 createRun/idempotency from the committed, verified P1.2 lineage; fork a new typed feature branch only when that new feature begins. The full dual-backend Store-method gate remains pending. P0.9 remains independently owner-blocked and unchecked; preserve its release branch and require nonsecret ownership/name/publisher evidence before release execution.
+P1.3 is pushed and green in https://github.com/xenarro/krun/pull/8 (base feat/store-migrations), not merged.
+Next task: P1.4 run leasing, scheduling and queue/state counts from the committed, verified P1.3 lineage; fork a new typed feature branch only when that new feature begins. The full dual-backend Store-method gate remains pending. P0.9 remains independently owner-blocked and unchecked; preserve its release branch and require nonsecret ownership/name/publisher evidence before release execution.
 Full Phase 0 and v1 acceptance remain incomplete.
