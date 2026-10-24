@@ -283,6 +283,9 @@ importers:
       '@opentelemetry/semantic-conventions':
         specifier: ^1.43
         version: 1.43.0
+      canonicalize:
+        specifier: ^5.1.0
+        version: 5.1.0
       effect:
         specifier: ~4.0.6
         version: 4.0.6
@@ -1274,6 +1277,11 @@ packages:
   byline@5.0.0:
     resolution: {integrity: sha512-s6webAy+R4SR8XVuJWt2V2rGvhnrhxN+9S15GNuTK3wKPOXFF6RNc+8ug2XhH+2s4f+uudG4kUVYmYOQWL2g0Q==}
     engines: {node: '>=0.10.0'}
+
+  canonicalize@5.1.0:
+    resolution: {integrity: sha512-bab9+WefZljqQ8jT0qRwVmTyzAUU63K97QIQD3agynIBrb6sa5M2eAy8Hv8K3p4V9+ONVYZKtGYl4Dg+/5Gumw==}
+    engines: {node: '>=22'}
+    hasBin: true
 
   chai@6.3.0:
     resolution: {integrity: sha512-XWAtwJ6OHO+tj0EKCs0Y2UamnyOxseZWltU4x2U2wh8g4AigdjwvtUjvLP2tqkA/avxHEtzxNaqGq/YGNwckKg==}
@@ -2877,6 +2885,8 @@ snapshots:
     optional: true
 
   byline@5.0.0: {}
+
+  canonicalize@5.1.0: {}
 
   chai@6.3.0: {}
 
