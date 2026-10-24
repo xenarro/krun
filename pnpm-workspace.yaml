@@ -4,6 +4,13 @@ packages:
 
 autoInstallPeers: false
 
+# Testcontainers' SSH accelerators are optional; protobufjs only warns about
+# version notation. Keep all three install scripts disabled explicitly.
+allowBuilds:
+  cpu-features: false
+  ssh2: false
+  protobufjs: false
+
 minimumReleaseAgeStrict: true
 minimumReleaseAgeExclude:
   - effect@4.0.6
