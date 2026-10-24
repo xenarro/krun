@@ -261,7 +261,7 @@ both green.
       Acceptance: contract test with concurrent duplicate creates yields
       exactly one row and one event; a duplicate with reordered JSON keys
       returns the same row.
-- [ ] P1.4 `claimQueued`, `releaseLease`, `setJobToken`, `markScheduled`
+- [x] P1.4 `claimQueued`, `releaseLease`, `setJobToken`, `markScheduled`
       (boolean; sets `scheduled_at`, appends a row, notifies),
       `countByState`, `countQueued`, `countQueuedBy`, `listByState` with
       the shared literal predicate, lease expiry semantics. Acceptance:
@@ -969,6 +969,8 @@ Gate: all e2e scenarios green; README states measured numbers and the
 
 2026-10-24 P1.3 8a189d466286bb5721c916b7db5011cc70963509 Database-backed createRun factory uses the composite partial unique index and one transaction for queued run/event insertion and Postgres notify. Both independent reviews found the same API3.3 fingerprint-default defect; repair reproduces and resolves P13-C1/P13-CONTRACT-1 with priority=0/callback=null normalization before Function callback fallback, preserving the supplied NewRun hash contract. Real temp-file SQLite/Postgres18 acceptance covers20 concurrent duplicates including mixed omitted/explicit-zero requests,one run/event,reordered JSON replay,genuine hash conflicts,owner/function scope,rollback,current-row decoding and committed notifications. Store suite87 and make check (289 TypeScript/one Python) pass. Exact code-head CI https://github.com/xenarro/krun/actions/runs/40102991839 passes all hosted gates in stacked PR #8 against feat/store-migrations, including frozen install,generated-clean,rebuilt non-root image/migration smoke,Helm,audit and scan. Local rebuilt current-source image additionally passes compiled both-dialect normalized golden/replay/concurrency integration. D45 records real incremental factories without later-method stubs. No layer merged or auto-merged; full Store assembly,P1.4-P1.11 and the complete Phase1 gate remain open.
 
+2026-10-24 P1.4 cda51a97494f71cc00748e10fbe5fbf6d302a830 All eight real leasing/scheduling/query methods implemented under D45 without future stubs: claimQueued,releaseLease,setJobToken,markScheduled,countByState,countQueued,countQueuedBy,listByState. Both independent reviews and no-defect repair verify unchanged accepted source. Real temp-file SQLite/Postgres18 contracts prove disjoint live claims,strict Clock-driven expiry/reclaim,priority/creation selection,release/token idempotency,scheduled CAS/event timestamp/lease clearing,stale cancellation,rollback including deferred-commit notify failure,scoped active/queue counts,list filtering and sanitized errors/spans. Exact5000-terminal/50-active ANALYZE/SET LOCAL/EXPLAIN names runs_active_idx.29 focused,116 Store and make check (318 TypeScript/one Python) pass. Exact code-head CI https://github.com/xenarro/krun/actions/runs/40106782768 passes all hosted gates in stacked PR #9 against feat/store-create-run,including frozen install,generated-clean,rebuilt non-root image/migration smoke,Helm,audit and scan. Local immutable image additionally verifies all eight compiled methods on both dialects plus prior creation/migration integration,11 current emitted hashes and9 phases. No layer merged or auto-merged; full Store assembly,P1.5-P1.11 and complete Phase1 acceptance remain open.
+
 Delivery: bootstrap PR #2 merged to main as 3952108982b2fea4b37c9d9677da60ad22c17ca6.
 P0.7 is pushed and green in https://github.com/xenarro/krun/pull/3 (base main), not merged.
 The stack remains unmerged by instruction; required repository protections still apply and no layer is auto-merged.
@@ -976,5 +978,6 @@ P0.8 code is pushed and green in https://github.com/xenarro/krun/pull/4 (base fe
 P1.1 is pushed and green in https://github.com/xenarro/krun/pull/6 (base build/release-preconditions), not merged.
 P1.2 is pushed and green in https://github.com/xenarro/krun/pull/7 (base feat/store-contract), not merged.
 P1.3 is pushed and green in https://github.com/xenarro/krun/pull/8 (base feat/store-migrations), not merged.
-Next task: P1.4 run leasing, scheduling and queue/state counts from the committed, verified P1.3 lineage; fork a new typed feature branch only when that new feature begins. The full dual-backend Store-method gate remains pending. P0.9 remains independently owner-blocked and unchecked; preserve its release branch and require nonsecret ownership/name/publisher evidence before release execution.
+P1.4 is pushed and green in https://github.com/xenarro/krun/pull/9 (base feat/store-create-run), not merged.
+Next task: P1.5 compare-and-set transitions and atomic terminal deliveries from the committed, verified P1.4 lineage; fork a new typed feature branch only when that new feature begins. The full dual-backend Store-method gate remains pending. P0.9 remains independently owner-blocked and unchecked; preserve its release branch and require nonsecret ownership/name/publisher evidence before release execution.
 Full Phase 0 and v1 acceptance remain incomplete.
