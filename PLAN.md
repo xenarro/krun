@@ -233,7 +233,7 @@ contract suite against SQLite on a temp-file database (`fs.mkdtemp` under
 `os.tmpdir()`, removed in `after`) and against Postgres 18 via testcontainers,
 both green.
 
-- [ ] P1.1 Model types, Kysely table types, `toRun`, `toRunSummary`
+- [x] P1.1 Model types, Kysely table types, `toRun`, `toRunSummary`
       (the only row-to-wire mappers: `name`, UPPER_SNAKE enums, `*Time`,
       `resultUri`, `reportTime`, `observeTime`) and the `Store` interface exactly as SPEC section 6 (`transition`
       takes the optional `event` payload), with error classes `NotFoundError`, `ConflictError`. Acceptance: `tsc --noEmit`
@@ -957,9 +957,12 @@ Gate: all e2e scenarios green; README states measured numbers and the
 
 2026-10-24 BLOCKED P0.9 Registry control and trusted-publisher preconditions remain unverified after implementation, two independent reviews and repair verification. Public npm scope metadata lists account krun as owner; @krun/sdk and @krun/cli return 404, which does not grant namespace control. PyPI krun already exists with an HTTP-test-library-described 0.1.0 release; project control/transfer or an owner fallback decision remains unverified. Exact npm/PyPI publisher bindings and intended GHCR package/repository grants are unverified; the CLI GHCR metadata query returns 403 for missing read:packages, not an Actions publishing denial. No fallback rename, credentials workaround, tag or publication. The release workflow/stamping implementation and real release PR dry-run acceptance remain absent; baseline make check (199 TypeScript/one Python), generation and Helm lint pass but do not complete P0.9 or Phase 0. Credential-free stamping/packaging/dry-run engineering is independent of publishing authorization and can be assigned separately. Continue independent P1.1 Store contracts from verified P0.8 lineage, preserving the release branch for recovery.
 
+2026-10-24 P1.1 82d3a69239e728e0954dedf27ea7add2cee021e7 Store model and plain Kysely-compatible table interfaces, sole FULL/BASIC mappers, tagged errors and all 23 Effect Store method contracts; no database implementation. Both independent reviews and repair report no material findings. Task/root tsc --noEmit, 33 focused tests and make check (232 TypeScript/one Python) pass; independent probes pass 512 optional-field combinations, 42 result/state cases and 147 mapper/contract cases. Exact code-head CI https://github.com/xenarro/krun/actions/runs/40072000762 passes all hosted gates in stacked PR #6 against build/release-preconditions, including current-source container build/smoke, generation, Helm, audit and scan. No installed-Kysely query integration or Phase 1 dual-backend gate claimed; actual migrations/Store implementations remain later tasks.
+
 Delivery: bootstrap PR #2 merged to main as 3952108982b2fea4b37c9d9677da60ad22c17ca6.
 P0.7 is pushed and green in https://github.com/xenarro/krun/pull/3 (base main), not merged.
 Its required independent repository approval is pending; the stack continues without bypass or auto-merge.
 P0.8 code is pushed and green in https://github.com/xenarro/krun/pull/4 (base feat/admin-health-telemetry), not merged.
-Next independent task: P1.1 Store contracts from the committed, verified P0.8 lineage. P0.9 remains owner-blocked and unchecked; preserve its release branch and require nonsecret ownership/name/publisher evidence before release execution. A separately assigned credential-free release-engineering slice does not require publishing access and does not clear those preconditions.
+P1.1 is pushed and green in https://github.com/xenarro/krun/pull/6 (base build/release-preconditions), not merged.
+Next task: P1.2 migrations from the committed, verified P1.1 lineage. Install the approved Kysely dependency through the normal security/approval path and verify its actual APIs before executable SQL work; do not bypass a failed gate or infer backend acceptance from structural table types. P0.9 remains independently owner-blocked and unchecked; preserve its release branch and require nonsecret ownership/name/publisher evidence before release execution.
 Full Phase 0 and v1 acceptance remain incomplete.
