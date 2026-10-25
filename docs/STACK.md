@@ -180,6 +180,7 @@ for the CLI.
 | `@biomejs/biome` | `^2.6` | lint and format |
 | `@types/node` | `^26` | |
 | `@types/pg` | latest | |
+| `@types/picomatch` | `^4.0` | development-only declarations for the approved picomatch 4 runtime (SPEC D47) |
 | `knip` | `^6.42` | unused files, exports and dependencies; runs in `make check` |
 | `publint`, `@arethetypeswrong/cli` | `^0.3`, `^0.18` | package export checks for `@krun/sdk` and `@krun/cli` before publish (P9.5) |
 
@@ -205,7 +206,10 @@ counterpart of fast-check), `mypy --strict` for development.
 
 Tools on the agent machine (PLAN.md section 2): Node 26, pnpm, uv, Docker,
 Helm 4, kind 0.31 or newer, kubectl, actionlint, gh, helm-docs, promtool;
-in CI also Trivy, cosign, syft.
+in CI also Trivy, cosign, syft. OpenSSL CLI is a test-only prerequisite
+for owned ephemeral webhook TLS receiver certificates; the Node trust
+store is restored and the generated key/certificate are deleted after
+each test. It is not an application runtime dependency or a TLS bypass.
 
 ## 4. How the pieces fit
 

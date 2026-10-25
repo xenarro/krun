@@ -8,6 +8,7 @@
       "project": ["bin/**/*.js", "test/**/*.ts", "scripts/**/*.ts"]
     },
     "packages/shared": {
+      "ignoreBinaries": ["openssl"],
       "entry": ["src/store/migrate.ts"],
       "project": ["src/**/*.ts"]
     },
