@@ -39,19 +39,88 @@ const ceilingsSchema = z.strictObject({
   webhookAllowedHosts: z.array(z.string()),
 });
 
-// Inspect only the owned JSON snapshot. Iteration avoids recursion in the reference walk.
+// Ajv2020's standard schema locations, plus its supported legacy dependencies/items.
+// Map keys and annotations/instance data are not schema keywords (SPEC D51).
+const schemaMaps = new Set([
+  "$defs",
+  "definitions",
+  "properties",
+  "patternProperties",
+  "dependentSchemas",
+  "dependencies",
+]);
+const schemaData = new Set([
+  "default",
+  "const",
+  "enum",
+  "examples",
+  "required",
+  "dependentRequired",
+]);
+const schemaObject = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
+interface SchemaLocation {
+  readonly node: unknown;
+  readonly resource: Record<string, unknown>;
+}
+const resourceAt = (node: Record<string, unknown>, current: Record<string, unknown>) =>
+  Object.hasOwn(node, "$id") && typeof node.$id === "string" && node.$id !== "" && node.$id !== "#"
+    ? node
+    : current;
+
+// A local pointer can turn otherwise opaque data into an actual schema. Resolve only
+// own JSON members, decoding each pointer segment separately; never fetch anything.
+const localPointer = (
+  resource: Record<string, unknown>,
+  ref: string,
+): SchemaLocation | undefined => {
+  if (ref === "#") return { node: resource, resource };
+  if (!ref.startsWith("#/")) return undefined; // Anchors remain the strict compiler's job.
+  let node: unknown = resource;
+  let current = resource;
+  try {
+    for (const part of ref.slice(2).split("/")) {
+      const key = decodeURIComponent(part).replace(/~1/g, "/").replace(/~0/g, "~");
+      if (node === null || typeof node !== "object" || !Object.hasOwn(node, key)) return undefined;
+      node = Reflect.get(node, key);
+      if (schemaObject(node)) current = resourceAt(node, current);
+    }
+    return { node, resource: current };
+  } catch {
+    return undefined;
+  } // Malformed/unresolvable fragments fail native compilation.
+};
+
+// Inspect only the owned JSON snapshot; iteration and identity tracking handle local
+// recursive references without recursive JS calls or schema/instance-data rewriting.
 const localReferencesOnly = (schema: unknown): boolean => {
-  const stack: unknown[] = [schema];
+  if (!schemaObject(schema)) return true;
+  const stack: SchemaLocation[] = [{ node: schema, resource: schema }];
+  const seen = new Map<object, Set<object>>();
   while (stack.length > 0) {
-    const value = stack.pop();
-    if (value === null || typeof value !== "object") continue;
+    const location = stack.pop();
+    if (location === undefined || !schemaObject(location.node)) continue;
+    const value = location.node;
+    const resource = resourceAt(value, location.resource);
+    const scopes = seen.get(value) ?? new Set<object>();
+    if (scopes.has(resource)) continue;
+    scopes.add(resource);
+    seen.set(value, scopes);
     for (const [key, item] of Object.entries(value)) {
-      if (
-        (key === "$ref" || key === "$dynamicRef") &&
-        (typeof item !== "string" || !item.startsWith("#"))
-      )
-        return false;
-      if (item !== null && typeof item === "object") stack.push(item);
+      if (key === "$ref" || key === "$dynamicRef") {
+        if (typeof item !== "string" || !item.startsWith("#")) return false;
+        const target = localPointer(resource, item);
+        if (target !== undefined) stack.push(target);
+      } else if (schemaData.has(key)) continue;
+      else if (schemaMaps.has(key) && schemaObject(item)) {
+        for (const child of Object.values(item)) stack.push({ node: child, resource });
+      } else if (Array.isArray(item)) {
+        for (const child of item) stack.push({ node: child, resource });
+      } else if (schemaObject(item)) {
+        // Preserve conservative inspection of unknown object keywords: Ajv's
+        // reference index may register their anchors before strict compilation.
+        stack.push({ node: item, resource });
+      }
     }
   }
   return true;
