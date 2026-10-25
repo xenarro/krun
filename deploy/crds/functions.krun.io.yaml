@@ -43,7 +43,7 @@ spec:
               properties:
                 activeDeadlineSeconds:
                   default: 3600
-                  maximum: 9007199254740991
+                  maximum: 2147483647
                   minimum: 1
                   type: integer
                 callback:
@@ -89,12 +89,12 @@ spec:
                   x-kubernetes-preserve-unknown-fields: true
                 maxConcurrency:
                   default: 10
-                  maximum: 9007199254740991
+                  maximum: 2147483647
                   minimum: 1
                   type: integer
                 maxQueued:
                   default: 1000
-                  maximum: 9007199254740991
+                  maximum: 2147483647
                   minimum: 0
                   type: integer
                 nodeSelector:

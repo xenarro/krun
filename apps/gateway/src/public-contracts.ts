@@ -129,8 +129,8 @@ const functionResource = z.strictObject({
   activeDeadlineSeconds: output(z.int32().positive()),
   heartbeatTimeout: output(duration).optional(),
   callback: output(callback).optional(),
-  maxInputBytes: output(z.int32().positive()),
-  maxResultBytes: output(z.int32().positive()),
+  maxInputBytes: output(z.int32().nonnegative()),
+  maxResultBytes: output(z.int32().nonnegative()),
   maxWait: output(duration),
 });
 const reason = open([
