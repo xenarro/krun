@@ -3,11 +3,11 @@ import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { Context, Effect, Layer } from "effect";
 import ipaddr from "ipaddr.js";
-import picomatch from "picomatch";
 import { z } from "zod";
 import { ConfigInvalid, type GatewayConfig } from "../config/index.js";
 import { functionSpecSchema } from "../functions/schema.js";
 import { CallbackNotAllowed } from "./errors.js";
+import { compileHostAllowlist } from "./hosts.js";
 
 type Cidr = GatewayConfig["KRUN_WEBHOOK_ALLOWED_CIDRS"][number];
 type WebhookConfig = Pick<
@@ -54,13 +54,11 @@ export const makeWebhookPolicy = (
 ): Effect.Effect<WebhookPolicy, ConfigInvalid> =>
   Effect.gen(function* () {
     const matches = yield* Effect.try({
-      try: () =>
-        picomatch(
-          [...config.KRUN_WEBHOOK_ALLOWED_HOSTS].map((host) => host.toLowerCase()),
-          { nocase: false, dot: true },
-        ),
+      try: () => compileHostAllowlist(config.KRUN_WEBHOOK_ALLOWED_HOSTS),
       catch: () => new ConfigInvalid({ variable: "KRUN_WEBHOOK_ALLOWED_HOSTS" }),
     });
+    if (!matches)
+      return yield* Effect.fail(new ConfigInvalid({ variable: "KRUN_WEBHOOK_ALLOWED_HOSTS" }));
     const cidrs = yield* Effect.try({
       try: () =>
         config.KRUN_WEBHOOK_ALLOWED_CIDRS.map(([address, prefix]) =>
@@ -69,7 +67,7 @@ export const makeWebhookPolicy = (
       catch: () => new ConfigInvalid({ variable: "KRUN_WEBHOOK_ALLOWED_CIDRS" }),
     });
     return Object.freeze({
-      hostAllowed: (hostname: string) => matches(hostname.toLowerCase()),
+      hostAllowed: matches,
       // Fail closed for empty/mixed answers; a connector must never fall back to an unchecked answer.
       addressesAllowed: (addresses: readonly string[]) =>
         addresses.length > 0 && addresses.every((address) => addressAllowed(address, cidrs)),
