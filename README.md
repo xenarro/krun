@@ -18,9 +18,85 @@ Readiness's HTTP deadline does not wait for database cancellation cleanup. Overl
 
 Health/telemetry acceptance covers real Prometheus collection through Fastify `inject`, stalled-database timing through `TestClock` (including slow finalizers and uninterruptible work), real socket disconnects, handler/dependency teardown ordering, reader/provider cleanup, and actual OTLP JSON sent to a disposable local collector. Run `pnpm exec vitest run packages/shared/src/health packages/shared/src/runtime` for this slice. P0.7 module acceptance and hosted CI passed for [PR #3](https://github.com/xenarro/krun/pull/3), including the reviewed lifecycle repairs, container rebuild, smoke, audit and fixable-critical scan. [Code CI](https://github.com/xenarro/krun/actions/runs/40019565091) verified reconciled head `9f870d4`, containing implementation commit `afc0375`. The PR remains unmerged pending required independent approval. PLAN records this bounded task; Phase 0 and the application are not complete.
 
-The `gateway`, `scheduler` and `validate` server-image commands still print their names and exit; listeners and Function CLI validation are not wired yet. `migrate` is a real database command as described below. Reusable Function schemas, generated CRD/editor artifacts and the complete scoped SQLite/Postgres Store are available; actual gateway/scheduler wiring remains a later implementation step. See [PLAN.md](PLAN.md) for acceptance criteria and progress.
+The `gateway` and `scheduler` server-image commands still print their names and exit; serving processes are not wired yet. `validate` is a real offline Function validator and `migrate` is a real database command, as described below. Reusable Function schemas, generated CRD/editor artifacts and the complete scoped SQLite/Postgres Store are available; actual gateway/scheduler wiring remains a later implementation step. See [PLAN.md](PLAN.md) for acceptance criteria and progress.
+
+## Public gateway foundation (P3.1a)
+
+`apps/gateway/src/app.ts` now provides a real scoped `makePublicApp` factory.
+It builds and readies Fastify without opening a listener. Supply the existing
+Store, Function-cache and Keys services once through Effect, and register
+method plugins with the factory's `routes` option. Their encapsulated Fastify
+scope inherits `store`, `functions`, `keys` and the cancellation-aware
+`runEffect` decorator; these are not global root-instance decorators. Each
+route must explicitly declare its required scope and optional function-name
+parameter. No API-method placeholders or public health endpoints are installed.
+
+Authentication runs before body parsing, performs a fresh lookup against the
+real scoped key loader on every request, enforces method scopes and function
+globs, and rejects duplicate Authorization fields before Node's normalized
+first value can authenticate. Hidden and missing Functions share the same
+404 envelope. Zod 4 compilers enforce strict own request objects and unknown
+query rejection, with nested krun-owned objects authored as strict schemas;
+the factory does not rewrite nested opaque-data schemas. Malformed/empty JSON and
+invalid/null owned fields become 400, and non-JSON content types become 415.
+One mapper emits the API's canonical AIP-193 status/reason pairs and hides
+native parser, validation, serialization and Effect-defect diagnostics.
+
+Run `pnpm exec vitest run apps/gateway` for 59 current tests, including all
+20 public error mappings, actual SQLite/Postgres18 Store access through
+explicitly test-owned HTTP POST/GET routes, real socket disconnects,
+close/finalizer ordering, key reload and captured TestClock behavior. The
+current full `ionice -c 2 -n 0 make check` passes 920 TypeScript tests and one
+Python test, including the final body-less-method guard. Methods without a
+declared body schema accept omission or an empty object, but reject explicit
+JSON null and unknown members before Fastify can normalize absence to null.
+The rebuilt non-root image passes eight native gateway groups and verifies
+53 current emitted-module hashes, alongside 80 inherited integration groups
+and seven offline CLI groups. These test routes are fixtures, not implemented public CreateRun/GetRun
+methods or full Phase 3 completion. Concrete API methods, rate limits,
+OpenAPI generation, process/listener startup and graceful draining remain
+later tasks. The `gateway` process command still prints its name and exits.
+Code `b24b2062108f36ccbd60377a12e4db154ce6b9a4` is pushed in [PR #23](https://github.com/xenarro/krun/pull/23)
+against the open `feat/function-validate-cli` parent. Its [exact-head hosted CI](https://github.com/xenarro/krun/actions/runs/40188371354)
+passes all nine required gates, including the same 920 TypeScript tests and one
+Python test. Only P3.1a is checked after that code CI; the PR remains unmerged,
+with no auto-merge or implied formal repository approval.
+
+Verification retains the failed attempts rather than claiming every run was
+green. During the preceding implementation, eight existing Store tests exceeded
+their unchanged five-second budgets
+during measured heavy host I/O pressure; all 116 affected-file controls and a
+fresh unrestricted full gate pass without changing product code, test budgets,
+assertions, workers or scheduling. Supplemental inherited image runs also hit
+a 30-second Docker-client lifecycle wait at different stages, including a
+finite command that had printed its complete output and exited zero. An owned
+wrapper copy permits 120 seconds only for Docker startup/auto-removal, retaining
+all in-container assertions/deadlines, expected exits, real disk-backed
+backends and container-removal checks; all 80 groups pass. A tmpfs experiment
+failed before reaching Postgres and was not adopted. This is test-infrastructure
+recovery, not a universal filesystem-latency or product timing repair.
 
 ## Check the current implementation
+
+P3.1a independent-review repair (D53) now canonicalizes native router URL/parameter
+failures and makes supported wrapped request roots strict. Optional, ExactOptional,
+Default, Prefault, Readonly and NonOptional retain their wrapper semantics;
+unsupported root forms fail registration. Omitted declared bodies remain distinct
+from explicit null, and nested opaque user schemas are not rewritten.
+The current exact gateway acceptance and phase commands each pass 59 tests. The
+rebuilt `krun-test-p3-1a-repair:local` image passes the router/wrapped-root/cleanup
+regressions, its 53-artifact gateway check and the complete real-disk inherited
+Store corpus: 80 inherited groups, eight gateway groups and seven CLI groups.
+Current full verification passes all 920 TypeScript tests and one Python test
+using per-command I/O priority (`ionice -c 2 -n 0 make check`), with no CPU-affinity
+or worker restriction on that successful run. Earlier unchanged Store setup and
+five-second test timeouts remain retained; bounded-CPU and earlier I/O-priority
+attempts were not all successful. No existing test deadlines, assertions, Store
+code or test configuration were changed. All three independent-review findings
+(two root defects) have explicit red/green dispositions in
+`.agent-state/krun/reports/repair-p3-1a.json`. Delivery verifies the actual pushed
+code and subsequent tracking heads separately; local repair acceptance alone is
+not treated as hosted CI or a merged-main claim.
 
 Prerequisites: Node.js matching `.node-version`, pnpm matching `package.json`, [uv](https://docs.astral.sh/uv/), Docker, Helm 4, actionlint and OpenSSL CLI (only for ephemeral local TLS test certificates).
 
@@ -41,7 +117,7 @@ node bin/krun.js gateway
 docker run --rm --read-only --network none krun:local gateway
 ```
 
-Both commands print `gateway` and exit 0. The `scheduler` and `validate` scaffold commands behave the same way; `migrate` instead requires database settings and performs real migrations. The kind/e2e Make targets fail explicitly until their planned harness is implemented; the Helm chart is currently a minimal lintable skeleton.
+Both commands print `gateway` and exit 0. The `scheduler` scaffold command behaves the same way. `validate` instead requires manifest paths (or `--help`) and performs real offline validation; `migrate` requires database settings and performs real migrations. The kind/e2e Make targets fail explicitly until their planned harness is implemented; the Helm chart is currently a minimal lintable skeleton.
 
 Tests include configuration defaults and boundaries, process-specific validation, namespace resolution, typed/redacted failures, Effect layers, command dispatch and build/CI contracts. `make check` also runs Python lint/type checks and Knip.
 
@@ -96,6 +172,32 @@ Function globs compile once per accepted content change with native picomatch, c
 The gateway-only scoped layer reads `KRUN_API_KEYS_PATH` on acquisition and reopens it every 30 seconds, following Secret directory symlink swaps. An unchanged raw-content hash preserves compiled principal identity; a complete valid changed file atomically replaces the snapshot, and explicit `keys: []` revokes every key. Startup read/parse/validation failure fails acquisition. Later failures keep the last complete snapshot and log only bounded reason/field/entry metadata, never native diagnostics, file contents or credentials. Invalid UTF-8, duplicate YAML mapping fields, parser warnings and multiple documents reject without source-snippet logging. Scope closure cancels the poll and an in-flight Effect read. The scheduler refuses this gateway-only layer before attempting a mount read.
 
 P2.4 acceptance passes 44 auth tests, including real production-layer file reads, atomic Secret-style symlink rotation, constant-time comparison call/width controls, allowed/denied/admin/priority cases, duplicate identities, rotation/removal, unchanged/invalid reloads and scoped cancellation. The exact current Phase 2 test command passes 213 tests; unrestricted `make check` passes 766 TypeScript tests plus one Python test. A newly rebuilt non-root image verifies 38 current emitted-module hashes, 19 dependency-file hashes and 80 integration groups, retaining all prior Store/webhook/compiler/native-cache assertions and adding ten compiled auth groups. Generation/drift, Helm, actionlint, frozen install, production dependency audit and fixable-critical scanning pass. Both independent local reviews found no confirmed material defect; exclusive repair preserved the reviewed source and reran the additional correctness/contracts/native lifecycle probes. [Exact code-head CI](https://github.com/xenarro/krun/actions/runs/40167721878) passes all nine required gates for `3367ae070b255fac27450a291c4c6afb9ab4ab3d` in [stacked PR #21](https://github.com/xenarro/krun/pull/21), based on the still-unmerged `feat/function-informer-cache` parent. Only after accepted code CI passed was P2.4 checked in PLAN. Source is pushed/green, not merged or formally independently approved; no auto-merge or protection bypass is claimed. Original implementation red/green receipts and the reviewer-only optional-peer import failures remain preserved; the corrected reviewer harness uses the actual narrow NodeRuntime subpath without adding an optional package or changing product code. P2.5 CLI validation, actual auth hooks/routes, per-key queue-cap enforcement and complete application/Phase 2 acceptance remain separate work. The finite gateway/scheduler commands are still not wired to these reusable layers.
+
+## Offline Function validation (P2.5)
+
+`node bin/krun.js validate <path>...` and the container `validate` command now run the source Function resource schema followed by the same pure second-layer validator used by the runtime cache. Explicit files may contain multiple YAML documents; directory arguments visit immediate lowercase `.yaml`/`.yml` files in sorted order, without recursive traversal. Other kinds are skipped, repeated resolved paths are deduplicated, and unsupported Function versions fail schema validation. Each decoded Function produces one `OK` or `FAIL` stdout line. File/parser/config errors go to stderr; any error or an empty Function set exits 1. `--help` exits 0 without requiring configuration. SPEC D49 records discovery, output and empty-set decisions.
+
+Only the five Function ceilings are parsed and their actual defaulted values are printed as one JSON line on stderr: `KRUN_MAX_ACTIVE_DEADLINE`, `KRUN_MAX_QUEUED`, `KRUN_ALLOWED_REGISTRIES`, `KRUN_ALLOWED_SERVICE_ACCOUNTS` and `KRUN_WEBHOOK_ALLOWED_HOSTS`. No database, Kubernetes client, mounted namespace, API-key file or generated CRD/editor artifact is consulted. Callback validation fails `CallbackNotAllowed` with the default empty host allowlist; supplying an explicit allowed host passes without requiring a delivery secret or making a network request. Output never echoes parser snippets, arbitrary field names, environment values from Function manifests, input-schema contents or callback URLs. Invalid UTF-8, malformed/duplicate/tag-warning YAML and invalid documents fail with bounded diagnostics; quoted paths cannot inject physical output lines. A `REPLACE_WITH_DIGEST` image gets an actionable error.
+
+```sh
+make build
+node bin/krun.js validate --help
+node bin/krun.js validate path/to/function.yaml path/to/manifests
+# After make docker; bind only the manifests being validated:
+docker run --rm --read-only --network none -v "$PWD/path/to/manifests:/f:ro" krun:local validate /f/function.yaml
+```
+
+Initial P2.5 implementation acceptance passed 17 CLI tests and the exact Phase 2 gate (213 tests), without a cluster. The subsequent P25-C1 repair and current counts are recorded below. Two unrestricted `make check` runs, including one with shared/CLI build outputs preserved aside and rebuilt from scratch, pass 782 TypeScript tests plus one Python test. SPEC D50 and STACK document the internal workspace build ordering needed for clean consumer type checks. The rebuilt non-root image verifies 40 current emitted-module hashes, 19 dependency-file hashes, all 80 inherited integration groups and five dedicated real CLI cases: valid, tag-image, mixed documents, callback denied and callback explicitly allowed. The read-only tag-image mount prints one Function line and exits 1. One attempted cold gate hit the unchanged SQLite rollback test's five-second timeout; its failure receipt is retained, while all ten isolated dialect controls and fresh unrestricted reruns pass without changing Store code, timeouts or worker settings. CI now runs these real checks instead of expecting the obsolete finite `validate` stub. Generation/drift, Helm, actionlint, frozen installation, production dependency audit and fixable-critical scanning pass. At that implementation checkpoint P2.5 remained unchecked pending independent review, repair/integration and delivery; no commit, push, PR or hosted CI was claimed. No auth route, scheduler serving process or end-to-end platform is claimed.
+
+## P2.5 review repair: schema-reference context
+
+Independent correctness review confirmed P25-C1: the shared local-reference guard treated ordinary property/definition names and default/enum instance data named `$ref` or `$dynamicRef` as active schema keywords. The real CLI and informer therefore rejected legitimate schemas. Exclusive repair changes that shared guard, not CLI delegation: distinguish schema-map entries and opaque instance/annotation data, inspect every actual nested/unused schema, and inspect targets explicitly promoted by local JSON Pointers. Preserve conservative scanning for object keywords whose anchors the installed compiler can index before strict compilation. Iterative identity/resource tracking handles local recursive references without rewriting schemas; source own keys, strict synchronous Ajv2020, the complete formats plugin, the 64 KiB bound and no-loader/no-network policy are unchanged. SPEC D51 records the rationale.
+
+The original correctness probe now accepts all five formerly rejected schemas, retains its local-reference control, and validates native good/bad inputs. Seventy-two shared regressions cover ordinary names/data, schema applicators/maps/arrays, pointer escaping/promotion, unused definitions, registered-meta-schema remote rejection and strict/synchronous controls. Eight additional real-dispatch regressions bring CLI acceptance to 25 tests. The exact Phase 2 gate passes 285 tests; unrestricted `make check` passes 862 TypeScript tests plus one Python test. The five additional contracts-reviewer cases also pass against the actual repaired dispatcher, preserving cyclic/wide/UTF-8/own-name/private-warning continuation controls. These are repair-owner reruns, not a new independent approval.
+
+The separately rebuilt `krun-test-p2-5-repair:local` image passes all 80 inherited integration groups and seven CLI groups, retaining original mixed/tag-image/callback behavior and adding a five-Function reference-context fixture plus actual unused-definition remote-reference rejection. Forty emitted-module hashes and nineteen dependency-file hashes match current host build artifacts; runtime uid/gid are 65532 and CLI mounts remain read-only with networking disabled. Generation/drift, Helm, actionlint, frozen install, production audit and fixable-critical scan pass. Original reviewer reports, implementation evidence/image and all red reproduction/control receipts remain preserved. No further material contracts finding was reported. At that repair checkpoint P2.5 remained unchecked and source uncommitted, with no delivery/hosted-task-head CI or merged/application completion claimed.
+
+P2.5 delivery now has [exact code-head CI](https://github.com/xenarro/krun/actions/runs/40174400276) passing all nine required gates for `a0d16b02b2b799127aa341f47866de4c9420666c` in [stacked PR #22](https://github.com/xenarro/krun/pull/22), based on the still-unmerged `feat/api-key-loader` parent. Fresh delivery CLI/Phase2/full gates pass 25/285/862 TypeScript tests plus one Python test respectively; the hosted container stage executes all seven real CLI groups, including the repaired reference contexts and retained remote rejection. Two local tracking full-check attempts hit the unchanged five-second SQLite migration/dialect deadlines while isolated migration controls passed. Measured host I/O pressure was severe; a full run with per-command best-effort I/O priority 0 (`ionice -c 2 -n 0 make check`) passes without changing assertions, deadlines, workers, CPU affinity, source or global settings. Original failures and diagnostics are retained; no universal timing or product-race repair is claimed. Only after this accepted code CI passed was P2.5 checked in PLAN. The declared Phase2 helper/cache/keys/offline-CLI gate is verified, not an operational serving application. Source is pushed/green, not merged or formally independently approved; no auto-merge, protection bypass, publication or full application/e2e completion is claimed. Next independent task is P3.1a from the final committed verified P2.5 lineage.
 
 ## Dependency policy
 
