@@ -298,8 +298,8 @@
             ]
           },
           "maxInputBytes": {
-            "exclusiveMinimum": 0,
             "maximum": 2147483647,
+            "minimum": 0,
             "readOnly": true,
             "type": "integer",
             "x-field-behavior": [
@@ -316,8 +316,8 @@
             ]
           },
           "maxResultBytes": {
-            "exclusiveMinimum": 0,
             "maximum": 2147483647,
+            "minimum": 0,
             "readOnly": true,
             "type": "integer",
             "x-field-behavior": [
@@ -411,8 +411,8 @@
             ]
           },
           "maxInputBytes": {
-            "exclusiveMinimum": 0,
             "maximum": 2147483647,
+            "minimum": 0,
             "readOnly": true,
             "type": "integer",
             "x-field-behavior": [
@@ -429,8 +429,8 @@
             ]
           },
           "maxResultBytes": {
-            "exclusiveMinimum": 0,
             "maximum": 2147483647,
+            "minimum": 0,
             "readOnly": true,
             "type": "integer",
             "x-field-behavior": [
