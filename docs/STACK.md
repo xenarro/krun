@@ -68,6 +68,15 @@ from `Worker.postMessage`; runtime JavaScript is unchanged. Do not replace
 this with `skipLibCheck`, a Node-type downgrade or a supply-chain exception.
 The container copies the patch before both frozen installs.
 
+The gateway imports the approved Fastify 5/Zod 4 provider compilers directly.
+`fastify-type-provider-zod` 7's published declarations require the approved
+`@fastify/swagger` peer even before OpenAPI generation is wired. Declare it as
+a gateway development dependency for strict type checking, not an application
+Swagger listener; keep `autoInstallPeers` disabled and use the normal guarded
+installation. Its compiler runtime does not import Swagger. P3.1c still owns
+actual OpenAPI registration/generation. No handwritten declarations, skipped
+library checks or unused-dependency exceptions are needed.
+
 ### 2.3 Data
 
 | Package | Range | Use | Rules |
@@ -258,7 +267,9 @@ NodeRuntime.runMain(Layer.launch(Main))
 
 ### 4.2 Errors
 
-- Domain failures are `Data.TaggedError` classes (`FunctionNotFound`,
+- Public gateway failures use `ApiError`, a `Data.TaggedError` with a closed
+  `reason` union mapped to API section 4 (SPEC D52). Other domain failures
+  are `Data.TaggedError` classes (`FunctionNotFound`,
   `RunNotFound`, `QueueFull`, `IdempotencyConflict`, `TokenInvalid`, ...);
   the store's own `NotFoundError` and `ConflictError` (PLAN P1.1) are
   translated into them at the gateway.

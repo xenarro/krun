@@ -20,7 +20,79 @@ Health/telemetry acceptance covers real Prometheus collection through Fastify `i
 
 The `gateway` and `scheduler` server-image commands still print their names and exit; serving processes are not wired yet. `validate` is a real offline Function validator and `migrate` is a real database command, as described below. Reusable Function schemas, generated CRD/editor artifacts and the complete scoped SQLite/Postgres Store are available; actual gateway/scheduler wiring remains a later implementation step. See [PLAN.md](PLAN.md) for acceptance criteria and progress.
 
+## Public gateway foundation (P3.1a, local)
+
+`apps/gateway/src/app.ts` now provides a real scoped `makePublicApp` factory.
+It builds and readies Fastify without opening a listener. Supply the existing
+Store, Function-cache and Keys services once through Effect, and register
+method plugins with the factory's `routes` option. Their encapsulated Fastify
+scope inherits `store`, `functions`, `keys` and the cancellation-aware
+`runEffect` decorator; these are not global root-instance decorators. Each
+route must explicitly declare its required scope and optional function-name
+parameter. No API-method placeholders or public health endpoints are installed.
+
+Authentication runs before body parsing, performs a fresh lookup against the
+real scoped key loader on every request, enforces method scopes and function
+globs, and rejects duplicate Authorization fields before Node's normalized
+first value can authenticate. Hidden and missing Functions share the same
+404 envelope. Zod 4 compilers enforce strict own request objects and unknown
+query rejection, with nested krun-owned objects authored as strict schemas;
+the factory does not rewrite nested opaque-data schemas. Malformed/empty JSON and
+invalid/null owned fields become 400, and non-JSON content types become 415.
+One mapper emits the API's canonical AIP-193 status/reason pairs and hides
+native parser, validation, serialization and Effect-defect diagnostics.
+
+Run `pnpm exec vitest run apps/gateway` for 59 current tests, including all
+20 public error mappings, actual SQLite/Postgres18 Store access through
+explicitly test-owned HTTP POST/GET routes, real socket disconnects,
+close/finalizer ordering, key reload and captured TestClock behavior. The
+current full `ionice -c 2 -n 0 make check` passes 920 TypeScript tests and one
+Python test, including the final body-less-method guard. Methods without a
+declared body schema accept omission or an empty object, but reject explicit
+JSON null and unknown members before Fastify can normalize absence to null.
+The rebuilt non-root image passes eight native gateway groups and verifies
+53 current emitted-module hashes, alongside 80 inherited integration groups
+and seven offline CLI groups. These test routes are fixtures, not implemented public CreateRun/GetRun
+methods or a completed Phase 3 gate. Concrete API methods, rate limits,
+OpenAPI generation, process/listener startup and graceful draining remain
+later tasks. The `gateway` process command still prints its name and exits.
+No commits, pushes, PR or PLAN checkbox closure are part of this implementation
+job; independent review and delivery remain separate.
+
+Verification retains the failed attempts rather than claiming every run was
+green. During the preceding implementation, eight existing Store tests exceeded
+their unchanged five-second budgets
+during measured heavy host I/O pressure; all 116 affected-file controls and a
+fresh unrestricted full gate pass without changing product code, test budgets,
+assertions, workers or scheduling. Supplemental inherited image runs also hit
+a 30-second Docker-client lifecycle wait at different stages, including a
+finite command that had printed its complete output and exited zero. An owned
+wrapper copy permits 120 seconds only for Docker startup/auto-removal, retaining
+all in-container assertions/deadlines, expected exits, real disk-backed
+backends and container-removal checks; all 80 groups pass. A tmpfs experiment
+failed before reaching Postgres and was not adopted. This is test-infrastructure
+recovery, not a universal filesystem-latency or product timing repair.
+
 ## Check the current implementation
+
+P3.1a independent-review repair (D53) now canonicalizes native router URL/parameter
+failures and makes supported wrapped request roots strict. Optional, ExactOptional,
+Default, Prefault, Readonly and NonOptional retain their wrapper semantics;
+unsupported root forms fail registration. Omitted declared bodies remain distinct
+from explicit null, and nested opaque user schemas are not rewritten.
+The current exact gateway acceptance and phase commands each pass 59 tests. The
+rebuilt `krun-test-p3-1a-repair:local` image passes the router/wrapped-root/cleanup
+regressions, its 53-artifact gateway check and the complete real-disk inherited
+Store corpus: 80 inherited groups, eight gateway groups and seven CLI groups.
+Current full verification passes all 920 TypeScript tests and one Python test
+using per-command I/O priority (`ionice -c 2 -n 0 make check`), with no CPU-affinity
+or worker restriction on that successful run. Earlier unchanged Store setup and
+five-second test timeouts remain retained; bounded-CPU and earlier I/O-priority
+attempts were not all successful. No existing test deadlines, assertions, Store
+code or test configuration were changed. All three independent-review findings
+(two root defects) have explicit red/green dispositions in
+`.agent-state/krun/reports/repair-p3-1a.json`; Git delivery and PLAN closure remain
+separate work, not implied by local repair acceptance.
 
 Prerequisites: Node.js matching `.node-version`, pnpm matching `package.json`, [uv](https://docs.astral.sh/uv/), Docker, Helm 4, actionlint and OpenSSL CLI (only for ephemeral local TLS test certificates).
 
