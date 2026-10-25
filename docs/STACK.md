@@ -68,6 +68,15 @@ from `Worker.postMessage`; runtime JavaScript is unchanged. Do not replace
 this with `skipLibCheck`, a Node-type downgrade or a supply-chain exception.
 The container copies the patch before both frozen installs.
 
+The gateway imports the approved Fastify 5/Zod 4 provider compilers directly.
+`fastify-type-provider-zod` 7's published declarations require the approved
+`@fastify/swagger` peer even before OpenAPI generation is wired. Declare it as
+a gateway development dependency for strict type checking, not an application
+Swagger listener; keep `autoInstallPeers` disabled and use the normal guarded
+installation. Its compiler runtime does not import Swagger. P3.1c still owns
+actual OpenAPI registration/generation. No handwritten declarations, skipped
+library checks or unused-dependency exceptions are needed.
+
 ### 2.3 Data
 
 | Package | Range | Use | Rules |
@@ -101,13 +110,23 @@ Schema, against principle 2). Revisit when `effect/sql` is stable.
 | Package | Range | Use | Rules |
 |---|---|---|---|
 | `ajv` | `^8.20` | compile Function `inputSchema` (`Ajv2020`, `strict: true`, no `loadSchema`) | Never for krun's own application/runtime schema validation. Development-only tests may evaluate generated editor JSON Schema for standards conformance (SPEC D41); its sole definition remains Zod. |
-| `ajv-formats` | `^3.0` | `format` keywords in `inputSchema` | |
+| `ajv-formats` | `^3.0` | `format` keywords and the default format-comparison plugin keywords in `inputSchema` | Register the actual plugin, not only its internal format-definition table. |
 | `uuid` | `^14.0` | UUIDv7 run, delivery and request ids | `v7({ msecs })` with the time from `Clock`, so ids are deterministic under `TestClock`. |
 | `canonicalize` | `^5.1` | RFC 8785 (JCS) serialisation for `request_hash` | Reference implementation by the RFC's author. |
 | `yaml` | `^2.9` | `keys.yaml`, Function documents for `krun validate` | Parsed value goes straight into a Zod schema. |
 | `ipaddr.js` | `^2.5` | webhook address classification and CIDR allowlist | |
 | `picomatch` | `^4.0` | API key function globs (`report-*`) and webhook host globs | Never a hand-written glob regex; `picomatch(pattern, { nocase: false, dot: true })`, compiled once per reload. |
 | `pino` | bundled with Fastify | JSON logs | The Effect `Logger` writes to the Fastify pino instance, so every line has one format and the redaction rules apply everywhere; lines inside a span carry `traceId` and `spanId`. |
+
+SPEC D48 records the tracked Ajv 8.20.0 compiler patch: retain every own
+JSON schema-map key and use null-prototype membership/evaluation dictionaries,
+including dependency-map splitting. This corrects omitted `__proto__`
+constraints without banning/renaming user fields or transforming schemas.
+Published TypeScript and runtime JavaScript are patched together. Both frozen
+container installs apply the same patch; tests cover properties, patterns,
+additional/unevaluated properties, local references, dependencies and ordinary
+prototype-named controls. Strictness, synchronous compilation, no loader,
+release-age checks and SDK runtime-dependency rules are unchanged.
 
 ### 2.6 Observability
 
@@ -180,6 +199,7 @@ for the CLI.
 | `@biomejs/biome` | `^2.6` | lint and format |
 | `@types/node` | `^26` | |
 | `@types/pg` | latest | |
+| `@types/picomatch` | `^4.0` | development-only declarations for the approved picomatch 4 runtime (SPEC D47) |
 | `knip` | `^6.42` | unused files, exports and dependencies; runs in `make check` |
 | `publint`, `@arethetypeswrong/cli` | `^0.3`, `^0.18` | package export checks for `@krun/sdk` and `@krun/cli` before publish (P9.5) |
 
@@ -199,13 +219,22 @@ TypeScript settings in `tsconfig.base.json`: `strict`,
 properties), so sources stay runnable under Node's type stripping for
 quick scripts.
 
+Internal workspace consumers declare `@krun/shared: workspace:*` and import
+its built `dist` subpaths. `pnpm -r build` orders shared before its consumers;
+`make lint` depends on that build so a clean checkout has declarations before
+consumer no-emit checks (SPEC D50). Keep each package's existing source/output
+root, native ESM and full type/lint checks; do not copy schemas or bundle shared.
+
 Python SDK (`sdk/python`): Python 3.11 or newer, standard library only at
 runtime; `uv`, `ruff`, `pytest`, `hypothesis` (property tests, the
 counterpart of fast-check), `mypy --strict` for development.
 
 Tools on the agent machine (PLAN.md section 2): Node 26, pnpm, uv, Docker,
 Helm 4, kind 0.31 or newer, kubectl, actionlint, gh, helm-docs, promtool;
-in CI also Trivy, cosign, syft.
+in CI also Trivy, cosign, syft. OpenSSL CLI is a test-only prerequisite
+for owned ephemeral webhook TLS receiver certificates; the Node trust
+store is restored and the generated key/certificate are deleted after
+each test. It is not an application runtime dependency or a TLS bypass.
 
 ## 4. How the pieces fit
 
@@ -238,7 +267,9 @@ NodeRuntime.runMain(Layer.launch(Main))
 
 ### 4.2 Errors
 
-- Domain failures are `Data.TaggedError` classes (`FunctionNotFound`,
+- Public gateway failures use `ApiError`, a `Data.TaggedError` with a closed
+  `reason` union mapped to API section 4 (SPEC D52). Other domain failures
+  are `Data.TaggedError` classes (`FunctionNotFound`,
   `RunNotFound`, `QueueFull`, `IdempotencyConflict`, `TokenInvalid`, ...);
   the store's own `NotFoundError` and `ConflictError` (PLAN P1.1) are
   translated into them at the gateway.
