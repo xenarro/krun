@@ -6,6 +6,8 @@ import Fastify, {
   type FastifyRequest,
 } from "fastify";
 import { KrunConfig } from "../config/index.js";
+import { httpOptions } from "../runtime/http.js";
+import { withPinoLogger } from "../runtime/logging.js";
 import { MetricsReader } from "./metrics.js";
 import { Readiness } from "./readiness.js";
 
@@ -39,7 +41,9 @@ const healthPlugin = Effect.gen(function* () {
     reply.raw.once("close", close);
     if (request.raw.aborted || reply.raw.destroyed) abort();
     // Register before starting the root, even if its first action wakes shutdown.
-    const pending = Promise.resolve().then(() => run(effect, { signal: controller.signal }));
+    const pending = Promise.resolve().then(() =>
+      run(withPinoLogger(effect, request.log), { signal: controller.signal }),
+    );
     active.set(controller, pending);
     try {
       return await pending;
@@ -79,8 +83,9 @@ const healthPlugin = Effect.gen(function* () {
 export const makeHealthApp = Effect.gen(function* () {
   const readiness = yield* Readiness;
   const { plugin, stop } = yield* healthPlugin;
+  const observability = yield* httpOptions(false);
   const app = yield* Effect.acquireRelease(
-    Effect.sync(() => Fastify({ logger: false })),
+    Effect.sync(() => Fastify(observability)),
     (app) =>
       Effect.gen(function* () {
         yield* Ref.update(readiness.state, (state) => ({ ...state, draining: true }));

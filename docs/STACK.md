@@ -77,6 +77,14 @@ installation. Its compiler runtime does not import Swagger. P3.1c still owns
 actual OpenAPI registration/generation. No handwritten declarations, skipped
 library checks or unused-dependency exceptions are needed.
 
+The shared HTTP observability adapter (P3.1b, SPEC D54) uses Fastify's native
+pino instance and public LogController callbacks, not an added logger/plugin.
+Root/request/Effect logging uses one configured redaction policy per listener;
+request fibers replace CurrentLoggers and map KRUN_LOG_LEVEL to MinimumLogLevel.
+The captured Effect context preserves Clock and the Telemetry-owned MetricRegistry
+at native callback edges. Isolated factories without Config retain its info
+default; production wiring supplies Config normally. No module reads ambient env.
+
 ### 2.3 Data
 
 | Package | Range | Use | Rules |
