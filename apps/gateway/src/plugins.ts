@@ -1,6 +1,7 @@
 import type { KeyPrincipal, Keys } from "@krun/shared/dist/auth/keys.js";
 import type { KeyScope } from "@krun/shared/dist/auth/schema.js";
 import type { Functions } from "@krun/shared/dist/functions/cache.js";
+import { withPinoLogger } from "@krun/shared/dist/runtime/logging.js";
 import type { Store } from "@krun/shared/dist/store/index.js";
 import { Cause, type Context, Effect, Exit } from "effect";
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
@@ -48,7 +49,9 @@ export const requestRunner = (context: Context.Context<GatewayDependencies>) => 
     reply.raw.once("close", close);
     request.signal.addEventListener("abort", abort, { once: true });
     if (request.raw.aborted || reply.raw.destroyed || request.signal.aborted) abort();
-    const pending = Promise.resolve().then(() => run(program, { signal: controller.signal }));
+    const pending = Promise.resolve().then(() =>
+      run(withPinoLogger(program, request.log), { signal: controller.signal }),
+    );
     active.set(controller, pending);
     try {
       const result = await pending;
@@ -112,6 +115,7 @@ const authPlugin: FastifyPluginAsync<{ routes: FastifyPluginAsync }> = async (ap
         const key = yield* app.keys
           .lookup(matched[1])
           .pipe(Effect.mapError(() => new ApiError({ reason: "KEY_INVALID" })));
+        request.principal = key;
         const policy = request.routeOptions.config.krun;
         if (!policy) return yield* new ApiError({ reason: "INTERNAL" });
         if (!key.hasScope(policy.scope))

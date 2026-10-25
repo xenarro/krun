@@ -1,11 +1,12 @@
 import { Keys } from "@krun/shared/dist/auth/keys.js";
 import { Functions } from "@krun/shared/dist/functions/cache.js";
+import { httpOptions } from "@krun/shared/dist/runtime/http.js";
 import { Store } from "@krun/shared/dist/store/index.js";
 import { Data, Effect } from "effect";
 import Fastify, { type FastifyPluginAsync } from "fastify";
 import { serializerCompiler, validatorCompiler } from "fastify-type-provider-zod";
 import { z } from "zod";
-import { ApiError, sendError } from "./errors.js";
+import { ApiError, errorEnvelope, sendError } from "./errors.js";
 import { type GatewayDependencies, requestRunner, servicesPlugin } from "./plugins.js";
 import { strictRequestRoot } from "./request-schema.js";
 
@@ -25,12 +26,11 @@ export const makePublicApp = (options: PublicAppOptions = {}) =>
     const keys = yield* Keys;
     const context = yield* Effect.context<GatewayDependencies>();
     const runner = requestRunner(context);
+    const observability = yield* httpOptions(true);
     const app = yield* Effect.acquireRelease(
       Effect.sync(() =>
         Fastify({
-          logger: false,
-          requestIdHeader: false,
-          trustProxy: false,
+          ...observability,
           exposeHeadRoutes: false,
           frameworkErrors: (error, _request, reply) => sendError(reply, error),
         }),
@@ -48,7 +48,15 @@ export const makePublicApp = (options: PublicAppOptions = {}) =>
     });
     app.setSerializerCompiler(serializerCompiler);
     app.removeContentTypeParser("text/plain");
-    app.setErrorHandler((error, _request, reply) => sendError(reply, error));
+    app.setErrorHandler((error, request, reply) => {
+      const envelope = errorEnvelope(error);
+      if (envelope.error.code >= 500)
+        request.log.error(
+          { reason: envelope.error.details[0]?.reason ?? "INTERNAL" },
+          "Request failed",
+        );
+      return sendError(reply, error);
+    });
     app.setNotFoundHandler((_request, reply) =>
       sendError(reply, new ApiError({ reason: "ROUTE_NOT_FOUND" })),
     );

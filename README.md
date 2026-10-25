@@ -20,6 +20,48 @@ Health/telemetry acceptance covers real Prometheus collection through Fastify `i
 
 The `gateway` and `scheduler` server-image commands still print their names and exit; serving processes are not wired yet. `validate` is a real offline Function validator and `migrate` is a real database command, as described below. Reusable Function schemas, generated CRD/editor artifacts and the complete scoped SQLite/Postgres Store are available; actual gateway/scheduler wiring remains a later implementation step. See [PLAN.md](PLAN.md) for acceptance criteria and progress.
 
+## HTTP observability (P3.1b, local implementation)
+
+The public factory and reusable admin app now echo bounded X-Request-Id values,
+replacing missing,empty,duplicate,oversized or illegal wire values with UUIDv7
+using the owning Effect Clock. Public /v1 completion audits record key names
+(null on401),reqId,trusted-proxy client IP,User-Agent and approved run/function/
+idempotency correlation. Authentication failures use warn; normal audits use info.
+Native router failures are covered too,without duplicate request logs.
+
+Shared native pino options remove sensitive structured payload/credential fields
+and do not serialize raw URLs,headers,bodies or exceptions. Request Effect logs
+use the same redacted pino child,KRUN_LOG_LEVEL and active span IDs. Both existing
+app factories record the exact krun_http_requests_total{route,code} and
+krun_http_request_seconds{route} metrics through the owning real Prometheus
+exporter; every404 uses unmatched rather than a raw path. A scoped LogDestination
+reference supports owned process/test sinks without a global logger singleton.
+
+Current repaired verification: 73 gateway tests; full `ionice -c 2 -n 0 make check`
+passes 946 TypeScript tests and one Python test. Rebuilt
+`krun-test-p3-1b-repair:local` passes 101 integration groups (80 inherited, eight gateway,
+six observability, seven CLI), checks 56 emitted-module hashes and runs as 65532:65532.
+Independent review exposed two extraction defects, now reproduced and repaired:
+native origin/HTTP/HTTPS absolute targets all receive exactly one public audit;
+idempotency fallback comes only from the bounded query `requestId`, never a Run
+body member. Registered templates and unmodified target path boundaries preserve
+unknown/bootstrap auditing without logging raw targets or normalizing dot segments.
+Permanent regressions and both reviewers' native controls cover auth failures,
+query/body conflicts, handler-owned metadata and real exported-span privacy.
+Repair evidence and finding dispositions are in
+`.agent-state/krun/reports/repair-p3-1b.json`.
+Native routing/credential regressions,generation,Helm,audit,frozen supply-chain
+installation,actionlint and the fixable-critical image scan also pass. Failed
+acceptance/build/format/tool-discovery attempts are retained and dispositioned in
+`.agent-state/krun/reports/implement-p3-1b.json`.
+
+This is an uncommitted implementation on the preserved typed task branch,ready
+for independent review; P3.1b remains unchecked. No new commit,push,hosted-CI or
+public-method completion is claimed. The prior P3.1a PR is now merged; older
+section counts and delivery notes below describe that earlier acceptance.
+Process/listener startup,HTTP request-span wiring,OpenAPI,concrete API methods and
+the full Phase3/Kubernetes end-to-end gate remain later tasks.
+
 ## Public gateway foundation (P3.1a)
 
 `apps/gateway/src/app.ts` now provides a real scoped `makePublicApp` factory.
