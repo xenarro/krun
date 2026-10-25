@@ -210,6 +210,12 @@ TypeScript settings in `tsconfig.base.json`: `strict`,
 properties), so sources stay runnable under Node's type stripping for
 quick scripts.
 
+Internal workspace consumers declare `@krun/shared: workspace:*` and import
+its built `dist` subpaths. `pnpm -r build` orders shared before its consumers;
+`make lint` depends on that build so a clean checkout has declarations before
+consumer no-emit checks (SPEC D50). Keep each package's existing source/output
+root, native ESM and full type/lint checks; do not copy schemas or bundle shared.
+
 Python SDK (`sdk/python`): Python 3.11 or newer, standard library only at
 runtime; `uv`, `ruff`, `pytest`, `hypothesis` (property tests, the
 counterpart of fast-check), `mypy --strict` for development.
