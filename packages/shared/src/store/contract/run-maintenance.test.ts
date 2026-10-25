@@ -103,7 +103,7 @@ const seedDelivery = (n: number, due: DateTime.Utc, state: DeliveryState = "pend
   Effect.gen(function* () {
     yield* seed(n, { callback_url: "https://callback.invalid/maintenance" });
     const transition = yield* makeTransition;
-    yield* transition(id(n), "queued", "failed", null, {});
+    yield* transition(id(n), "queued", "failed", "job_create_failed", {});
     yield* query((db) =>
       sql`update deliveries set id=${id(1000 + n)},next_at=${DateTime.formatIso(due)},state=${state} where run_id=${id(n)}`.execute(
         db,
