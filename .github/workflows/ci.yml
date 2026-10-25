@@ -61,10 +61,13 @@ jobs:
         run: make docker
       - name: Verify container commands and runtime identity
         run: |
-          for entry in gateway scheduler validate; do
+          for entry in gateway scheduler; do
             output=$(docker run --rm --read-only --network none --cap-drop ALL --security-opt no-new-privileges krun:local "$entry")
             test "$output" = "$entry"
           done
+          output=$(docker run --rm --read-only --network none --cap-drop ALL --security-opt no-new-privileges krun:local validate --help)
+          test "$output" = 'Usage: krun validate [--help] <path>...'
+          node scripts/smoke-validate.ts krun:local
           docker run --rm --read-only --network none --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp:rw,nosuid,nodev,size=16m --env KRUN_DB_MODE=embedded --env KRUN_DB_PATH=/tmp/krun-test-ci.db --entrypoint /nodejs/bin/node krun:local -e 'const assert = require("node:assert/strict"); const { spawnSync } = require("node:child_process"); const { DatabaseSync } = require("node:sqlite"); for (let i = 0; i < 2; i++) { const result = spawnSync(process.execPath, ["/app/bin/krun.js", "migrate"], { encoding: "utf8", timeout: 20000 }); assert.equal(result.status, 0); } const db = new DatabaseSync(process.env.KRUN_DB_PATH); try { assert.deepEqual(db.prepare("select name from kysely_migration order by name").all().map(row => row.name), ["0001_init", "0002_event_rowid"]); assert.equal(db.prepare("select count(*) as n from pragma_table_info(?)").get("runs").n, 25); } finally { db.close(); }'
           docker run --rm --read-only --network none --entrypoint /nodejs/bin/node krun:local -e 'const assert = require("node:assert/strict"); const fs = require("node:fs"); assert.equal(process.getuid(), 65532); assert.equal(process.getgid(), 65532); assert.equal(process.version, "v" + fs.readFileSync("/app/.node-version", "utf8").trim());'
       - name: Lint chart
