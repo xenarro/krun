@@ -91,9 +91,18 @@ double generation/drift, Helm, frozen install, production audit, workflow lint
 and fixable-critical image scan pass. Original failed attempts and reviewer
 reports remain preserved; owner reruns are not a new independent approval.
 
-This is locally verified repaired source ready for the separate delivery owner,
-not committed/pushed P3.3 source, hosted CI or a PLAN checkbox closure. Public Run
-reads, remaining methods, listener/process wiring, graceful drain integration and
+At the repair checkpoint this source was uncommitted and P3.3 was unchecked.
+Runtime commit `0961769ff6b0f7607e23d6f5e6c2b62fa30c1315` was subsequently pushed and
+normally reconciled with verified main as `326a3966e560b1d602a54e7796371e2fec30a593`.
+[Exact code-head CI](https://github.com/xenarro/krun/actions/runs/40237884278)
+passes all nine hosted gates on attempt2; the original unchanged CLI aggregate
+five-second deadline failure and isolated control are retained without weakened
+assertions, deadlines or workers. [PR #29](https://github.com/xenarro/krun/pull/29)
+is independently approved and merged as `68f2e7cd35cda44eba3f35cba12c613beecf663a`;
+this delivery job did not merge it or bypass protection. Only after accepted code
+CI is P3.3 checked in PLAN. This documentation-only follow-up reconciles merged
+main normally and receives its own pre-commit and exact-head hosted checks.
+Public Run reads, remaining methods, listener/process wiring, graceful drain and
 complete application/Kubernetes end-to-end acceptance remain later PLAN tasks.
 
 ## HTTP observability (P3.1b)
