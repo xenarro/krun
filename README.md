@@ -20,7 +20,7 @@ Health/telemetry acceptance covers real Prometheus collection through Fastify `i
 
 The `gateway` and `scheduler` server-image commands still print their names and exit; serving processes are not wired yet. `validate` is a real offline Function validator and `migrate` is a real database command, as described below. Reusable Function schemas, generated CRD/editor artifacts and the complete scoped SQLite/Postgres Store are available; actual gateway/scheduler wiring remains a later implementation step. See [PLAN.md](PLAN.md) for acceptance criteria and progress.
 
-## HTTP observability (P3.1b, local implementation)
+## HTTP observability (P3.1b)
 
 The public factory and reusable admin app now echo bounded X-Request-Id values,
 replacing missing,empty,duplicate,oversized or illegal wire values with UUIDv7
@@ -55,10 +55,18 @@ installation,actionlint and the fixable-critical image scan also pass. Failed
 acceptance/build/format/tool-discovery attempts are retained and dispositioned in
 `.agent-state/krun/reports/implement-p3-1b.json`.
 
-This is an uncommitted implementation on the preserved typed task branch,ready
-for independent review; P3.1b remains unchecked. No new commit,push,hosted-CI or
-public-method completion is claimed. The prior P3.1a PR is now merged; older
-section counts and delivery notes below describe that earlier acceptance.
+Code `6d3e2b347204f2dddd2341ac2a8e07e651d3a011` is pushed in [PR #25](https://github.com/xenarro/krun/pull/25) against
+`main`, after content-preserving ancestry reconciliation with the merged prior stack.
+Its [exact-head hosted CI](https://github.com/xenarro/krun/actions/runs/40199214351)
+passes all nine gates, including 946 TypeScript tests and one Python test.
+P3.1b is checked only after that accepted code CI; the tracking update receives
+its own precommit check and exact-head hosted CI. The PR remains open with
+required independent repository review, not merged or automatically merged.
+One earlier delivery check hit ten unchanged Postgres startup-hook timeouts;
+Docker/pinned-image health, an isolated original fixture and a fresh unchanged
+full check then pass without weakened assertions, budgets or worker settings.
+No public-method or full-platform completion is claimed. The prior P3.1a PR is
+now merged; older section counts/delivery notes below describe earlier acceptance.
 Process/listener startup,HTTP request-span wiring,OpenAPI,concrete API methods and
 the full Phase3/Kubernetes end-to-end gate remain later tasks.
 
