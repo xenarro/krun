@@ -1,6 +1,6 @@
 import { DateTime } from "effect";
 import { z } from "zod";
-import type { JsonObject, JsonValue, Run } from "./model.js";
+import type { JsonObject, JsonValue, Run, SummaryRow } from "./model.js";
 import { failureReasons, states } from "./model.js";
 
 const object = z.custom<JsonObject>(
@@ -78,15 +78,24 @@ const schema = z.object({
   finished_at: utc.nullable(),
 });
 
-// Infrastructure decoder, not a row-to-wire mapper. Throwing parse failures
-// remain inside the query adapter's tryPromise boundary and are sanitized there.
-export const decodeRun = (row: unknown, dialect: "postgres" | "sqlite"): Run => {
+const summarySchema = schema.omit({ input: true, result: true, log_tail: true });
+const normalize = (row: unknown, dialect: "postgres" | "sqlite", columns: readonly string[]) => {
   if (dialect === "sqlite" && typeof row === "object" && row !== null) {
     const values: Record<string, unknown> = { ...row };
-    for (const key of ["input", "result", "error", "runtime_status", "job_status"]) {
+    for (const key of columns) {
       if (typeof values[key] === "string") values[key] = JSON.parse(values[key]);
     }
-    return schema.parse(values);
+    return values;
   }
-  return schema.parse(row);
+  return row;
 };
+
+// Infrastructure decoders, not row-to-wire mappers. Parse failures stay inside
+// the query adapter's tryPromise boundary and are sanitized there. BASIC reads
+// neither require nor decode the three FULL-only columns.
+export const decodeRun = (row: unknown, dialect: "postgres" | "sqlite"): Run =>
+  schema.parse(
+    normalize(row, dialect, ["input", "result", "error", "runtime_status", "job_status"]),
+  );
+export const decodeSummaryRow = (row: unknown, dialect: "postgres" | "sqlite"): SummaryRow =>
+  summarySchema.parse(normalize(row, dialect, ["error", "runtime_status", "job_status"]));
