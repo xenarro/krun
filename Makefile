@@ -11,7 +11,7 @@ test: build
 	pnpm test
 	uv run --directory sdk/python pytest
 
-lint:
+lint: build
 	pnpm -r lint
 	pnpm run lint
 	uv run --directory sdk/python ruff check .
