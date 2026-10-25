@@ -1,11 +1,27 @@
 import { DateTime, Effect } from "effect";
 import { sql } from "kysely";
 import { v7 } from "uuid";
+import { z } from "zod";
 import { Database } from "../runtime/database.js";
 import { DatabaseError } from "./errors.js";
 import type { StoreShape } from "./index.js";
 import { toRunSummary } from "./mappers.js";
+import { failureReasons } from "./model.js";
 import { decodeRun } from "./rows.js";
+
+// Either existing argument may supply the classification, but when both are
+// present they must agree. A failed target never invents a missing reason.
+const failedClassification = z
+  .object({
+    reason: z.enum(failureReasons).nullable(),
+    failure_reason: z.enum(failureReasons).nullish(),
+  })
+  .refine(
+    ({ reason, failure_reason }) =>
+      reason === null || failure_reason == null || reason === failure_reason,
+  )
+  .transform(({ reason, failure_reason }) => failure_reason ?? reason)
+  .pipe(z.enum(failureReasons));
 
 const json = (value: unknown) =>
   value === null || value === undefined ? value : JSON.stringify(value);
@@ -24,6 +40,10 @@ export const makeTransition = Effect.map(
             db.transaction().execute(async (tx) => {
               const at = DateTime.formatIso(now);
               const terminal = to === "succeeded" || to === "failed" || to === "cancelled";
+              const classification =
+                to === "failed"
+                  ? failedClassification.safeParse({ reason, failure_reason: patch.failure_reason })
+                  : undefined;
               // Enumerate declared columns, never identifiers supplied by a caller.
               // The CAS owns identity/state and lifecycle timestamps, not patch.
               const values = {
@@ -40,7 +60,9 @@ export const makeTransition = Effect.map(
                 result: json(patch.result),
                 result_ref: patch.result_ref,
                 log_tail: patch.log_tail,
-                failure_reason: patch.failure_reason,
+                failure_reason: classification?.success
+                  ? classification.data
+                  : patch.failure_reason,
                 runtime_status: json(
                   patch.runtime_status == null
                     ? patch.runtime_status
@@ -73,11 +95,18 @@ export const makeTransition = Effect.map(
                   where id=${id} and state=${from} returning *`.execute(tx)
               ).rows[0];
               if (updated === undefined) return false;
+              // Validate only a winning CAS. Failure rolls back its tentative row
+              // before any event/callback/hint; invalid stale calls still return false.
+              if (classification !== undefined && !classification.success)
+                throw classification.error;
+              const eventReason = classification?.success ? classification.data : reason;
               // Decode before committing: a malformed driver/patch row is a failure,
               // never a successful state change or a malformed callback payload.
               const run = decodeRun(updated, dialect);
               await sql`insert into run_events(run_id,at,from_state,to_state,reason,payload)
-                values(${id},${at},${from},${to},${reason},${json(event) ?? null})`.execute(tx);
+                values(${id},${at},${from},${to},${eventReason},${json(event) ?? null})`.execute(
+                tx,
+              );
               if (terminal && run.callback_url !== null) {
                 const deliveryId = v7({ msecs: DateTime.toEpochMillis(now) });
                 await sql`insert into deliveries(id,run_id,url,payload,attempt,next_at,state,last_error,created_at)

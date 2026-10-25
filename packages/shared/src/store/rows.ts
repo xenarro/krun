@@ -1,6 +1,6 @@
 import { DateTime } from "effect";
 import { z } from "zod";
-import type { JsonObject, JsonValue, Run, SummaryRow } from "./model.js";
+import type { Delivery, JsonObject, JsonValue, Run, RunSummary, SummaryRow } from "./model.js";
 import { failureReasons, states } from "./model.js";
 
 const object = z.custom<JsonObject>(
@@ -99,3 +99,63 @@ export const decodeRun = (row: unknown, dialect: "postgres" | "sqlite"): Run =>
   );
 export const decodeSummaryRow = (row: unknown, dialect: "postgres" | "sqlite"): SummaryRow =>
   summarySchema.parse(normalize(row, dialect, ["error", "runtime_status", "job_status"]));
+
+// Stored callback payloads are already wire BASIC snapshots, not mutable Run rows.
+// Validate that boundary without inventing a second row-to-wire mapper or
+// silently dropping corrupt/FULL-only fields before delivering them.
+const summaryPayload = z.strictObject({
+  name: z.string(),
+  state: z.string().refine((value) => states.some((state) => state.toUpperCase() === value)),
+  attempt: z.number().int(),
+  priority: z.number().int(),
+  createdBy: z.string(),
+  createTime: z.iso.datetime(),
+  scheduleTime: z.iso.datetime().optional(),
+  startTime: z.iso.datetime().optional(),
+  endTime: z.iso.datetime().optional(),
+  callback: z.strictObject({ url: z.string() }).optional(),
+  resultUri: z.string().optional(),
+  error: z
+    .strictObject({
+      source: z.enum(["FUNCTION", "KUBERNETES", "KRUN"]),
+      message: z.string(),
+      type: z.string().optional(),
+    })
+    .optional(),
+  failureReason: z
+    .string()
+    .refine((value) => failureReasons.some((reason) => reason.toUpperCase() === value))
+    .optional(),
+  runtimeStatus: z
+    .strictObject({
+      message: z.string(),
+      reportTime: z.iso.datetime(),
+      progress: z.number().optional(),
+      data: object.optional(),
+    })
+    .optional(),
+  jobStatus: z
+    .strictObject({
+      observeTime: z.iso.datetime(),
+      podName: z.string().optional(),
+      phase: z.string().optional(),
+      reason: z.string().optional(),
+      message: z.string().optional(),
+      exitCode: z.number().int().optional(),
+    })
+    .optional(),
+  jobName: z.string().optional(),
+});
+const deliverySchema = z.object({
+  id: z.string(),
+  run_id: z.string(),
+  url: z.string(),
+  payload: z.custom<RunSummary>((value) => summaryPayload.safeParse(value).success),
+  attempt: z.number().int().nonnegative(),
+  next_at: utc,
+  state: z.enum(["pending", "delivered", "dead"]),
+  last_error: z.string().nullable(),
+  created_at: utc,
+});
+export const decodeDelivery = (row: unknown, dialect: "postgres" | "sqlite"): Delivery =>
+  deliverySchema.parse(normalize(row, dialect, ["payload"]));

@@ -19,5 +19,6 @@ minimumReleaseAgeExclude:
   - '@effect/vitest@4.0.6'
 
 patchedDependencies:
+  ajv@8.20.0: patches/ajv@8.20.0.patch
   thread-stream@4.2.0: patches/thread-stream@4.2.0.patch
 
