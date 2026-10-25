@@ -1,5 +1,6 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { KubeConfig } from "@kubernetes/client-node";
 import { Effect, Exit, Fiber, Layer, Stream } from "effect";
@@ -248,9 +249,7 @@ it("late authentication after cancellation cannot start a watch and closes its o
 });
 
 it("KUBECONFIG defaults load an owned credential-free fixture; loading errors remain bounded", async () => {
-  const scratch = process.env.TMPDIR;
-  if (!scratch) throw new Error("TMPDIR must point to the agent scratch directory");
-  const dir = await mkdtemp(join(scratch, "krun-test-p2-3-"));
+  const dir = await mkdtemp(join(tmpdir(), "krun-test-p2-3-"));
   cleanups.push(() => rm(dir, { recursive: true, force: true }));
   const fixture = new KubeConfig();
   load("https://krun-test.invalid")(fixture);
@@ -299,9 +298,7 @@ it.each(["gateway", "scheduler"] as const)(
       }
       response.end(JSON.stringify({ metadata: { resourceVersion: "42" }, items: [object, bad] }));
     });
-    const scratch = process.env.TMPDIR;
-    if (!scratch) throw new Error("Owned scratch directory required");
-    const dir = await mkdtemp(join(scratch, "krun-test-p2-3-layers-"));
+    const dir = await mkdtemp(join(tmpdir(), "krun-test-p2-3-layers-"));
     cleanups.push(() => rm(dir, { recursive: true, force: true }));
     const fixture = new KubeConfig();
     load(url)(fixture);
