@@ -80,11 +80,21 @@ const schema = z.object({
 
 const summarySchema = schema.omit({ input: true, result: true, log_tail: true });
 const normalize = (row: unknown, dialect: "postgres" | "sqlite", columns: readonly string[]) => {
-  if (dialect === "sqlite" && typeof row === "object" && row !== null) {
+  if (typeof row === "object" && row !== null) {
     const values: Record<string, unknown> = { ...row };
-    for (const key of columns) {
-      if (typeof values[key] === "string") values[key] = JSON.parse(values[key]);
+    if (dialect === "postgres" && values.idempotency_key_nul != null) {
+      const bytes = values.idempotency_key_nul;
+      if (!Buffer.isBuffer(bytes) || values.idempotency_key !== null)
+        throw new Error("Invalid identifier storage");
+      const key = bytes.toString("utf16le");
+      if (!key.includes("\0") || !Buffer.from(key, "utf16le").equals(bytes))
+        throw new Error("Invalid identifier storage");
+      values.idempotency_key = key;
     }
+    if (dialect === "sqlite")
+      for (const key of columns) {
+        if (typeof values[key] === "string") values[key] = JSON.parse(values[key]);
+      }
     return values;
   }
   return row;

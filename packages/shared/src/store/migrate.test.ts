@@ -105,14 +105,20 @@ for (const dialect of ["sqlite", "postgres"] as const) {
           expect(first.stdout.trim()).not.toBe("migrate");
           const before = yield* history;
           expect(before.map((row) => row.name)).toEqual(
-            dialect === "sqlite" ? ["0001_init", "0002_event_rowid"] : ["0001_init"],
+            dialect === "sqlite"
+              ? ["0001_init", "0002_event_rowid"]
+              : ["0001_init", "0002_opaque_unicode"],
           );
           expect(cli().status).toBe(0);
           expect(yield* history).toEqual(before);
           const tables = yield* query((db) => db.introspection.getTables());
           expect(
             Object.fromEntries(tables.map((table) => [table.name, table.columns.length])),
-          ).toEqual({ runs: 25, run_events: dialect === "sqlite" ? 7 : 6, deliveries: 9 });
+          ).toEqual({
+            runs: dialect === "sqlite" ? 25 : 26,
+            run_events: dialect === "sqlite" ? 7 : 6,
+            deliveries: 9,
+          });
         }),
       ),
     );
@@ -204,7 +210,10 @@ for (const dialect of ["sqlite", "postgres"] as const) {
               );
             });
             expect(cli().status).toBe(0);
-            expect((yield* history).map((row) => row.name)).toEqual(["0001_init"]);
+            expect((yield* history).map((row) => row.name)).toEqual([
+              "0001_init",
+              "0002_opaque_unicode",
+            ]);
           }),
         ),
       );

@@ -42,13 +42,20 @@ export const requestRunner = (context: Context.Context<GatewayDependencies>) => 
     if (stopping) throw new ApiError({ reason: "INTERNAL" });
     const controller = new AbortController();
     const abort = () => controller.abort();
+    // Fastify's signal follows IncomingMessage.close, including NORMAL fully
+    // consumed POST bodies. Only a real incomplete/destroyed transport aborts
+    // the program; response.close below covers disconnects after body completion.
+    const signalAbort = () => {
+      if (!request.raw.complete || request.raw.aborted || reply.raw.destroyed) abort();
+    };
     const close = () => {
       if (!reply.raw.writableFinished) abort();
     };
     request.raw.once("aborted", abort);
     reply.raw.once("close", close);
-    request.signal.addEventListener("abort", abort, { once: true });
-    if (request.raw.aborted || reply.raw.destroyed || request.signal.aborted) abort();
+    request.signal.addEventListener("abort", signalAbort, { once: true });
+    if (request.raw.aborted || reply.raw.destroyed) abort();
+    else if (request.signal.aborted) signalAbort();
     const pending = Promise.resolve().then(() =>
       run(withPinoLogger(program, request.log), { signal: controller.signal }),
     );
@@ -63,7 +70,7 @@ export const requestRunner = (context: Context.Context<GatewayDependencies>) => 
     } finally {
       request.raw.off("aborted", abort);
       reply.raw.off("close", close);
-      request.signal.removeEventListener("abort", abort);
+      request.signal.removeEventListener("abort", signalAbort);
       active.delete(controller);
     }
   };
@@ -132,12 +139,16 @@ const authPlugin: FastifyPluginAsync<{ routes: FastifyPluginAsync }> = async (ap
       }),
     );
     request.principal = principal;
+  });
+  app.addHook("preParsing", async (request, _reply, payload) => {
+    if (request.is404) return payload;
     const contentType = request.headers["content-type"];
     if (
       contentType !== undefined &&
       contentType.split(";", 1)[0]?.trim().toLowerCase() !== "application/json"
     )
       throw new ApiError({ reason: "CONTENT_TYPE_UNSUPPORTED" });
+    return payload;
   });
   app.register(options.routes);
 };

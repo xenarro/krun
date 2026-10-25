@@ -27,6 +27,11 @@ interface ExpectedStore {
     run: NewRun,
   ) => Effect.Effect<{ run: Run; created: boolean }, DatabaseError | ConflictError>;
   readonly getRun: (id: string) => Effect.Effect<Run, DatabaseError | NotFoundError>;
+  readonly findRunByRequestId: (
+    functionName: string,
+    createdBy: string,
+    requestId: string,
+  ) => Effect.Effect<Run | undefined, DatabaseError>;
   readonly listRuns: (
     filter: RunFilter,
     cursor: string | null,
@@ -120,7 +125,12 @@ it("defines plain Kysely tables for both driver representations with application
 
 it("keeps the complete SQL column set and BASIC projection types explicit", () => {
   expectTypeOf<keyof SqliteTables["runs"]>().toEqualTypeOf<keyof Run>();
-  expectTypeOf<keyof PostgresTables["runs"]>().toEqualTypeOf<keyof Run>();
+  expectTypeOf<keyof Omit<PostgresTables["runs"], "idempotency_key_nul">>().toEqualTypeOf<
+    keyof Run
+  >();
+  expectTypeOf<
+    PostgresTables["runs"]["idempotency_key_nul"]["__select__"]
+  >().toEqualTypeOf<Buffer | null>();
   expectTypeOf<keyof SqliteTables["run_events"]>().toEqualTypeOf<
     "rowid" | "run_id" | "at" | "from_state" | "to_state" | "reason" | "payload"
   >();

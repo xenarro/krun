@@ -74,7 +74,9 @@ interface Tables<Timestamp, Serialized extends boolean> {
   deliveries: DeliveriesTable<Timestamp, Serialized>;
 }
 
-export type PostgresTables = Tables<Date, false>;
+export type PostgresTables = Omit<Tables<Date, false>, "runs"> & {
+  runs: RunsTable<Date, false> & { idempotency_key_nul: Generated<Buffer | null> };
+};
 export type SqliteTables = Omit<Tables<string, true>, "run_events"> & {
   run_events: RunEventsTable<string, true> & { rowid: Generated<number> };
 };

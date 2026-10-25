@@ -4,6 +4,7 @@ import { Database } from "../runtime/database.js";
 import { ConflictError, DatabaseError } from "./errors.js";
 import type { StoreShape } from "./index.js";
 import type { NewRun } from "./model.js";
+import { requestIdStorage } from "./request-id.js";
 import { decodeRun } from "./rows.js";
 
 // Supplies exactly the declared method, without dummy implementations of the
@@ -21,6 +22,7 @@ export const makeCreateRun = Effect.map(
           }),
           catch: () => new DatabaseError({ operation: "createRun" }),
         });
+        const key = requestIdStorage(dialect, run.idempotency_key);
         const result = yield* Effect.tryPromise({
           try: () =>
             db.transaction().execute(async (transaction) => {
@@ -28,9 +30,9 @@ export const makeCreateRun = Effect.map(
               // check, permission and query failures must never become dedupe success.
               const inserted = (
                 await sql`
-          insert into runs (id,idempotency_key,request_hash,function_name,input,state,priority,attempt,callback_url,created_by,created_at)
-          values (${values.id},${values.idempotency_key},${values.request_hash},${values.function_name},${values.input},'queued',${values.priority},0,${values.callback_url},${values.created_by},${values.at})
-          on conflict (created_by,function_name,idempotency_key) where idempotency_key is not null do nothing
+          insert into runs (id,${key.column},request_hash,function_name,input,state,priority,attempt,callback_url,created_by,created_at)
+          values (${values.id},${key.value},${values.request_hash},${values.function_name},${values.input},'queued',${values.priority},0,${values.callback_url},${values.created_by},${values.at})
+          on conflict (created_by,function_name,${key.column}) where ${key.column} is not null do nothing
           returning *`.execute(transaction)
               ).rows[0];
               if (inserted !== undefined) {
@@ -50,7 +52,7 @@ export const makeCreateRun = Effect.map(
               // serializes the same algorithm under its existing BEGIN IMMEDIATE.
               const existing = (
                 await sql`select * from runs where created_by=${values.created_by}
-          and function_name=${values.function_name} and idempotency_key=${values.idempotency_key}`.execute(
+          and function_name=${values.function_name} and ${key.column}=${key.value}`.execute(
                   transaction,
                 )
               ).rows[0];

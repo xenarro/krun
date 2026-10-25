@@ -80,6 +80,7 @@ const seed = (n: number, start: DateTime.Utc, fn = "function-a", state: State = 
       ).toBe(true);
   });
 const methods = [
+  "findRunByRequestId",
   "createRun",
   "getRun",
   "listRuns",
@@ -363,7 +364,7 @@ for (const dialect of ["sqlite", "postgres"] as const) {
         ),
     );
     it.effect(
-      "complete dialect Store layers execute all 23 declared methods without placeholders",
+      "complete dialect Store layers execute all 24 declared methods without placeholders",
       () =>
         Effect.gen(function* () {
           yield* TestClock.setTime(DateTime.toEpochMillis(base));
@@ -371,7 +372,19 @@ for (const dialect of ["sqlite", "postgres"] as const) {
           expect(Object.keys(store).sort()).toEqual(methods);
           yield* store.migrate();
           yield* store.migrate();
-          expect((yield* store.createRun(input(1, base))).created).toBe(true);
+          expect(
+            (yield* store.createRun({ ...input(1, base), idempotency_key: "krun-test-p33" }))
+              .created,
+          ).toBe(true);
+          expect(
+            (yield* store.findRunByRequestId("function-a", "owner-a", "krun-test-p33"))?.id,
+          ).toBe(id(1));
+          expect(
+            yield* store.findRunByRequestId("function-a", "other", "krun-test-p33"),
+          ).toBeUndefined();
+          expect(
+            yield* store.findRunByRequestId("other", "owner-a", "krun-test-p33"),
+          ).toBeUndefined();
           expect(yield* store.countQueued("function-a")).toBe(1);
           expect(yield* store.countQueuedBy("function-a", "owner-a")).toBe(1);
           expect((yield* store.countByState()).get("function-a")?.get("queued")).toBe(1);
@@ -439,7 +452,7 @@ for (const dialect of ["sqlite", "postgres"] as const) {
                   ).rows[0]?.n,
               ),
             ).toBe(1);
-            const pending = dialect === "sqlite" ? "0002_event_rowid" : "0001_init";
+            const pending = dialect === "sqlite" ? "0002_event_rowid" : "0002_opaque_unicode";
             yield* query(async (db) => {
               await sql`delete from kysely_migration where name=${pending}`.execute(db);
               await sql`insert into kysely_migration(name,timestamp) values('9999_future','2026-10-25T00:00:00.000Z')`.execute(

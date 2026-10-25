@@ -397,7 +397,7 @@ for (const dialect of ["sqlite", "postgres"] as const) {
           expect(rows.runs).toHaveLength(1);
           expect(rows.runs[0]).not.toHaveProperty("input");
           const { db } = yield* Database;
-          const compiled = listRunsQuery({}, null, 50).compile(db);
+          const compiled = listRunsQuery({}, null, 50, dialect).compile(db);
           expect(compiled.sql).not.toMatch(/\b(input|result|log_tail)\b/);
         }),
       ),
@@ -478,7 +478,7 @@ for (const dialect of ["sqlite", "postgres"] as const) {
               await sql`analyze runs`.execute(db);
               return db.transaction().execute(async (tx) => {
                 await sql`set local enable_seqscan=off`.execute(tx);
-                return (await sql`explain ${listRunsQuery({}, null, 50)}`.execute(tx)).rows
+                return (await sql`explain ${listRunsQuery({}, null, 50, dialect)}`.execute(tx)).rows
                   .map((r) => (r as { "QUERY PLAN": string })["QUERY PLAN"])
                   .join("\n");
               });

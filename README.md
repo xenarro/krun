@@ -20,6 +20,82 @@ Health/telemetry acceptance covers real Prometheus collection through Fastify `i
 
 The `gateway` and `scheduler` server-image commands still print their names and exit; serving processes are not wired yet. `validate` is a real offline Function validator and `migrate` is a real database command, as described below. Reusable Function schemas, generated CRD/editor artifacts and the complete scoped SQLite/Postgres Store are available; actual gateway/scheduler wiring remains a later implementation step. See [PLAN.md](PLAN.md) for acceptance criteria and progress.
 
+## Run admission (P3.3)
+
+`apps/gateway/src/create-run-routes.ts` implements real `CreateRun` as a scoped
+plugin under `makePublicApp`, using the existing Store, validated Function cache,
+current Keys principal and caller-owned parsed limits/webhook policy. Acquire
+`createRunRoutes(parsedGatewayConfig)` in the owning Effect scope with the real
+`DnsLookup` service, then register the returned plugin through the factory.
+No listener or serving command is started by this reusable slice.
+
+Authentication and method scope precede per-key Clock-driven rate admission,
+Ready/current-glob Function resolution and native byte-limited parsing. Both
+Content-Length and chunked bytes are bounded before JSON parsing, including a
+configured zero cap. Strict owned schemas reject unknown/null members while
+opaque input retains own JSON keys without assigning prototypes. Compiled input
+validation reports canonical `BadRequest.fieldViolations`; priority scope and
+real callback host/all-address policy precede queued-cap checks and insertion.
+The current positive-priority grant is enforced before fingerprint and private
+Store request-id lookup (D63), including replay after revocation. The lookup
+returns the current FULL row before schema, callback and quota checks; JCS fingerprints exclude
+output-only fields, `requestId` and `wait`, and precede default callback copying.
+Replay/conflict responses preserve the documented 201/409 semantics, Location,
+Idempotent-Replay and Retry-After headers.
+
+New runs use the owning Clock for UUIDv7 and creation time, and the actual Store
+transaction persists the queued row and actor event. Per-Function same-replica
+admission serialization excludes response waits; database uniqueness remains
+cross-replica dedupe authority. Optional capped waits register scoped queues before
+insertion, consume one shared Store hint stream per plugin, re-read actual rows
+and retain the specified one-second fallback. Client disconnects release waiting
+work without cancelling a persisted Run. Admission counters expose only the four
+bounded reason labels in the owning telemetry registry, not a fresh global one.
+
+D60 records composition/admission choices. Native HTTP acceptance exposed and
+repaired D61: Fastify's request signal also aborts on a normally consumed POST
+body, so shared cancellation now checks real incomplete/destroyed transport state
+while retaining genuine disconnect and app-close interruption. D62 records the
+isolated-registry regression and context-preserving native error-hook metric fix.
+D63 repairs the independently reproduced priority-replay exemption without
+weakening current grants. D64 preserves valid Unicode NUL input values/keys and
+opaque request IDs on both databases: a forward Postgres migration changes input
+to native `json` and adds a nullable binary slot/index for the disjoint NUL-ID
+domain. An exact UTF-16LE storage adapter and infrastructure decoder preserve
+identifiers without normalization or aliasing printable escapes. Existing text
+IDs/index, shipped migration, domain DTOs, fingerprint and ordinary legacy SQL
+writers/readers remain intact; no new public restriction or blanket database
+error remapping is introduced.
+
+Repaired local acceptance passes 42 dedicated CreateRun tests, two UUID/Clock
+checks and eight real-database Unicode/migration/rollback controls. Complete
+`make check` passes 1062 TypeScript tests (including all 159 gateway tests)
+and one Python test. The phase gate includes actual
+CreateRun POST, replay/conflict and an explicitly test-owned durable readback GET
+against PostgreSQL18; it does not implement the future public GetRun handler.
+Full checks use the recorded owned two-CPU verifier with unchanged test defaults,
+assertions and deadlines, real file-backed SQLite fixtures on task-owned tmpfs,
+and actual PostgreSQL Testcontainers. Earlier unrestricted-host Store timeouts
+remain retained, not claimed repaired. A first repair full run also hit the
+unchanged five-second leasing planner deadline; its isolated control and the
+final complete gate pass without changing assertions, workers or deadlines.
+The separately rebuilt `krun-test-p3-3-repair:local` image passes actual native
+SQLite/Postgres create/replay, NUL-data and current-priority controls, credential
+and resource-lifecycle controls, and 63 emitted-module hashes as uid/gid65532.
+The preserved implementation image also successfully reads/writes NUL input and
+replays ordinary text IDs against the upgraded Postgres schema. Both images run
+read-only; the PostgreSQL probe uses only its owned disposable database.
+Fresh repair-image reruns also pass all 15 admission/disconnect/isolated-registry
+metric groups and seven CLI groups. The exact standalone 159-test gateway gate,
+double generation/drift, Helm, frozen install, production audit, workflow lint
+and fixable-critical image scan pass. Original failed attempts and reviewer
+reports remain preserved; owner reruns are not a new independent approval.
+
+This is locally verified repaired source ready for the separate delivery owner,
+not committed/pushed P3.3 source, hosted CI or a PLAN checkbox closure. Public Run
+reads, remaining methods, listener/process wiring, graceful drain integration and
+complete application/Kubernetes end-to-end acceptance remain later PLAN tasks.
+
 ## HTTP observability (P3.1b)
 
 The public factory and reusable admin app now echo bounded X-Request-Id values,

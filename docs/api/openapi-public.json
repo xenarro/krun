@@ -2101,7 +2101,11 @@
                   },
                   "input": {
                     "additionalProperties": {},
-                    "type": "object"
+                    "type": "object",
+                    "x-field-behavior": [
+                      "REQUIRED",
+                      "IMMUTABLE"
+                    ]
                   },
                   "jobName": {
                     "$ref": "#/components/schemas/ResultInput"

@@ -22,6 +22,11 @@ export interface StoreShape {
     run: NewRun,
   ) => Effect.Effect<{ run: Run; created: boolean }, ConflictError | DatabaseError>;
   readonly getRun: (id: string) => Effect.Effect<Run, NotFoundError | DatabaseError>;
+  readonly findRunByRequestId: (
+    functionName: string,
+    createdBy: string,
+    requestId: string,
+  ) => Effect.Effect<Run | undefined, DatabaseError>;
   readonly listRuns: (
     filter: RunFilter,
     cursor: string | null,
