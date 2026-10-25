@@ -30,6 +30,7 @@ export class ApiError extends Data.TaggedError("ApiError")<{
   readonly reason: ApiReason;
   // Only explicitly selected nonsecret API metadata, never arbitrary causes.
   readonly metadata?: Readonly<Record<string, string>>;
+  readonly fieldViolations?: readonly { readonly field: string; readonly description: string }[];
 }> {}
 const frameworkError = z.looseObject({ code: z.string() });
 const malformed = new Set([
@@ -67,7 +68,15 @@ export const errorEnvelope = (error: unknown) => {
             ? { metadata: error.metadata }
             : {}),
         },
-      ],
+        ...(error instanceof ApiError && error.fieldViolations !== undefined
+          ? [
+              {
+                "@type": "type.googleapis.com/google.rpc.BadRequest" as const,
+                fieldViolations: error.fieldViolations,
+              },
+            ]
+          : []),
+      ] as const,
     },
   };
 };

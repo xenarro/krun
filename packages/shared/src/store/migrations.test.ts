@@ -53,7 +53,9 @@ describe("migration preparation", () => {
     ] as const) {
       const migrations = await migrationProvider(dialect).getMigrations();
       expect(Object.keys(migrations)).toEqual(
-        dialect === "sqlite" ? ["0001_init", "0002_event_rowid"] : ["0001_init"],
+        dialect === "sqlite"
+          ? ["0001_init", "0002_event_rowid"]
+          : ["0001_init", "0002_opaque_unicode"],
       );
       for (const migration of Object.values(migrations)) {
         expect(migration.up).toBeTypeOf("function");

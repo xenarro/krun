@@ -1,3 +1,4 @@
+import type { JsonObject } from "@krun/shared/dist/store/model.js";
 import { z } from "zod";
 
 const output = <T extends z.ZodType>(schema: T) =>
@@ -20,13 +21,16 @@ const duration = z
 const data = z.custom<Record<string, unknown>>(
   (value) => value !== null && typeof value === "object" && !Array.isArray(value),
 );
-const runInput = data.meta({ "x-field-behavior": ["REQUIRED", "IMMUTABLE"] });
+const inputData = z.custom<JsonObject>(
+  (value) => value !== null && typeof value === "object" && !Array.isArray(value),
+);
+const runInput = inputData.meta({ "x-field-behavior": ["REQUIRED", "IMMUTABLE"] });
 const functionInput = data.meta({
   readOnly: true,
   "x-field-behavior": ["OUTPUT_ONLY"],
   description: "JSON Schema2020-12 for Run.input; opaque schema document.",
 });
-const opaqueLeaves = new Set<z.core.$ZodType>([data, runInput, functionInput]);
+const opaqueLeaves = new Set<z.core.$ZodType>([data, inputData, runInput, functionInput]);
 export const publicContractProjection = ({ zodSchema }: { zodSchema: z.core.$ZodType }) =>
   opaqueLeaves.has(zodSchema)
     ? { type: "object" as const, additionalProperties: {} }
@@ -316,7 +320,7 @@ export const publicContracts = {
       }),
       body: z.strictObject({
         ...ignoredOutputs,
-        input: data,
+        input: runInput,
         priority: z.int32().min(0).max(9).default(0),
         callback: callback.optional(),
       }),

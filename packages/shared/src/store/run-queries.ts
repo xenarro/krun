@@ -8,6 +8,7 @@ import { DatabaseError, NotFoundError } from "./errors.js";
 import type { StoreShape } from "./index.js";
 import { toRunSummary } from "./mappers.js";
 import { failureReasons, type RunFilter, states } from "./model.js";
+import { requestIdStorage } from "./request-id.js";
 import { decodeRun, decodeSummaryRow } from "./rows.js";
 
 const utc = z.custom<DateTime.Utc>((value) => DateTime.isDateTime(value) && DateTime.isUtc(value));
@@ -78,7 +79,12 @@ const summaryColumns = sql`id,idempotency_key,request_hash,function_name,state,p
 
 // The planner contract runs EXPLAIN on this exact builder used by listRuns.
 // Validation throws only inside the Store adapter (or a caller's schema boundary).
-export const listRunsQuery = (filter: RunFilter, cursor: string | null, limit = 50) => {
+export const listRunsQuery = (
+  filter: RunFilter,
+  cursor: string | null,
+  limit = 50,
+  dialect: "postgres" | "sqlite" = "sqlite",
+) => {
   filterSchema.parse(filter);
   const predicates = [];
   if (filter.function_name !== undefined)
@@ -99,11 +105,11 @@ export const listRunsQuery = (filter: RunFilter, cursor: string | null, limit = 
     const after = decodeCursor(cursor, scopeHash(filter));
     predicates.push(sql`(created_at,id) < (${after.at},${after.id})`);
   }
-  return sql`select ${summaryColumns} from runs ${predicates.length === 0 ? sql`` : sql`where ${sql.join(predicates, sql` and `)}`}
+  return sql`select ${summaryColumns}${dialect === "postgres" ? sql`,idempotency_key_nul` : sql``} from runs ${predicates.length === 0 ? sql`` : sql`where ${sql.join(predicates, sql` and `)}`}
     order by created_at desc,id desc limit ${pageSize(limit) + 1}`;
 };
 
-type Methods = Pick<StoreShape, "getRun" | "listRuns">;
+type Methods = Pick<StoreShape, "getRun" | "listRuns" | "findRunByRequestId">;
 const traced = <A, E>(method: keyof Methods, id: string | undefined, body: Effect.Effect<A, E>) =>
   body.pipe(
     Effect.uninterruptible,
@@ -121,6 +127,28 @@ const traced = <A, E>(method: keyof Methods, id: string | undefined, body: Effec
 export const makeRunQueries = Effect.map(
   Database,
   ({ db, dialect }): Methods => ({
+    findRunByRequestId: (functionName, createdBy, requestId) => {
+      const key = requestIdStorage(dialect, requestId);
+      return traced(
+        "findRunByRequestId",
+        undefined,
+        Effect.gen(function* () {
+          const row = yield* Effect.tryPromise({
+            try: async () => {
+              const raw = (
+                await sql`select * from runs where function_name=${functionName} and created_by=${createdBy} and ${key.column}=${key.value}`.execute(
+                  db,
+                )
+              ).rows[0];
+              return raw === undefined ? undefined : decodeRun(raw, dialect);
+            },
+            catch: () => new DatabaseError({ operation: "findRunByRequestId" }),
+          });
+          yield* Effect.annotateCurrentSpan("db.response.returned_rows", row === undefined ? 0 : 1);
+          return row;
+        }),
+      );
+    },
     getRun: (id) =>
       traced(
         "getRun",
@@ -145,7 +173,7 @@ export const makeRunQueries = Effect.map(
         Effect.gen(function* () {
           const result = yield* Effect.tryPromise({
             try: async () => {
-              const rows = (await listRunsQuery(filter, cursor, limit).execute(db)).rows;
+              const rows = (await listRunsQuery(filter, cursor, limit, dialect).execute(db)).rows;
               const size = pageSize(limit);
               const decoded = rows.slice(0, size).map((row) => decodeSummaryRow(row, dialect));
               const last = decoded.at(-1);
