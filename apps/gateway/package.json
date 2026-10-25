@@ -16,9 +16,17 @@
   },
   "dependencies": {
     "@effect/platform-node": "~4.0.6",
-    "effect": "~4.0.6"
+    "@krun/shared": "workspace:*",
+    "effect": "~4.0.6",
+    "fastify": "^5.12.7",
+    "fastify-type-provider-zod": "^7.0.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@effect/vitest": "~4.0.6",
+    "@fastify/swagger": "^9.9.2",
+    "@testcontainers/postgresql": "^12.2.1",
+    "testcontainers": "^12.2.1",
     "vitest": "^5.0"
   }
 }

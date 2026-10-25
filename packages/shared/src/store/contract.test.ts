@@ -122,7 +122,14 @@ it("keeps the complete SQL column set and BASIC projection types explicit", () =
   expectTypeOf<keyof SqliteTables["runs"]>().toEqualTypeOf<keyof Run>();
   expectTypeOf<keyof PostgresTables["runs"]>().toEqualTypeOf<keyof Run>();
   expectTypeOf<keyof SqliteTables["run_events"]>().toEqualTypeOf<
-    "run_id" | "at" | "from_state" | "to_state" | "reason" | "payload"
+    "rowid" | "run_id" | "at" | "from_state" | "to_state" | "reason" | "payload"
+  >();
+  expectTypeOf<keyof PostgresTables["run_events"]>().toEqualTypeOf<
+    Exclude<keyof SqliteTables["run_events"], "rowid">
+  >();
+  expectTypeOf<SqliteTables["run_events"]["rowid"]["__select__"]>().toEqualTypeOf<number>();
+  expectTypeOf<SqliteTables["run_events"]["rowid"]["__insert__"]>().toEqualTypeOf<
+    number | undefined
   >();
   expectTypeOf<keyof SqliteTables["deliveries"]>().toEqualTypeOf<keyof Delivery>();
   expectTypeOf<Extract<keyof RunSummary, "input" | "result" | "logTail">>().toEqualTypeOf<never>();

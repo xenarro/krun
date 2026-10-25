@@ -57,10 +57,12 @@ export class KrunSqliteDialect extends SqliteDialect {
       database: async () => {
         const database = new DatabaseSync(path);
         try {
-          database.exec("pragma auto_vacuum = INCREMENTAL");
-          database.exec("pragma journal_mode = WAL");
+          // Set the declared connection policy before persistent header/journal
+          // writes; otherwise those run under SQLite's default FULL sync mode.
           database.exec("pragma synchronous = NORMAL");
           database.exec("pragma busy_timeout = 5000");
+          database.exec("pragma auto_vacuum = INCREMENTAL");
+          database.exec("pragma journal_mode = WAL");
           database.exec("pragma foreign_keys = ON");
           return adapt(database);
         } catch (error) {

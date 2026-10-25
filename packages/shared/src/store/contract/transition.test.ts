@@ -267,7 +267,9 @@ for (const dialect of ["sqlite", "postgres"] as const) {
             const from = to === "cancelled" ? "cancelling" : "running";
             yield* seed(1, {}, from);
             const transition = yield* makeTransition;
-            expect(yield* transition(id(1), from, to, null, {})).toBe(true);
+            expect(
+              yield* transition(id(1), from, to, to === "failed" ? "exit_code" : null, {}),
+            ).toBe(true);
             expect(yield* deliveries()).toEqual([]);
           }),
         ),
@@ -586,7 +588,7 @@ for (const dialect of ["sqlite", "postgres"] as const) {
             });
             yield* transition(id(1), "scheduled", "running", null, {});
             yield* query((db) => sql`drop table run_events`.execute(db));
-            yield* Effect.flip(transition(id(1), "running", "failed", null, {}));
+            yield* Effect.flip(transition(id(1), "running", "failed", "exit_code", {}));
           }).pipe(Effect.withTracer(tracer));
           expect(spans).toHaveLength(3);
           expect(spans.map((s) => s.attributes.get("db.response.returned_rows"))).toEqual([

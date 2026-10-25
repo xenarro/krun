@@ -10,6 +10,7 @@ import { Database, DatabaseSqlite } from "../runtime/database.js";
 import { DatabaseError } from "./errors.js";
 import * as postgresInit from "./migrations/postgres/0001_init.js";
 import * as sqliteInit from "./migrations/sqlite/0001_init.js";
+import * as sqliteEventRowid from "./migrations/sqlite/0002_event_rowid.js";
 import { MigrationHistoryError, migrate, migrationProvider } from "./migrations.js";
 
 let directory: string;
@@ -44,12 +45,20 @@ const emptyHistory = query((db) =>
 // Postgres must run the same policy through the approved pg/Testcontainers path.
 describe("migration preparation", () => {
   it("discovers matching forward-only migration files for both dialects", async () => {
+    expect(Object.keys(sqliteEventRowid)).toEqual(["up"]);
+    expect(sqliteEventRowid.up).toBeTypeOf("function");
     for (const [dialect, module] of [
       ["postgres", postgresInit],
       ["sqlite", sqliteInit],
     ] as const) {
       const migrations = await migrationProvider(dialect).getMigrations();
-      expect(Object.keys(migrations)).toEqual(["0001_init"]);
+      expect(Object.keys(migrations)).toEqual(
+        dialect === "sqlite" ? ["0001_init", "0002_event_rowid"] : ["0001_init"],
+      );
+      for (const migration of Object.values(migrations)) {
+        expect(migration.up).toBeTypeOf("function");
+        expect(migration.down).toBeUndefined();
+      }
       expect(Object.keys(module)).toEqual(["up"]);
       expect(migrations["0001_init"]?.up).toBeTypeOf("function");
       expect(migrations["0001_init"]?.down).toBeUndefined();
@@ -60,7 +69,7 @@ describe("migration preparation", () => {
     Effect.gen(function* () {
       yield* migrate;
       const first = yield* history;
-      expect(first.map((row) => row.name)).toEqual(["0001_init"]);
+      expect(first.map((row) => row.name)).toEqual(["0001_init", "0002_event_rowid"]);
       yield* query((db) =>
         sql`insert into runs (id, request_hash, function_name, input, state, created_by, created_at)
         values (${"run-one"}, ${"hash"}, ${"hello"}, ${"{}"}, ${"queued"}, ${"tester"}, ${"2026-10-24T00:00:00.000Z"})`.execute(
@@ -91,7 +100,7 @@ describe("migration preparation", () => {
       ]);
       expect(
         Object.fromEntries(metadata.map((table) => [table.name, table.columns.length])),
-      ).toEqual({ runs: 25, run_events: 6, deliveries: 9 });
+      ).toEqual({ runs: 25, run_events: 7, deliveries: 9 });
       const indexes = yield* query((db) =>
         sql<{
           name: string;

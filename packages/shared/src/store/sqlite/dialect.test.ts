@@ -1,9 +1,10 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { expect, it } from "@effect/vitest";
 import { Deferred, Effect, Fiber } from "effect";
-import { type Kysely, sql } from "kysely";
+import { CompiledQuery, type Kysely, sql } from "kysely";
 import { afterEach, beforeEach } from "vitest";
 import { Database, DatabaseSqlite } from "../../runtime/database.js";
 
@@ -150,5 +151,143 @@ it.effect("sanitizes an acquisition failure without opening an ambient database"
     expect(error._tag).toBe("DatabaseError");
     expect(error.operation).toBe("open");
     expect(error.message).not.toContain(directory);
+  }),
+);
+
+// A deferred BEGIN also passes a contention check after its first write. Probe
+// before any transaction-body SQL so only eager writer reservation passes.
+const expectWriterBusy = (competitor: DatabaseSync) => {
+  let failure: unknown;
+  try {
+    competitor.exec("begin immediate");
+    competitor.exec("rollback");
+  } catch (error) {
+    failure = error;
+  }
+  expect(failure).toMatchObject({
+    code: "ERR_SQLITE_ERROR",
+    errcode: 5,
+    errstr: "database is locked",
+  });
+};
+
+it.effect(
+  "P1.9 reserves the writer before any transaction-body SQL while WAL readers proceed",
+  () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database;
+      yield* Effect.promise(async () => {
+        await sql`create table probe (value text)`.execute(db);
+        await sql`insert into probe values (${"committed"})`.execute(db);
+        const competitor = new DatabaseSync(databasePath);
+        try {
+          competitor.exec("pragma busy_timeout = 0");
+          expect(competitor.prepare("pragma journal_mode").get()).toEqual({ journal_mode: "wal" });
+          await db.transaction().execute(async (transaction) => {
+            expectWriterBusy(competitor);
+            expect(competitor.prepare("select value from probe").all()).toEqual([
+              { value: "committed" },
+            ]);
+            await sql`insert into probe values (${"new"})`.execute(transaction);
+            expect(competitor.prepare("select value from probe").all()).toEqual([
+              { value: "committed" },
+            ]);
+          });
+          competitor.exec("begin immediate");
+          competitor.exec("rollback");
+          expect(competitor.prepare("select value from probe order by value").all()).toEqual([
+            { value: "committed" },
+            { value: "new" },
+          ]);
+        } finally {
+          competitor.close();
+        }
+      });
+    }).pipe(Effect.provide(DatabaseSqlite(databasePath))),
+);
+
+it.effect("P1.9 rollback releases the native writer lock and discards uncommitted rows", () =>
+  Effect.gen(function* () {
+    const { db } = yield* Database;
+    yield* Effect.promise(async () => {
+      await sql`create table probe (value text)`.execute(db);
+      const competitor = new DatabaseSync(databasePath);
+      try {
+        competitor.exec("pragma busy_timeout = 0");
+        await expect(
+          db.transaction().execute(async (transaction) => {
+            expectWriterBusy(competitor);
+            await sql`insert into probe values (${"uncommitted"})`.execute(transaction);
+            expect(competitor.prepare("select * from probe").all()).toEqual([]);
+            throw new Error("P1.9 rollback sentinel");
+          }),
+        ).rejects.toThrow("P1.9 rollback sentinel");
+        competitor.exec("begin immediate");
+        competitor.exec("insert into probe values ('native writer')");
+        competitor.exec("commit");
+        expect((await sql`select value from probe`.execute(db)).rows).toEqual([
+          { value: "native writer" },
+        ]);
+      } finally {
+        competitor.close();
+      }
+    });
+  }).pipe(Effect.provide(DatabaseSqlite(databasePath))),
+);
+
+it.effect("P1.9 concurrent borrowers reuse one serialized physical connection", () =>
+  Effect.gen(function* () {
+    const { db } = yield* Database;
+    yield* Effect.promise(async () => {
+      await sql`create temp table connection_probe (value text)`.execute(db);
+      let active = 0;
+      const connections = await Promise.all(
+        ["a", "b", "c", "d"].map((value) =>
+          db.getExecutor().provideConnection(async (connection) => {
+            active += 1;
+            try {
+              expect(active).toBe(1);
+              await connection.executeQuery(
+                CompiledQuery.raw("insert into connection_probe values (?)", [value]),
+              );
+              return connection;
+            } finally {
+              active -= 1;
+            }
+          }),
+        ),
+      );
+      expect(new Set(connections).size).toBe(1);
+      expect((await sql`select count(*) as n from connection_probe`.execute(db)).rows).toEqual([
+        { n: 4 },
+      ]);
+    });
+  }).pipe(Effect.provide(DatabaseSqlite(databasePath))),
+);
+
+it.effect("P1.9 reapplies connection-local pragmas when the file is reopened", () =>
+  Effect.gen(function* () {
+    yield* Effect.gen(function* () {
+      const { db } = yield* Database;
+      yield* Effect.promise(async () => {
+        await sql`create table persisted_probe (value text)`.execute(db);
+        await sql`pragma synchronous = OFF`.execute(db);
+        await sql`pragma busy_timeout = 0`.execute(db);
+        await sql`pragma foreign_keys = OFF`.execute(db);
+      });
+    }).pipe(Effect.provide(DatabaseSqlite(databasePath)));
+    yield* Effect.gen(function* () {
+      const { db } = yield* Database;
+      yield* Effect.promise(async () => {
+        expect((await sql`pragma synchronous`.execute(db)).rows).toEqual([{ synchronous: 1 }]);
+        expect((await sql`pragma busy_timeout`.execute(db)).rows).toEqual([{ timeout: 5000 }]);
+        expect((await sql`pragma foreign_keys`.execute(db)).rows).toEqual([{ foreign_keys: 1 }]);
+        expect((await sql`pragma journal_mode`.execute(db)).rows).toEqual([
+          { journal_mode: "wal" },
+        ]);
+        expect((await sql`pragma auto_vacuum`.execute(db)).rows).toEqual([{ auto_vacuum: 2 }]);
+        expect((await sql`select * from persisted_probe`.execute(db)).rows).toEqual([]);
+      });
+    }).pipe(Effect.provide(DatabaseSqlite(databasePath)));
   }),
 );

@@ -1,17 +1,26 @@
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, type Stream } from "effect";
 import { Kysely, PostgresDialect, sql } from "kysely";
 import { Pool } from "pg";
 import { DatabaseError } from "../store/errors.js";
 import { KrunSqliteDialect } from "../store/sqlite/dialect.js";
+import { makePostgresNotifications } from "./postgres-notifications.js";
 
 // Migration SQL is schema-independent. Typed Store implementations can narrow
 // the database at their dialect boundary without making migrations know rows.
 export class Database extends Context.Service<
   Database,
-  { readonly db: Kysely<unknown>; readonly dialect: "postgres" | "sqlite" }
+  {
+    readonly db: Kysely<unknown>;
+    readonly dialect: "postgres" | "sqlite";
+    readonly notifications?: Stream.Stream<string, DatabaseError>;
+  }
 >()("krun/Database") {}
 
-const databaseLayer = (dialect: "postgres" | "sqlite", create: () => Kysely<unknown>) =>
+const databaseLayer = (
+  dialect: "postgres" | "sqlite",
+  create: () => Kysely<unknown>,
+  notifications?: Stream.Stream<string, DatabaseError>,
+) =>
   Layer.effect(
     Database,
     Effect.gen(function* () {
@@ -28,7 +37,7 @@ const databaseLayer = (dialect: "postgres" | "sqlite", create: () => Kysely<unkn
         try: () => sql`select 1`.execute(db),
         catch: () => new DatabaseError({ operation: "open" }),
       });
-      return { db, dialect };
+      return { db, dialect, ...(notifications === undefined ? {} : { notifications }) };
     }),
   );
 
@@ -39,6 +48,7 @@ export const DatabasePostgres = (dsn: string) =>
   Layer.unwrap(
     Effect.gen(function* () {
       const context = yield* Effect.context();
+      const notifications = yield* makePostgresNotifications(dsn);
       return databaseLayer(
         "postgres",
         () =>
@@ -60,6 +70,7 @@ export const DatabasePostgres = (dsn: string) =>
               },
             }),
           }),
+        notifications,
       );
     }),
   );
