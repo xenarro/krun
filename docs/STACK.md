@@ -101,13 +101,23 @@ Schema, against principle 2). Revisit when `effect/sql` is stable.
 | Package | Range | Use | Rules |
 |---|---|---|---|
 | `ajv` | `^8.20` | compile Function `inputSchema` (`Ajv2020`, `strict: true`, no `loadSchema`) | Never for krun's own application/runtime schema validation. Development-only tests may evaluate generated editor JSON Schema for standards conformance (SPEC D41); its sole definition remains Zod. |
-| `ajv-formats` | `^3.0` | `format` keywords in `inputSchema` | |
+| `ajv-formats` | `^3.0` | `format` keywords and the default format-comparison plugin keywords in `inputSchema` | Register the actual plugin, not only its internal format-definition table. |
 | `uuid` | `^14.0` | UUIDv7 run, delivery and request ids | `v7({ msecs })` with the time from `Clock`, so ids are deterministic under `TestClock`. |
 | `canonicalize` | `^5.1` | RFC 8785 (JCS) serialisation for `request_hash` | Reference implementation by the RFC's author. |
 | `yaml` | `^2.9` | `keys.yaml`, Function documents for `krun validate` | Parsed value goes straight into a Zod schema. |
 | `ipaddr.js` | `^2.5` | webhook address classification and CIDR allowlist | |
 | `picomatch` | `^4.0` | API key function globs (`report-*`) and webhook host globs | Never a hand-written glob regex; `picomatch(pattern, { nocase: false, dot: true })`, compiled once per reload. |
 | `pino` | bundled with Fastify | JSON logs | The Effect `Logger` writes to the Fastify pino instance, so every line has one format and the redaction rules apply everywhere; lines inside a span carry `traceId` and `spanId`. |
+
+SPEC D48 records the tracked Ajv 8.20.0 compiler patch: retain every own
+JSON schema-map key and use null-prototype membership/evaluation dictionaries,
+including dependency-map splitting. This corrects omitted `__proto__`
+constraints without banning/renaming user fields or transforming schemas.
+Published TypeScript and runtime JavaScript are patched together. Both frozen
+container installs apply the same patch; tests cover properties, patterns,
+additional/unevaluated properties, local references, dependencies and ordinary
+prototype-named controls. Strictness, synchronous compilation, no loader,
+release-age checks and SDK runtime-dependency rules are unchanged.
 
 ### 2.6 Observability
 

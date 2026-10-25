@@ -1,0 +1,142 @@
+diff --git a/dist/compile/util.js b/dist/compile/util.js
+index 73c87c854d2a8f61483e7a15ba186f81e72d1bc4..0da344568585a4927a6f8bbc2f6c13b97203f03c 100644
+--- a/dist/compile/util.js
++++ b/dist/compile/util.js
+@@ -5,7 +5,7 @@ const codegen_1 = require("./codegen");
+ const code_1 = require("./codegen/code");
+ // TODO refactor to use Set
+ function toHash(arr) {
+-    const hash = {};
++    const hash = Object.create(null);
+     for (const item of arr)
+         hash[item] = true;
+     return hash;
+@@ -104,14 +104,14 @@ function makeMergeEvaluated({ mergeNames, mergeToName, mergeValues, resultToName
+ exports.mergeEvaluated = {
+     props: makeMergeEvaluated({
+         mergeNames: (gen, from, to) => gen.if((0, codegen_1._) `${to} !== true && ${from} !== undefined`, () => {
+-            gen.if((0, codegen_1._) `${from} === true`, () => gen.assign(to, true), () => gen.assign(to, (0, codegen_1._) `${to} || {}`).code((0, codegen_1._) `Object.assign(${to}, ${from})`));
++            gen.if((0, codegen_1._) `${from} === true`, () => gen.assign(to, true), () => gen.assign(to, (0, codegen_1._) `${to} || Object.create(null)`).code((0, codegen_1._) `Object.assign(${to}, ${from})`));
+         }),
+         mergeToName: (gen, from, to) => gen.if((0, codegen_1._) `${to} !== true`, () => {
+             if (from === true) {
+                 gen.assign(to, true);
+             }
+             else {
+-                gen.assign(to, (0, codegen_1._) `${to} || {}`);
++                gen.assign(to, (0, codegen_1._) `${to} || Object.create(null)`);
+                 setEvaluated(gen, to, from);
+             }
+         }),
+@@ -128,7 +128,7 @@ exports.mergeEvaluated = {
+ function evaluatedPropsToName(gen, ps) {
+     if (ps === true)
+         return gen.var("props", true);
+-    const props = gen.var("props", (0, codegen_1._) `{}`);
++    const props = gen.var("props", (0, codegen_1._) `Object.create(null)`);
+     if (ps !== undefined)
+         setEvaluated(gen, props, ps);
+     return props;
+diff --git a/dist/vocabularies/applicator/dependencies.js b/dist/vocabularies/applicator/dependencies.js
+index e81f86d1d9e25ef44ff6f096e1a9238a6f05b38e..17a0164387f502a1d671378c3bc54a67f5be0314 100644
+--- a/dist/vocabularies/applicator/dependencies.js
++++ b/dist/vocabularies/applicator/dependencies.js
+@@ -26,11 +26,9 @@ const def = {
+     },
+ };
+ function splitDependencies({ schema }) {
+-    const propertyDeps = {};
+-    const schemaDeps = {};
+-    for (const key in schema) {
+-        if (key === "__proto__")
+-            continue;
++    const propertyDeps = Object.create(null);
++    const schemaDeps = Object.create(null);
++    for (const key of Object.keys(schema)) {
+         const deps = Array.isArray(schema[key]) ? propertyDeps : schemaDeps;
+         deps[key] = schema[key];
+     }
+diff --git a/dist/vocabularies/code.js b/dist/vocabularies/code.js
+index 8cb899324c1ab57aab07a1cda647f609b47a30a6..694044473d57773e6413754cab858c4a7563f1e0 100644
+--- a/dist/vocabularies/code.js
++++ b/dist/vocabularies/code.js
+@@ -45,7 +45,7 @@ function noPropertyInData(gen, data, property, ownProperties) {
+ }
+ exports.noPropertyInData = noPropertyInData;
+ function allSchemaProperties(schemaMap) {
+-    return schemaMap ? Object.keys(schemaMap).filter((p) => p !== "__proto__") : [];
++    return schemaMap ? Object.keys(schemaMap) : [];
+ }
+ exports.allSchemaProperties = allSchemaProperties;
+ function schemaProperties(it, schemaMap) {
+diff --git a/lib/compile/util.ts b/lib/compile/util.ts
+index cefae51c2bfcc01fed2b40bcbe3425c9d1c53d18..56fb8452b26c4c30e8c925c1c9fe99a9db85f074 100644
+--- a/lib/compile/util.ts
++++ b/lib/compile/util.ts
+@@ -6,7 +6,7 @@ import type {Rule, ValidationRules} from "./rules"
+ 
+ // TODO refactor to use Set
+ export function toHash<T extends string = string>(arr: T[]): {[K in T]?: true} {
+-  const hash: {[K in T]?: true} = {}
++  const hash: {[K in T]?: true} = Object.create(null)
+   for (const item of arr) hash[item] = true
+   return hash
+ }
+@@ -128,7 +128,7 @@ export const mergeEvaluated: MergeEvaluated = {
+         gen.if(
+           _`${from} === true`,
+           () => gen.assign(to, true),
+-          () => gen.assign(to, _`${to} || {}`).code(_`Object.assign(${to}, ${from})`)
++          () => gen.assign(to, _`${to} || Object.create(null)`).code(_`Object.assign(${to}, ${from})`)
+         )
+       }),
+     mergeToName: (gen, from, to) =>
+@@ -136,7 +136,7 @@ export const mergeEvaluated: MergeEvaluated = {
+         if (from === true) {
+           gen.assign(to, true)
+         } else {
+-          gen.assign(to, _`${to} || {}`)
++          gen.assign(to, _`${to} || Object.create(null)`)
+           setEvaluated(gen, to, from)
+         }
+       }),
+@@ -159,7 +159,7 @@ export const mergeEvaluated: MergeEvaluated = {
+ 
+ export function evaluatedPropsToName(gen: CodeGen, ps?: EvaluatedProperties): Name {
+   if (ps === true) return gen.var("props", true)
+-  const props = gen.var("props", _`{}`)
++  const props = gen.var("props", _`Object.create(null)`)
+   if (ps !== undefined) setEvaluated(gen, props, ps)
+   return props
+ }
+diff --git a/lib/vocabularies/applicator/dependencies.ts b/lib/vocabularies/applicator/dependencies.ts
+index f6761128698689ce1d4699c33a3b128516157eeb..d6da9a7bcc1e841caae5a5f519c2012db85304f3 100644
+--- a/lib/vocabularies/applicator/dependencies.ts
++++ b/lib/vocabularies/applicator/dependencies.ts
+@@ -52,10 +52,9 @@ const def: CodeKeywordDefinition = {
+ }
+ 
+ function splitDependencies({schema}: KeywordCxt): [PropertyDependencies, SchemaDependencies] {
+-  const propertyDeps: PropertyDependencies = {}
+-  const schemaDeps: SchemaDependencies = {}
+-  for (const key in schema) {
+-    if (key === "__proto__") continue
++  const propertyDeps: PropertyDependencies = Object.create(null)
++  const schemaDeps: SchemaDependencies = Object.create(null)
++  for (const key of Object.keys(schema)) {
+     const deps = Array.isArray(schema[key]) ? propertyDeps : schemaDeps
+     deps[key] = schema[key]
+   }
+diff --git a/lib/vocabularies/code.ts b/lib/vocabularies/code.ts
+index 92cdd5b04ef30e0ed6f3c9025752f0acf59370eb..6d76c339bc65732f192a9f0df5f505c50e5b88d9 100644
+--- a/lib/vocabularies/code.ts
++++ b/lib/vocabularies/code.ts
+@@ -63,7 +63,7 @@ export function noPropertyInData(
+ }
+ 
+ export function allSchemaProperties(schemaMap?: SchemaMap): string[] {
+-  return schemaMap ? Object.keys(schemaMap).filter((p) => p !== "__proto__") : []
++  return schemaMap ? Object.keys(schemaMap) : []
+ }
+ 
+ export function schemaProperties(it: SchemaCxt, schemaMap: SchemaMap): string[] {

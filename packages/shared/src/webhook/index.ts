@@ -1,4 +1,5 @@
 export { CallbackNotAllowed, WebhookSigningError, WebhookTransportError } from "./errors.js";
+export { compileHostAllowlist } from "./hosts.js";
 export {
   DnsLookup,
   DnsLookupLive,
