@@ -25,7 +25,7 @@ function run(args: string[], cwd = root) {
 
 describe("scaffold acceptance", () => {
   // migrate has real database/exit-code coverage in shared's migration suite.
-  it.each(["gateway", "scheduler", "validate"])(
+  it.each(["gateway", "scheduler"])(
     "dispatches finite %s without production configuration",
     (command) => {
       const result = run([command], tmpdir());
@@ -35,6 +35,14 @@ describe("scaffold acceptance", () => {
       expect(result.stderr).toBe("");
     },
   );
+
+  it("dispatches validate help without production configuration", () => {
+    const result = run(["validate", "--help"], tmpdir());
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(0);
+    expect(result.stdout.trim()).toBe("Usage: krun validate [--help] <path>...");
+    expect(result.stderr).toBe("");
+  });
 
   it.each([[], ["unknown"], ["constructor"], ["__proto__"]])(
     "rejects unknown command %j",
