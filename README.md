@@ -20,7 +20,7 @@ Health/telemetry acceptance covers real Prometheus collection through Fastify `i
 
 The `gateway` and `scheduler` server-image commands still print their names and exit; serving processes are not wired yet. `validate` is a real offline Function validator and `migrate` is a real database command, as described below. Reusable Function schemas, generated CRD/editor artifacts and the complete scoped SQLite/Postgres Store are available; actual gateway/scheduler wiring remains a later implementation step. See [PLAN.md](PLAN.md) for acceptance criteria and progress.
 
-## Public gateway foundation (P3.1a, local)
+## Public gateway foundation (P3.1a)
 
 `apps/gateway/src/app.ts` now provides a real scoped `makePublicApp` factory.
 It builds and readies Fastify without opening a listener. Supply the existing
@@ -53,11 +53,14 @@ JSON null and unknown members before Fastify can normalize absence to null.
 The rebuilt non-root image passes eight native gateway groups and verifies
 53 current emitted-module hashes, alongside 80 inherited integration groups
 and seven offline CLI groups. These test routes are fixtures, not implemented public CreateRun/GetRun
-methods or a completed Phase 3 gate. Concrete API methods, rate limits,
+methods or full Phase 3 completion. Concrete API methods, rate limits,
 OpenAPI generation, process/listener startup and graceful draining remain
 later tasks. The `gateway` process command still prints its name and exits.
-No commits, pushes, PR or PLAN checkbox closure are part of this implementation
-job; independent review and delivery remain separate.
+Code `b24b2062108f36ccbd60377a12e4db154ce6b9a4` is pushed in [PR #23](https://github.com/xenarro/krun/pull/23)
+against the open `feat/function-validate-cli` parent. Its [exact-head hosted CI](https://github.com/xenarro/krun/actions/runs/40188371354)
+passes all nine required gates, including the same 920 TypeScript tests and one
+Python test. Only P3.1a is checked after that code CI; the PR remains unmerged,
+with no auto-merge or implied formal repository approval.
 
 Verification retains the failed attempts rather than claiming every run was
 green. During the preceding implementation, eight existing Store tests exceeded
@@ -91,8 +94,9 @@ five-second test timeouts remain retained; bounded-CPU and earlier I/O-priority
 attempts were not all successful. No existing test deadlines, assertions, Store
 code or test configuration were changed. All three independent-review findings
 (two root defects) have explicit red/green dispositions in
-`.agent-state/krun/reports/repair-p3-1a.json`; Git delivery and PLAN closure remain
-separate work, not implied by local repair acceptance.
+`.agent-state/krun/reports/repair-p3-1a.json`. Delivery verifies the actual pushed
+code and subsequent tracking heads separately; local repair acceptance alone is
+not treated as hosted CI or a merged-main claim.
 
 Prerequisites: Node.js matching `.node-version`, pnpm matching `package.json`, [uv](https://docs.astral.sh/uv/), Docker, Helm 4, actionlint and OpenSSL CLI (only for ephemeral local TLS test certificates).
 
