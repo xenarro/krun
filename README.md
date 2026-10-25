@@ -1,4 +1,4 @@
-# krun
+# KEKrun
 
 HTTP-triggered functions, executed as one-off Kubernetes Jobs. Callers submit JSON input over HTTP and observe durable status, results and failures without holding Kubernetes credentials.
 
