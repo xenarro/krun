@@ -19,6 +19,7 @@
       "apps/*/tsconfig*.json",
       "apps/*/vitest.config.ts",
       "apps/*/src/**/*.ts",
+      "apps/*/dev/**/*.ts",
       "!!**/.agent-state",
       "!!**/node_modules",
       "!!**/dist",

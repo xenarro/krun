@@ -8,6 +8,7 @@
         "bin/krun.js",
         "test/**/*.test.ts",
         "scripts/gen-crd.ts",
+        "scripts/gen-openapi.ts",
         "scripts/smoke-validate.ts"
       ],
       "project": ["bin/**/*.js", "test/**/*.ts", "scripts/**/*.ts"]
@@ -27,7 +28,7 @@
     },
     "apps/*": {
       "entry": ["src/main.ts"],
-      "project": ["src/**/*.ts"]
+      "project": ["src/**/*.ts", "dev/**/*.ts"]
     }
   }
 }

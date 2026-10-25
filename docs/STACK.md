@@ -73,9 +73,17 @@ The gateway imports the approved Fastify 5/Zod 4 provider compilers directly.
 `@fastify/swagger` peer even before OpenAPI generation is wired. Declare it as
 a gateway development dependency for strict type checking, not an application
 Swagger listener; keep `autoInstallPeers` disabled and use the normal guarded
-installation. Its compiler runtime does not import Swagger. P3.1c still owns
-actual OpenAPI registration/generation. No handwritten declarations, skipped
-library checks or unused-dependency exceptions are needed.
+installation. Its compiler runtime does not import Swagger. P3.1c uses the
+existing development dependency in `apps/gateway/dev/openapi.ts`: real dynamic
+Swagger/provider transforms over the shared public Zod route descriptors write
+OpenAPI3.1 without installing production methods or opening a listener. A scoped
+registry plus the native conversion hook preserves nested metadata without global
+component registration; unsupported conversion fails closed. A body-less 307 is
+modeled with JSON Schema never before its content is omitted. D57 adds exact
+opaque custom-leaf projection (all other unrepresentable leaves still throw) and
+bidirectional nested codecs for ignored output-only request members. This keeps
+the strict request root and ordinary response validation unchanged. No handwritten declarations,
+skipped library checks, new dependency or unused-dependency exception is needed.
 
 The shared HTTP observability adapter (P3.1b, SPEC D54) uses Fastify's native
 pino instance and public LogController callbacks, not an added logger/plugin.
