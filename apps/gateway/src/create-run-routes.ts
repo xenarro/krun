@@ -13,6 +13,7 @@ import {
   Effect,
   Fiber,
   Metric,
+  Option,
   Queue,
   Schedule,
   Semaphore,
@@ -22,6 +23,7 @@ import type { FastifyPluginAsync, FastifyRequest } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { ApiError, errorEnvelope } from "./errors.js";
 import { publicContracts, publicSchemas } from "./public-contracts.js";
+import { GatewayShutdown } from "./shutdown.js";
 
 type Config = Pick<
   GatewayConfig,
@@ -44,6 +46,7 @@ export const createRunRoutes = (input: Config) =>
   Effect.gen(function* () {
     const observe = Effect.runSyncWith(yield* Effect.context());
     const store = yield* Store;
+    const shutdown = yield* Effect.serviceOption(GatewayShutdown);
     const dns = yield* DnsLookup;
     const policy = yield* makeWebhookPolicy(input);
     const config = {
@@ -94,7 +97,10 @@ export const createRunRoutes = (input: Config) =>
           while (!terminal((yield* store.getRun(id)).state))
             yield* Effect.raceFirst(Queue.take(queue), Effect.sleep("1 second"));
         });
-        yield* Effect.raceFirst(watch, Effect.sleep(Duration.millis(millis)));
+        yield* Effect.raceFirst(
+          Effect.raceFirst(watch, Effect.sleep(Duration.millis(millis))),
+          Option.isSome(shutdown) ? shutdown.value.closing : Effect.never,
+        );
         return yield* store.getRun(id);
       });
     const consume = (name: string) =>
@@ -197,6 +203,12 @@ export const createRunRoutes = (input: Config) =>
                 if (requested === undefined)
                   return yield* new ApiError({ reason: "REQUEST_INVALID" });
                 const millis = Math.min(requested, config.maxWait);
+                // Own the response before lock acquisition or any durable work,
+                // including replays and non-waiting admission. Shutdown seals
+                // registration before its snapshot and keeps the Store alive
+                // until accepted responses settle. Real disconnects still abort.
+                if (Option.isSome(shutdown) && !shutdown.value.track(reply.raw))
+                  return yield* new ApiError({ reason: "NOT_READY" });
                 const lock = yield* Effect.sync(() => {
                   let current = locks.get(entry.name);
                   if (!current) {

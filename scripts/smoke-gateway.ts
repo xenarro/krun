@@ -1,0 +1,223 @@
+import assert from "node:assert/strict";
+import { spawn, spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { setTimeout } from "node:timers/promises";
+import { startFakeKube } from "../test/fake-kube/server.ts";
+
+const image = process.argv[2];
+if (!image || process.argv.length !== 3) throw new Error("Usage: smoke-gateway.ts <image>");
+const name = `krun-test-gateway-smoke-${randomBytes(6).toString("hex")}`;
+const dir = await mkdtemp(join(tmpdir(), "krun-test-gateway-smoke-"));
+const namespace = "krun-test-gateway-smoke";
+const kube = await startFakeKube(namespace, true);
+const groups: string[] = [];
+let logs = "";
+let child: ReturnType<typeof spawn> | undefined;
+const docker = (args: string[]) => {
+  const result = spawnSync("docker", args, { encoding: "utf8", timeout: 20000 });
+  assert.equal(result.status, 0, "Owned Docker control failed");
+  return result.stdout;
+};
+const freePort = async () => {
+  const server = createServer();
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+  return address.port;
+};
+try {
+  const token = randomBytes(32).toString("hex");
+  const keys = join(dir, "keys.json"),
+    config = join(dir, "kubeconfig"),
+    launcher = join(dir, "start.cjs");
+  assert.equal(new URL(kube.address).hostname, "127.0.0.1");
+  await writeFile(
+    keys,
+    JSON.stringify({
+      keys: [
+        {
+          name: "smoke",
+          key: token,
+          scopes: ["functions:read", "runs:read", "runs:write"],
+          functions: ["echo"],
+        },
+      ],
+    }),
+    { mode: 0o444 },
+  );
+  // The installed client requires this flag for an explicitly owned HTTP-only
+  // loopback fixture. Production Kubernetes TLS/auth policy is not changed.
+  await writeFile(
+    config,
+    JSON.stringify({
+      apiVersion: "v1",
+      kind: "Config",
+      clusters: [
+        { name: namespace, cluster: { server: kube.address, "insecure-skip-tls-verify": true } },
+      ],
+      users: [{ name: namespace, user: {} }],
+      contexts: [{ name: namespace, context: { cluster: namespace, user: namespace, namespace } }],
+      "current-context": namespace,
+    }),
+    { mode: 0o444 },
+  );
+  await writeFile(
+    launcher,
+    `const assert=require('node:assert/strict');const {spawnSync}=require('node:child_process');assert.equal(process.getuid(),65532);assert.equal(process.getgid(),65532);const r=spawnSync(process.execPath,['/app/bin/krun.js','migrate'],{encoding:'utf8',timeout:20000});assert.equal(r.status,0,'Owned image migration failed');process.argv=[process.execPath,'/app/bin/krun.js','gateway'];import('/app/bin/krun.js');\n`,
+    { mode: 0o444 },
+  );
+  const ports = await Promise.all([freePort(), freePort(), freePort()]);
+  child = spawn(
+    "docker",
+    [
+      "run",
+      "--rm",
+      "--name",
+      name,
+      "--read-only",
+      "--network",
+      "host",
+      "--cap-drop",
+      "ALL",
+      "--security-opt",
+      "no-new-privileges",
+      "--tmpfs",
+      "/data:rw,nosuid,nodev,size=16m,uid=65532,gid=65532",
+      "--volume",
+      `${keys}:/run/krun-test-keys:ro`,
+      "--volume",
+      `${config}:/run/krun-test-kube:ro`,
+      "--volume",
+      `${launcher}:/krun-test-start.cjs:ro`,
+      "--env",
+      "KRUN_DB_MODE=embedded",
+      "--env",
+      "KRUN_DB_PATH=/data/krun.db",
+      "--env",
+      `KRUN_NAMESPACE=${namespace}`,
+      "--env",
+      "KRUN_API_KEYS_PATH=/run/krun-test-keys",
+      "--env",
+      "KUBECONFIG=/run/krun-test-kube",
+      "--env",
+      `KRUN_LISTEN_ADDR=127.0.0.1:${ports[0]}`,
+      "--env",
+      `KRUN_INTERNAL_LISTEN_ADDR=127.0.0.1:${ports[1]}`,
+      "--env",
+      `KRUN_ADMIN_LISTEN_ADDR=127.0.0.1:${ports[2]}`,
+      "--env",
+      "KRUN_SHUTDOWN_DELAY=2s",
+      "--entrypoint",
+      "/nodejs/bin/node",
+      image,
+      "/krun-test-start.cjs",
+    ],
+    { stdio: ["ignore", "pipe", "pipe"] },
+  );
+  child.stdout?.on("data", (data) => {
+    logs += String(data);
+  });
+  child.stderr?.on("data", (data) => {
+    logs += String(data);
+  });
+  const done = new Promise<number | null>((resolve, reject) => {
+    child?.once("exit", resolve);
+    child?.once("error", reject);
+  });
+  const request = async (path: string, listener = 0, body?: unknown) => {
+    const response = await fetch(`http://127.0.0.1:${ports[listener]}${path}`, {
+      method: body === undefined ? "GET" : "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        ...(body === undefined ? {} : { "content-type": "application/json" }),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      signal: AbortSignal.timeout(10000),
+    });
+    return { code: response.status, body: await response.json() };
+  };
+  // Bounded tri-state probes of an actual external container, not application polling.
+  const until = async (probe: () => Promise<boolean>) => {
+    const deadline = performance.now() + 15000;
+    while (performance.now() < deadline) {
+      assert.equal(child?.exitCode, null, "Gateway image exited before acceptance state");
+      try {
+        if (await probe()) return;
+      } catch {
+        /* not listening yet */
+      }
+      await setTimeout(20);
+    }
+    throw new Error("Owned image acceptance deadline exceeded");
+  };
+  await until(async () => (await request("/healthz", 2)).code === 200);
+  assert.equal((await request("/readyz", 2)).code, 503);
+  kube.releaseList();
+  await until(async () => (await request("/readyz", 2)).code === 200);
+  groups.push("real-list-watch-initial-readiness");
+  for (const path of ["/internal/v1/runs/%zz/input", "/internal/v1/runs/%E0%A4%A/input"]) {
+    const response = await request(path, 1);
+    assert.equal(response.code, 400);
+    assert.equal(response.body.error.status, "INVALID_ARGUMENT");
+    assert.equal(response.body.error.details[0].reason, "REQUEST_INVALID");
+    assert.equal(response.body.error.details[0].domain, "krun.io");
+    assert.equal(JSON.stringify(response.body).includes(path), false);
+  }
+  groups.push("internal-constructor-errors-canonical-and-sanitized");
+  for (const [path, listener] of [
+    ["/v1/functions", 2],
+    ["/v1/functions", 1],
+    ["/readyz", 0],
+    ["/metrics", 1],
+    ["/internal/v1/runs/unknown/input", 0],
+  ] as const)
+    assert.equal((await request(path, listener)).code, 404);
+  groups.push("three-listener-isolation");
+  const created = await request("/v1/functions/echo/runs", 0, { input: { owned: true } });
+  assert.equal(created.code, 201);
+  assert.equal((await request(`/v1/${created.body.name}`)).body.state, "QUEUED");
+  groups.push("migrated-real-store-create-read");
+  const waiting = request("/v1/functions/echo/runs?wait=60s", 0, { input: { wait: true } });
+  waiting.catch(() => {});
+  await until(async () => (await request("/v1/functions/echo/runs")).body.runs.length === 2);
+  const start = performance.now();
+  docker(["kill", "--signal=TERM", name]);
+  await until(async () => (await request("/readyz", 2)).code === 503);
+  assert.equal((await request("/healthz", 2)).code, 200);
+  assert.equal((await request("/v1/functions/echo")).code, 200);
+  groups.push("readiness-first-live-during-fixed-drain");
+  const response = await waiting;
+  assert.equal(response.code, 201);
+  assert.deepEqual(response.body.input, { wait: true });
+  groups.push("inflight-create-wait-settles-current-run");
+  assert.equal(await done, 0);
+  const elapsed = performance.now() - start;
+  assert.ok(elapsed >= 1900 && elapsed < 5000);
+  groups.push("sigterm-exit-zero-within-five-seconds");
+  assert.equal(kube.snapshot().activeWatches, 0);
+  groups.push("watch-sockets-closed");
+  assert.equal(logs.includes(token), false);
+  groups.push("credential-privacy");
+  groups.push("nonroot-readonly-capability-dropped-runtime");
+  console.log(
+    JSON.stringify({
+      image,
+      groups,
+      count: groups.length,
+      elapsedMilliseconds: Math.round(elapsed),
+      uid: 65532,
+      gid: 65532,
+      listWatch: kube.snapshot(),
+    }),
+  );
+} finally {
+  if (child && child.exitCode === null)
+    spawnSync("docker", ["rm", "--force", name], { stdio: "ignore", timeout: 10000 });
+  await kube.close();
+  await rm(dir, { recursive: true, force: true });
+}

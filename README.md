@@ -12,13 +12,84 @@ The scaffold, configuration, admin health/telemetry and complete dual-backend St
 - Digest-pinned, non-root distroless container packaging.
 - CI checks for types, formatting, tests, unused code, generated files, container packaging, chart lint and critical vulnerabilities.
 
-Admin health and telemetry are implemented as reusable scoped layers, not yet wired into the finite process commands. The separate admin app serves `/healthz`, Ref-backed `/readyz` with a two-second database timeout, initial Function-LIST and shutdown gates, and non-gating leader status. `TelemetryLive` bridges Effect metrics to the OpenTelemetry Prometheus exporter on `/metrics` without an exporter-owned port or global registry. When a parsed OTLP endpoint is set it installs the real HTTP batch trace exporter, using the parsed service name and explicit sampler; otherwise traces are not exported. Scope exit closes the reader and flushes/shuts down tracing. Invalid sampler values fall back nonfatally with variable-name-only warnings; an invalid endpoint disables tracing without disabling metrics.
+Admin health and telemetry are reusable scoped layers and are now wired into the gateway process; scheduler process wiring remains pending. The separate admin app serves `/healthz`, Ref-backed `/readyz` with a two-second database timeout, initial Function-LIST and shutdown gates, and non-gating leader status. `TelemetryLive` bridges Effect metrics to the OpenTelemetry Prometheus exporter on `/metrics` without an exporter-owned port or global registry. When a parsed OTLP endpoint is set it installs the real HTTP batch trace exporter, using the parsed service name and explicit sampler; otherwise traces are not exported. Scope exit closes the reader and flushes/shuts down tracing. Invalid sampler values fall back nonfatally with variable-name-only warnings; an invalid endpoint disables tracing without disabling metrics.
 
 Readiness's HTTP deadline does not wait for database cancellation cleanup. Overlapping probes share at most one DB worker; the readiness layer owns that worker until its cleanup completes, so repeated timeouts cannot accumulate abandoned checks. Client disconnects cancel both Effect-backed admin routes. Admin scope release cancels and settles active handlers before dependent layers close. Cleanup remains cooperative: uninterruptible cleanup is awaited by its owner, not detached or forcibly discarded.
 
 Health/telemetry acceptance covers real Prometheus collection through Fastify `inject`, stalled-database timing through `TestClock` (including slow finalizers and uninterruptible work), real socket disconnects, handler/dependency teardown ordering, reader/provider cleanup, and actual OTLP JSON sent to a disposable local collector. Run `pnpm exec vitest run packages/shared/src/health packages/shared/src/runtime` for this slice. P0.7 module acceptance and hosted CI passed for [PR #3](https://github.com/xenarro/krun/pull/3), including the reviewed lifecycle repairs, container rebuild, smoke, audit and fixable-critical scan. [Code CI](https://github.com/xenarro/krun/actions/runs/40019565091) verified reconciled head `9f870d4`, containing implementation commit `afc0375`. The PR remains unmerged pending required independent approval. PLAN records this bounded task; Phase 0 and the application are not complete.
 
-The `gateway` and `scheduler` server-image commands still print their names and exit; serving processes are not wired yet. `validate` is a real offline Function validator and `migrate` is a real database command, as described below. Reusable Function schemas, generated CRD/editor artifacts and the complete scoped SQLite/Postgres Store are available; actual gateway/scheduler wiring remains a later implementation step. See [PLAN.md](PLAN.md) for acceptance criteria and progress.
+The `gateway` command now starts a real scoped serving process. `gateway --help` remains finite and configuration-free; the `scheduler` command still prints its name and exits. `validate` is a real offline Function validator and `migrate` is a real database command, as described below. Apply migrations explicitly before starting serving replicas. Gateway process implementation now passes local source, rebuilt-container and current gateway phase/supporting acceptance. Both independent review findings are resolved; the code is pushed and exact-head hosted CI passes. Protected-stack integration remains pending; no merged delivery is claimed. Scheduler wiring and execution remain later work. See [PLAN.md](PLAN.md) for acceptance criteria and progress.
+
+## Gateway process (P3.7)
+
+`krun gateway` composes the existing parsed configuration, pino-backed Effect
+logging, telemetry, SQLite/PostgreSQL Store, Kubernetes Function LIST/WATCH
+cache, keys and separate public/internal/admin listeners as scoped layers under
+`NodeRuntime.runMain`. Initial LIST blocks readiness, not liveness or listener
+startup. Public methods implemented through P3.6 are mounted on the public
+listener only; the internal transport reserves its port, while real internal
+methods remain P3.8. Concrete object-store integration remains P6.1.
+
+SIGTERM/SIGINT mark readiness unavailable, keep normal public requests serving
+for the configured shutdown delay, finish existing CreateRun waits with their
+current stored Run and 201, then close transports and dependencies. Pure
+interruption exits 0; startup/finalization failures exit 1. A scoped 25-second
+watchdog bounds pathological cleanup. No custom signal handlers or automatic
+serving-replica migrations are introduced.
+
+The repaired local full `make check` passes 1161 TypeScript tests and one Python
+test; the exact standalone gateway phase gate passes all 252 gateway tests.
+Twelve dedicated entrypoint/process/ownership
+acceptance tests cover real SQLite and PostgreSQL processes, initial LIST/WATCH,
+listener isolation, two-second grace and exit 0 within five seconds, pending-LIST
+interruption, partial-startup failure, SIGINT, credential privacy and PostgreSQL
+pool/LISTEN connection cleanup. An initial in-flight wait returning 500 was reproduced and
+fixed through a scoped shutdown signal and native response finish/close tracking.
+
+The newly rebuilt `krun-test-p3-7-repair:local` image passes all ten real-process
+lifecycle groups as uid/gid 65532 with a read-only root filesystem, all capabilities
+dropped and no-new-privileges. Its two-second drain completed in 2158 ms with exit 0,
+normal public requests still served after readiness turned 503, the in-flight
+wait settled 201, and the actual Function WATCH socket closed. The same image
+matches 69 emitted-module hashes and passes all seven CLI groups. Double
+generation is byte-identical; OpenAPI, Helm, production dependency audit,
+workflow syntax and fixable-critical image scan pass. The real hardened-image
+smoke is also part of the CI command verification step, not a finite gateway
+scaffold assertion.
+
+Both independent P3.7 review findings were reproduced and repaired. Response
+ownership now starts before admission/semaphore/Store work, including replays
+and non-waiting creates. After the configured grace, registration is sealed
+synchronously before the response snapshot, so new admission receives existing
+`NOT_READY` before mutation while already-owned responses settle. A real
+PostgreSQL event insert held across drain now commits and returns 201/current
+Run instead of 500; the rebuilt hardened image reproduces that corrected race
+with exit 0 in 2423 ms. A permanent post-seal native regression verifies no extra
+Run is inserted. Normal grace serving and real disconnect cancellation remain.
+The internal constructor now shares the existing sanitized framework-error
+mapper; malformed percent/UTF-8 native paths use the canonical `REQUEST_INVALID`
+envelope, without reflected paths. Permanent source and rebuilt-image controls
+cover both cases. D73 records these ownership and transport-boundary repairs.
+Original review findings and failed receipts remain immutable; repair-owner
+verification is not an independent approval or hosted delivery claim.
+
+Source commit `e0dd5713dc14aaa49ba810de658ad0e985af6dce` is pushed in
+[PR #34](https://github.com/xenarro/krun/pull/34) against the immediate still-unmerged
+`feat/gateway-run-results` / PR33 parent. [Exact code-head CI](https://github.com/xenarro/krun/actions/runs/40270654763)
+passes all nine gates on attempt 1, including 1158 TypeScript tests and
+one Python test. PLAN records only P3.7 after that code acceptance; its tracking
+update receives a separate full precommit check and exact-head hosted CI.
+Tracking CI exposed an inherited aggregate CLI test timeout twice. The four
+existing installation-ceiling subprocess cases now run as separate parameterized
+tests, each with the unchanged default five-second limit and identical exit-code
+and diagnostic assertions. No application behavior, timeout value or worker
+setting changes. This increases the full test total by three; the accepted
+original code-head count above remains its historical 1158.
+The PR remains open, not merged; required protected-main review is not bypassed
+and an empty review decision is not approval. P3.8 internal methods and the
+remaining gateway/scheduler/object-store/application gates remain future work.
+Tests use explicitly owned loopback fake Kubernetes and disposable databases,
+never a production cluster or ambient user context.
 
 ## Run admission (P3.3)
 

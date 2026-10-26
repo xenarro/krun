@@ -102,21 +102,36 @@ it("prints exactly the five parsed ceiling values and ignores unrelated producti
   expect(result.stderr.includes("KRUN_DB_MODE")).toBe(false);
 });
 
-it("applies shared defaults then all five installation ceilings rather than CLI-local validation", () => {
-  const dir = scratch();
-  const cases: ReadonlyArray<readonly [Record<string, unknown>, Record<string, string>, string]> = [
-    [{ activeDeadlineSeconds: 2 }, { KRUN_MAX_ACTIVE_DEADLINE: "1" }, "DeadlineAboveCeiling"],
-    [{ maxQueued: 2 }, { KRUN_MAX_QUEUED: "1" }, "QueuedAboveCeiling"],
-    [{}, { KRUN_ALLOWED_SERVICE_ACCOUNTS: "other-account" }, "ServiceAccountNotAllowed"],
-    [{}, { KRUN_ALLOWED_REGISTRIES: "other.invalid/" }, "RegistryNotAllowed"],
-  ];
-  for (const [spec, env, reason] of cases) {
-    const path = save(dir, "ceiling.yaml", resource("limited", spec));
+// Each external process is one acceptance case with the unchanged default
+// timeout. Aggregating four cold starts made unrelated concurrent CI load
+// exhaust one shared test deadline despite correct CLI results.
+const ceilingCases: ReadonlyArray<{
+  spec: Record<string, unknown>;
+  env: Record<string, string>;
+  reason: string;
+}> = [
+  {
+    spec: { activeDeadlineSeconds: 2 },
+    env: { KRUN_MAX_ACTIVE_DEADLINE: "1" },
+    reason: "DeadlineAboveCeiling",
+  },
+  { spec: { maxQueued: 2 }, env: { KRUN_MAX_QUEUED: "1" }, reason: "QueuedAboveCeiling" },
+  {
+    spec: {},
+    env: { KRUN_ALLOWED_SERVICE_ACCOUNTS: "other-account" },
+    reason: "ServiceAccountNotAllowed",
+  },
+  { spec: {}, env: { KRUN_ALLOWED_REGISTRIES: "other.invalid/" }, reason: "RegistryNotAllowed" },
+];
+it.each(ceilingCases)(
+  "applies shared defaults and installation ceilings: $reason",
+  ({ spec, env, reason }) => {
+    const path = save(scratch(), "ceiling.yaml", resource("limited", spec));
     const result = execute([path], env);
     expect(result.status).toBe(1);
     expect(result.stdout.includes(reason)).toBe(true);
-  }
-});
+  },
+);
 
 it("reports invalid ceiling by variable only without echoing values or reading any files", () => {
   const marker = randomBytes(32).toString("hex");

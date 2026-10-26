@@ -9,7 +9,8 @@
         "test/**/*.test.ts",
         "scripts/gen-crd.ts",
         "scripts/gen-openapi.ts",
-        "scripts/smoke-validate.ts"
+        "scripts/smoke-validate.ts",
+        "scripts/smoke-gateway.ts"
       ],
       "project": ["bin/**/*.js", "test/**/*.ts", "scripts/**/*.ts"]
     },

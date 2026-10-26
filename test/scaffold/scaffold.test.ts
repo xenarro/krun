@@ -26,12 +26,14 @@ function run(args: string[], cwd = root) {
 describe("scaffold acceptance", () => {
   // migrate has real database/exit-code coverage in shared's migration suite.
   it.each(["gateway", "scheduler"])(
-    "dispatches finite %s without production configuration",
+    "dispatches resource-free %s help/scaffold without production configuration",
     (command) => {
-      const result = run([command], tmpdir());
+      const result = run(command === "gateway" ? [command, "--help"] : [command], tmpdir());
       expect(result.error).toBeUndefined();
       expect(result.status).toBe(0);
-      expect(result.stdout.trim()).toBe(command);
+      expect(result.stdout.trim()).toBe(
+        command === "gateway" ? "Usage: krun gateway [--help]" : command,
+      );
       expect(result.stderr).toBe("");
     },
   );

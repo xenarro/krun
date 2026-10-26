@@ -31,6 +31,8 @@ it("wires read-only SHA-pinned CI without untrusted shell interpolation", () => 
   expect(workflow).toContain('exit-code: "1"');
   expect(workflow).toContain("node-version-file: .node-version");
   expect(workflow).toContain("process.getuid()");
+  expect(workflow).toContain("node scripts/smoke-gateway.ts krun:local");
+  expect(workflow).toContain("gateway --help");
 });
 
 it("runs Knip in make check and keeps dependency updates reviewable", () => {
