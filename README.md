@@ -20,6 +20,64 @@ Health/telemetry acceptance covers real Prometheus collection through Fastify `i
 
 The `gateway` command now starts a real scoped serving process. `gateway --help` remains finite and configuration-free; the `scheduler` command still prints its name and exits. `validate` is a real offline Function validator and `migrate` is a real database command, as described below. Apply migrations explicitly before starting serving replicas. Gateway process implementation now passes local source, rebuilt-container and current gateway phase/supporting acceptance. Both independent review findings are resolved; the code is pushed and exact-head hosted CI passes. Protected-stack integration remains pending; no merged delivery is claimed. Scheduler wiring and execution remain later work. See [PLAN.md](PLAN.md) for acceptance criteria and progress.
 
+## Scheduler main loop (P4.3b)
+
+`makeMainLoop` supplies the leader-local scheduling loop over the real Store,
+Function cache and P4.3a native Kube service. Each iteration counts states first,
+expires queued runs (including deleted/invalid Functions), reserves global and
+per-Function capacity, then schedules claimed runs. Secret creation/adoption
+precedes persisting the token hash; Job creation/adoption precedes
+`markScheduled`. A false scheduling CAS deletes the Job with foreground
+propagation and deletes its Secret. Known interrupted/failed expiry or false-CAS
+cleanup is retained within the leader term for retry, without listing Jobs or
+adding a terminal-row scanner.
+
+Successful scheduling settlement atomically retains known cached-replay work
+before releasing claim ownership (D83). If a deadline or handler interruption
+prevents replay, the next active iteration drains it after `countByState`; only
+a completed replay clears it. Handlers remain interruptible, and teardown never
+starts replay. This is leader-local recovery, not another informer or API read.
+
+Creation failures use the existing permanent/transient policy and actual Store
+transitions. Secret adoption GET failures retain their non-create provenance:
+they neither increment creation counters nor mutate function creation backoff;
+a GET429 still releases all unfinished claims before the global pause. Unfinished claims are released before a 429 Retry-After pause;
+non-create 429s pause too without incrementing create counters. One serialized
+consumer uses a sliding capacity-one wake queue, state notifications and the
+specified one-second ticker. Scope exit stops its producer fibers and releases
+unfinished claims. The ten-second iteration budget is checked between steps and
+runs and interrupts native I/O. Existing uninterruptible Store transactions are
+allowed to settle: returned claims are registered before pending cancellation
+can lose them, and cleanup does not detach late database writes.
+
+A required cache-replay capability is invoked after a successful scheduling CAS,
+not a no-op default or API re-read. Acceptance supplies a cache-backed handler
+that observes `Complete` before scheduling and performs a real Store transition
+to `succeeded`. Informer construction and the production terminal handler remain
+P4.4; cancelling, lost-Job detection, remaining leader metrics and scheduler
+process assembly remain P4.3c/P4.5/P4.6/P4.11. The finite `scheduler` command is
+unchanged.
+
+Local repair acceptance passes 25 main-loop tests plus an actual OTLP/Prometheus test,
+101 scheduler tests overall, and full `make check` with 1313 TypeScript tests and
+one Python test. Ten compiled native-client/real-Store groups pass on both SQLite
+and PostgreSQL, each on the host and in a rebuilt nonroot/read-only image with
+80 matching runtime module hashes. Checks cover adoption, capacity, classified
+failures, cached completion, expiry cleanup, notification coalescing, deadline
+and scope cancellation, hash ordering and telemetry privacy. Both independent
+review findings are reproduced and repaired: late successful scheduling retains
+replay ownership, and adoption GET429 no longer counts as a failed creation.
+Additional review-derived probes verify both fixes on each backend and host/image
+combination, alongside fast-replay and late-false-CAS cleanup controls. Image CLI/gateway
+smoke, critical scan, Helm, frozen install and stable generators pass. Run
+`pnpm exec vitest run apps/scheduler/src/main-loop.test.ts apps/scheduler/src/main-loop-telemetry.test.ts`
+for the checked-in acceptance.
+
+This is local implementation acceptance, pending independent review and delivery;
+no commit, push or P4.3b PLAN closure is claimed. Native loopback fixtures do not
+establish Kubernetes admission or the whole Phase 4 gate: `make e2e` still exits
+2 with the P4.12 harness placeholder; kind scenarios remain P4.13.
+
 ## Scheduler Kubernetes API plumbing (P4.3a)
 
 `KubeLive` supplies real native Job/Secret create, Secret read, Job/Secret delete
@@ -70,9 +128,10 @@ to main after both prior parent PRs merged. Normal ancestry reconciliation
 [exact-head CI](https://github.com/xenarro/krun/actions/runs/40323798272) passes all nine gates.
 This is pushed/green, not independently approved or merged; PLAN/README tracking
 receives its own full precommit check and exact-head hosted verification. The finite
-`scheduler` command remains unchanged. Store transitions, main-loop lease
-release/pause ordering and process composition remain later work; these policy
-and native-client checks do not establish Kubernetes admission or complete
+`scheduler` command remains unchanged. Store transitions and main-loop lease
+release/pause ordering are now covered by the P4.3b component above; process
+composition remains later work. These policy and native-client checks do not
+establish Kubernetes admission or complete
 Phase 4 kind/e2e acceptance (`make e2e` remains pending P4.12).
 
 ## Scheduler leader election (P4.2)
