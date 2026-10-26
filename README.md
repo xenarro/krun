@@ -20,6 +20,61 @@ Health/telemetry acceptance covers real Prometheus collection through Fastify `i
 
 The `gateway` command now starts a real scoped serving process. `gateway --help` remains finite and configuration-free; the `scheduler` command still prints its name and exits. `validate` is a real offline Function validator and `migrate` is a real database command, as described below. Apply migrations explicitly before starting serving replicas. Gateway process implementation now passes local source, rebuilt-container and current gateway phase/supporting acceptance. Both independent review findings are resolved; the code is pushed and exact-head hosted CI passes. Protected-stack integration remains pending; no merged delivery is claimed. Scheduler wiring and execution remain later work. See [PLAN.md](PLAN.md) for acceptance criteria and progress.
 
+## Scheduler Kubernetes API plumbing (P4.3a)
+
+`KubeLive` supplies real native Job/Secret create, Secret read, Job/Secret delete
+and bounded pod-log methods over the existing scheduler-wide `KubeConnection`.
+Its configured semaphore and ten-second total call budget are shared with Lease
+calls. Permit wait consumes that budget; an expired queued call never dispatches
+native I/O, including when a permit is released on the deadline tick (D81).
+Per-call middleware forwards interruption to the native AbortSignal and destroys
+the request dispatcher. Named spans cover permit wait and requests, with only
+namespace, object/function identity, run correlation, HTTP status and error tag.
+Deletes treat 404 as success; Job deletion always specifies propagation, and
+pod-log requests use the manifest's `function` container, 100 lines and 16384 bytes.
+
+A leader-local creation policy projects permanent API failures to
+`job_create_failed` with the documented krun-sourced Status message and
+`details.code`/`details.reason`. Quota 403, 429, 5xx, network and timeout failures
+are transient; per-function backoff doubles from one second to a 60-second cap
+and resets on success. Create `409/AlreadyExists` is left for adoption. The
+explicit failed-create policy boundary counts the two required error/quota
+metrics; API methods do not retry or count unrelated reads. A separate
+interruptible 429 pause honours Retry-After (default one second, capped at 60),
+including all three HTTP-date forms in UTC and the RFC850 fifty-year rule (D81).
+The later loop can release claimed leases before waiting without holding an API
+permit.
+
+Installed client-node error bodies can be JSON text rather than objects. The
+adapter validates both (D80). It keeps only the required persistence Status data
+and Retry-After in a private WeakMap keyed by sanitized typed errors (D79), not
+in serializable errors, logs or spans. Actual Prometheus and OTLP collector tests
+check exact counters/labels, correlation and absence of private Status/manifest
+canaries from telemetry.
+
+Local repair acceptance passes 75 scheduler tests and 21 shared Kubernetes tests;
+full `make check` passes 1287 TypeScript tests and one Python test. Five compiled
+native API groups and six adversarial groups pass both on host and in a rebuilt
+nonroot/read-only image with 79 matching runtime module hashes. Additional real
+wall-clock saturation probes for both Kube and Lease finish all nine calls in
+one ten-second budget, with only eight requests reaching the receiver. The
+adversarial checks include native HTTP-date headers, cancellation, backoff and
+permit recovery. Four existing Lease lifecycle process cases also pass on each,
+preserving SIGTERM and loss behavior. Image CLI/gateway smoke, critical scan,
+Helm, frozen install and stable generators pass.
+
+Both material review findings are reproduced and repaired, with permanent
+regressions. Code `159efaa` is pushed in [PR #40](https://github.com/xenarro/krun/pull/40)
+to main after both prior parent PRs merged. Normal ancestry reconciliation
+`cbe00e1` preserves the accepted source tree, and its
+[exact-head CI](https://github.com/xenarro/krun/actions/runs/40323798272) passes all nine gates.
+This is pushed/green, not independently approved or merged; PLAN/README tracking
+receives its own full precommit check and exact-head hosted verification. The finite
+`scheduler` command remains unchanged. Store transitions, main-loop lease
+release/pause ordering and process composition remain later work; these policy
+and native-client checks do not establish Kubernetes admission or complete
+Phase 4 kind/e2e acceptance (`make e2e` remains pending P4.12).
+
 ## Scheduler leader election (P4.2)
 
 `runLeaderElection` owns one Lease term and a separate scope for leader-only

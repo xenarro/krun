@@ -137,3 +137,25 @@ it.effect("invalid concurrency and loader failures are typed, bounded configurat
     expect(JSON.stringify(result)).not.toContain("krun-test-private");
   }),
 );
+
+it.effect("permit wait consumes the same deadline as subsequent execution", () =>
+  Effect.gen(function* () {
+    const connection = yield* makeKubeConnection({ concurrency: 1, load });
+    let starts = 0;
+    const request = () => {
+      starts++;
+      return new Promise<never>(() => {});
+    };
+    const owner = yield* Effect.forkScoped(Effect.flip(connection.call(request)));
+    yield* TestClock.adjust("4 seconds");
+    const queued = yield* Effect.forkScoped(Effect.flip(connection.call(request)));
+    yield* TestClock.adjust("6 seconds");
+    expect(yield* Fiber.join(owner)).toMatchObject({ reason: "timeout" });
+    expect(starts).toBe(2);
+    yield* TestClock.adjust("3999 millis");
+    expect(queued.pollUnsafe()).toBeUndefined();
+    yield* TestClock.adjust("1 millis");
+    expect(queued.pollUnsafe()).toBeDefined();
+    expect(yield* Fiber.join(queued)).toMatchObject({ reason: "timeout" });
+  }),
+);

@@ -1,12 +1,12 @@
 import { KubeConfig } from "@kubernetes/client-node";
-import { Context, Effect, Layer, Semaphore } from "effect";
+import { Clock, Context, Effect, Layer, Semaphore } from "effect";
 import { z } from "zod";
 import { KrunConfig } from "../config/index.js";
 import { KubeApiError, KubeConfigError, kubeApiError } from "./errors.js";
 
 interface Connection {
   readonly config: KubeConfig;
-  /** Default eight in-flight API acquisitions; each request has a ten-second deadline. */
+  /** Default eight in-flight API acquisitions; permit wait and request share a ten-second budget. */
   readonly call: <A>(
     request: (signal: AbortSignal) => Promise<A>,
   ) => Effect.Effect<A, KubeApiError>;
@@ -39,13 +39,24 @@ export const makeKubeConnection = (
       );
     const semaphore = yield* Semaphore.make(concurrency.data);
     const call: Connection["call"] = (request) =>
-      Effect.tryPromise({ try: request, catch: kubeApiError }).pipe(
-        Effect.timeout("10 seconds"),
-        Effect.catchTag("TimeoutError", () =>
-          Effect.fail(new KubeApiError({ operation: "request", reason: "timeout" })),
-        ),
-        Semaphore.withPermit(semaphore),
-      );
+      Effect.gen(function* () {
+        const started = yield* Clock.currentTimeMillis;
+        return yield* Effect.gen(function* () {
+          // A permit can be released in the same clock tick as this waiter's
+          // timeout. Do not dispatch native I/O after its total budget expires.
+          if ((yield* Clock.currentTimeMillis) - started >= 10_000)
+            return yield* Effect.fail(
+              new KubeApiError({ operation: "request", reason: "timeout" }),
+            );
+          return yield* Effect.tryPromise({ try: request, catch: kubeApiError });
+        }).pipe(
+          Semaphore.withPermit(semaphore),
+          Effect.timeout("10 seconds"),
+          Effect.catchTag("TimeoutError", () =>
+            Effect.fail(new KubeApiError({ operation: "request", reason: "timeout" })),
+          ),
+        );
+      });
     return { config, call } satisfies Connection;
   });
 
