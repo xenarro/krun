@@ -36,7 +36,7 @@ const payloadSchema = z.object({
 });
 
 it.live(
-  "actual loop/run/native span hierarchy and Prometheus counters exclude input,env,token and private Status",
+  "actual loop/schedule/cancel/native spans and Prometheus counters exclude input,env,token and private Status",
   () =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -53,6 +53,16 @@ it.live(
                 if (req.url === "/v1/traces") {
                   payloads.push(text);
                   res.end("{}");
+                } else if (req.method === "DELETE") {
+                  res.statusCode = 404;
+                  res.end(
+                    JSON.stringify({
+                      kind: "Status",
+                      code: 404,
+                      reason: "NotFound",
+                      message: "krun-test-loop-private-delete-status",
+                    }),
+                  );
                 } else if (req.url?.endsWith("/secrets")) {
                   const secret = JSON.parse(text);
                   tokens.push(
@@ -171,6 +181,9 @@ it.live(
           );
           yield* loop.iterate;
           expect((yield* store.getRun(runId)).lease_owner).toBeNull();
+          yield* store.transition(runId, "queued", "cancelling", null, {});
+          yield* loop.iterate;
+          expect((yield* store.getRun(runId)).state).toBe("cancelled");
           const reader = yield* MetricsReader,
             text = (yield* reader.scrape).body;
           expect(text).toContain('krun_quota_rejections_total{function="loop-worker"} 1');
@@ -194,6 +207,15 @@ it.live(
         expect(native).toBeDefined();
         expect(run?.parentSpanId).toBe(iteration?.spanId);
         expect(native?.parentSpanId).toBe(run?.spanId);
+        const cancel = spans.find((span) => span.name === "scheduler.cancel_run"),
+          deletion = spans.find((span) => span.name === "kube.delete jobs");
+        expect(cancel).toBeDefined();
+        expect(deletion).toBeDefined();
+        expect(spans.find((span) => span.spanId === cancel?.parentSpanId)?.name).toBe(
+          "scheduler.iteration",
+        );
+        expect(deletion?.parentSpanId).toBe(cancel?.spanId);
+        expect(JSON.stringify(cancel).includes(runId)).toBe(true);
         expect(exported.includes(runId)).toBe(true);
         expect(exported.includes("krun-test-loop-private")).toBe(false);
         expect(tokens.length).toBe(2);
