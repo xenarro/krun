@@ -41,6 +41,24 @@ export const makePublicApp = (options: PublicAppOptions = {}) =>
           await app.close();
         }).pipe(Effect.ignoreCause),
     );
+    // GET is bodyless by default in Fastify, bypassing JSON parsing entirely.
+    // Use its supported bounded parser so the shared strict body policy also
+    // applies to native Content-Length/chunked GETs before any route handler.
+    app.addHttpMethod("GET", { hasBody: true, overrideExisting: true });
+    app.addHook("preParsing", async (request, _reply, payload) => {
+      if (
+        request.method === "GET" &&
+        request.headers["transfer-encoding"] === undefined &&
+        (request.headers["content-length"] === undefined ||
+          request.headers["content-length"] === "0") &&
+        request.headers["content-type"]?.split(";")[0]?.trim().toLowerCase() === "application/json"
+      ) {
+        // No framed entity means omission even if a client sends JSON headers.
+        // Leave unsupported media types to the existing authenticated check.
+        delete request.headers["content-type"];
+      }
+      return payload;
+    });
     const missingBody = Symbol("krun/missing-body");
     app.setValidatorCompiler<z.ZodType>((options) => {
       const validate = validatorCompiler(options);
