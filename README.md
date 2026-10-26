@@ -20,6 +20,32 @@ Health/telemetry acceptance covers real Prometheus collection through Fastify `i
 
 The `gateway` command now starts a real scoped serving process. `gateway --help` remains finite and configuration-free; the `scheduler` command still prints its name and exits. `validate` is a real offline Function validator and `migrate` is a real database command, as described below. Apply migrations explicitly before starting serving replicas. Gateway process implementation now passes local source, rebuilt-container and current gateway phase/supporting acceptance. Both independent review findings are resolved; the code is pushed and exact-head hosted CI passes. Protected-stack integration remains pending; no merged delivery is claimed. Scheduler wiring and execution remain later work. See [PLAN.md](PLAN.md) for acceptance criteria and progress.
 
+## Scheduler manifests (P4.1, local implementation)
+
+`apps/scheduler/src/k8s/manifests.ts` builds typed Kubernetes Job and immutable
+Secret resources as pure functions. They reproduce SPEC section 7: deterministic
+names and four labels, no owner references, exact env order and Secret token
+reference, service account without token automount, both eviction tolerations,
+UID/GID and restricted security contexts, `/tmp` emptyDir, deadlines and TTL.
+`hostUsers` is omitted by default and emitted only as `false` when configured.
+Resources, selectors, pull secrets and envFrom are copied without mutable aliases;
+unset fields stay absent. A caller may supply an already-presigned upload URL;
+the builder itself performs no signing, credential generation or Kubernetes I/O.
+
+Golden-file acceptance compares the Job and redacted Secret through the actual
+client-node serializer. Eighteen builder checks cover defaults, optional fields,
+identity/token diagnostics, zero result caps, duration-to-seconds conversion and
+snapshot isolation; the scheduler suite passes 19 tests. Full `make check` passes
+1227 TypeScript tests and one Python test. A freshly rebuilt nonroot/read-only,
+network-isolated image passes seven compiled-builder/identity groups with 74 emitted
+module hashes, seven CLI groups and the fixable-critical scan.
+
+Both independent reviews found no confirmed material defect. This uncommitted
+implementation awaits delivery;
+P4.1 remains unchecked. The `scheduler` command is still the finite scaffold.
+Leader election, API orchestration, actual Job execution and the Phase 4 kind e2e
+gate remain later PLAN tasks; no cluster admission or running-function claim.
+
 ## Internal API (P3.8)
 
 The internal listener now serves `GetInput`, `ReportStatus`, `SetResult` and
