@@ -342,7 +342,7 @@ for (const dialect of ["sqlite", "postgres"] as const) {
             expect(statements).toHaveLength(3);
             expect(statements[0]).toContain(
               dialect === "postgres"
-                ? "greatest((runtime_status->>'at')::timestamptz, started_at)"
+                ? "and (runtime_status_at is null or runtime_status_at <"
                 : "max(coalesce(json_extract(runtime_status,'$.at'), started_at), started_at)",
             );
             expect(spans.map((s) => s.attributes.get("db.response.returned_rows"))).toEqual([

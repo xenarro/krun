@@ -34,11 +34,15 @@ declare module "fastify" {
 
 // Embedding edge: preserve the owning Effect context and wait for cancelled
 // roots/finalizers before the app's Store/cache/key dependencies can close.
-export const requestRunner = (context: Context.Context<GatewayDependencies>) => {
+export const requestRunner = <R>(context: Context.Context<R>) => {
   const run = Effect.runPromiseExitWith(context);
   const active = new Map<AbortController, Promise<unknown>>();
   let stopping = false;
-  const runEffect: RunEffect = async (request, reply, program) => {
+  const runEffect = async <A, E>(
+    request: FastifyRequest,
+    reply: FastifyReply,
+    program: Effect.Effect<A, E, R>,
+  ): Promise<A> => {
     if (stopping) throw new ApiError({ reason: "INTERNAL" });
     const controller = new AbortController();
     const abort = () => controller.abort();

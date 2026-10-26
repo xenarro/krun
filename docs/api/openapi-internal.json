@@ -1,0 +1,4253 @@
+{
+  "components": {
+    "schemas": {
+      "BadRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "@type": {
+            "const": "type.googleapis.com/google.rpc.BadRequest",
+            "type": "string"
+          },
+          "fieldViolations": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "type": "string"
+                },
+                "field": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field",
+                "description"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "@type",
+          "fieldViolations"
+        ],
+        "type": "object"
+      },
+      "BadRequestInput": {
+        "additionalProperties": false,
+        "properties": {
+          "@type": {
+            "const": "type.googleapis.com/google.rpc.BadRequest",
+            "type": "string"
+          },
+          "fieldViolations": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "type": "string"
+                },
+                "field": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field",
+                "description"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "@type",
+          "fieldViolations"
+        ],
+        "type": "object"
+      },
+      "Callback": {
+        "additionalProperties": false,
+        "properties": {
+          "url": {
+            "description": "Callback URL; existing host/address policy is enforced at admission.",
+            "format": "uri",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "type": "object"
+      },
+      "CallbackInput": {
+        "additionalProperties": false,
+        "properties": {
+          "url": {
+            "description": "Callback URL; existing host/address policy is enforced at admission.",
+            "format": "uri",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "type": "object"
+      },
+      "ErrorEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "maximum": 2147483647,
+                "minimum": -2147483648,
+                "type": "integer"
+              },
+              "details": {
+                "items": {
+                  "$ref": "#/components/schemas/BadRequest"
+                },
+                "minItems": 1,
+                "prefixItems": [
+                  {
+                    "$ref": "#/components/schemas/ErrorInfo"
+                  }
+                ],
+                "type": "array"
+              },
+              "message": {
+                "description": "Generic public message; never internals or credentials.",
+                "type": "string"
+              },
+              "status": {
+                "description": "Open enum; known values: INVALID_ARGUMENT, FAILED_PRECONDITION, UNAUTHENTICATED, PERMISSION_DENIED, NOT_FOUND, ABORTED, RESOURCE_EXHAUSTED, INTERNAL, UNAVAILABLE. Unknown values must be treated as opaque strings.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "message",
+              "status",
+              "details"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "type": "object"
+      },
+      "ErrorEnvelopeInput": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "maximum": 2147483647,
+                "minimum": -2147483648,
+                "type": "integer"
+              },
+              "details": {
+                "items": {
+                  "$ref": "#/components/schemas/BadRequestInput"
+                },
+                "minItems": 1,
+                "prefixItems": [
+                  {
+                    "$ref": "#/components/schemas/ErrorInfoInput"
+                  }
+                ],
+                "type": "array"
+              },
+              "message": {
+                "description": "Generic public message; never internals or credentials.",
+                "type": "string"
+              },
+              "status": {
+                "description": "Open enum; known values: INVALID_ARGUMENT, FAILED_PRECONDITION, UNAUTHENTICATED, PERMISSION_DENIED, NOT_FOUND, ABORTED, RESOURCE_EXHAUSTED, INTERNAL, UNAVAILABLE. Unknown values must be treated as opaque strings.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "message",
+              "status",
+              "details"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "type": "object"
+      },
+      "ErrorInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "@type": {
+            "const": "type.googleapis.com/google.rpc.ErrorInfo",
+            "type": "string"
+          },
+          "domain": {
+            "const": "krun.io",
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "reason": {
+            "description": "Open enum; known values: REQUEST_INVALID, INPUT_SCHEMA_VIOLATION, FILTER_INVALID, CALLBACK_NOT_ALLOWED, RUN_TERMINAL, RUN_NOT_TERMINAL, KEY_MISSING, KEY_INVALID, SCOPE_MISSING, ROUTE_NOT_FOUND, FUNCTION_NOT_FOUND, RUN_NOT_FOUND, RESULT_MISSING, IDEMPOTENCY_CONFLICT, INPUT_TOO_LARGE, CONTENT_TYPE_UNSUPPORTED, RATE_LIMITED, QUEUE_FULL, INTERNAL, NOT_READY. Unknown values must be treated as opaque strings.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "@type",
+          "reason",
+          "domain"
+        ],
+        "type": "object"
+      },
+      "ErrorInfoInput": {
+        "additionalProperties": false,
+        "properties": {
+          "@type": {
+            "const": "type.googleapis.com/google.rpc.ErrorInfo",
+            "type": "string"
+          },
+          "domain": {
+            "const": "krun.io",
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "reason": {
+            "description": "Open enum; known values: REQUEST_INVALID, INPUT_SCHEMA_VIOLATION, FILTER_INVALID, CALLBACK_NOT_ALLOWED, RUN_TERMINAL, RUN_NOT_TERMINAL, KEY_MISSING, KEY_INVALID, SCOPE_MISSING, ROUTE_NOT_FOUND, FUNCTION_NOT_FOUND, RUN_NOT_FOUND, RESULT_MISSING, IDEMPOTENCY_CONFLICT, INPUT_TOO_LARGE, CONTENT_TYPE_UNSUPPORTED, RATE_LIMITED, QUEUE_FULL, INTERNAL, NOT_READY. Unknown values must be treated as opaque strings.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "@type",
+          "reason",
+          "domain"
+        ],
+        "type": "object"
+      },
+      "Function": {
+        "additionalProperties": false,
+        "properties": {
+          "activeDeadlineSeconds": {
+            "exclusiveMinimum": 0,
+            "maximum": 2147483647,
+            "readOnly": true,
+            "type": "integer",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "callback": {
+            "$ref": "#/components/schemas/Callback",
+            "readOnly": true,
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "heartbeatTimeout": {
+            "description": "Duration; installation/Function cap applies.",
+            "pattern": "^\\d+(ms|s|m|h)$",
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "inputSchema": {
+            "additionalProperties": {},
+            "description": "JSON Schema2020-12 for Run.input; opaque schema document.",
+            "readOnly": true,
+            "type": "object",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "maxConcurrency": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "readOnly": true,
+            "type": "integer",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "maxInputBytes": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "readOnly": true,
+            "type": "integer",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "maxQueued": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "readOnly": true,
+            "type": "integer",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "maxResultBytes": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "readOnly": true,
+            "type": "integer",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "maxWait": {
+            "description": "Duration; installation/Function cap applies.",
+            "pattern": "^\\d+(ms|s|m|h)$",
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "name": {
+            "pattern": "^functions\\/[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$",
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "queueTimeout": {
+            "description": "Duration; installation/Function cap applies.",
+            "pattern": "^\\d+(ms|s|m|h)$",
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "inputSchema",
+          "maxConcurrency",
+          "maxQueued",
+          "queueTimeout",
+          "activeDeadlineSeconds",
+          "maxInputBytes",
+          "maxResultBytes",
+          "maxWait"
+        ],
+        "type": "object"
+      },
+      "FunctionInput": {
+        "additionalProperties": false,
+        "properties": {
+          "activeDeadlineSeconds": {
+            "exclusiveMinimum": 0,
+            "maximum": 2147483647,
+            "readOnly": true,
+            "type": "integer",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "callback": {
+            "$ref": "#/components/schemas/CallbackInput",
+            "readOnly": true,
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "heartbeatTimeout": {
+            "description": "Duration; installation/Function cap applies.",
+            "pattern": "^\\d+(ms|s|m|h)$",
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "inputSchema": {
+            "additionalProperties": {},
+            "description": "JSON Schema2020-12 for Run.input; opaque schema document.",
+            "readOnly": true,
+            "type": "object",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "maxConcurrency": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "readOnly": true,
+            "type": "integer",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "maxInputBytes": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "readOnly": true,
+            "type": "integer",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "maxQueued": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "readOnly": true,
+            "type": "integer",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "maxResultBytes": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "readOnly": true,
+            "type": "integer",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "maxWait": {
+            "description": "Duration; installation/Function cap applies.",
+            "pattern": "^\\d+(ms|s|m|h)$",
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "name": {
+            "pattern": "^functions\\/[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$",
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "queueTimeout": {
+            "description": "Duration; installation/Function cap applies.",
+            "pattern": "^\\d+(ms|s|m|h)$",
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "inputSchema",
+          "maxConcurrency",
+          "maxQueued",
+          "queueTimeout",
+          "activeDeadlineSeconds",
+          "maxInputBytes",
+          "maxResultBytes",
+          "maxWait"
+        ],
+        "type": "object"
+      },
+      "JobStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "exitCode": {
+            "maximum": 2147483647,
+            "minimum": -2147483648,
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "observeTime": {
+            "description": "RFC3339 UTC timestamp with millisecond precision.",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d\\.\\d{3}(?:Z))$",
+            "type": "string"
+          },
+          "phase": {
+            "description": "Verbatim Kubernetes phase, not an enum.",
+            "type": "string"
+          },
+          "podName": {
+            "type": "string"
+          },
+          "reason": {
+            "description": "Verbatim Kubernetes reason, not an enum.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "observeTime"
+        ],
+        "type": "object"
+      },
+      "JobStatusInput": {
+        "additionalProperties": false,
+        "properties": {
+          "exitCode": {
+            "maximum": 2147483647,
+            "minimum": -2147483648,
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "observeTime": {
+            "description": "RFC3339 UTC timestamp with millisecond precision.",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d\\.\\d{3}(?:Z))$",
+            "type": "string"
+          },
+          "phase": {
+            "description": "Verbatim Kubernetes phase, not an enum.",
+            "type": "string"
+          },
+          "podName": {
+            "type": "string"
+          },
+          "reason": {
+            "description": "Verbatim Kubernetes reason, not an enum.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "observeTime"
+        ],
+        "type": "object"
+      },
+      "Result": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "items": {},
+            "type": "array"
+          },
+          {
+            "additionalProperties": {},
+            "type": "object"
+          }
+        ],
+        "description": "Opaque JSON result. The root cannot be null; nested opaque JSON data is preserved."
+      },
+      "ResultInput": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "items": {},
+            "type": "array"
+          },
+          {
+            "additionalProperties": {},
+            "type": "object"
+          }
+        ],
+        "description": "Opaque JSON result. The root cannot be null; nested opaque JSON data is preserved."
+      },
+      "Run": {
+        "additionalProperties": false,
+        "description": "FULL Run. Unset fields are omitted, never null; result and resultUri are mutually exclusive.",
+        "properties": {
+          "attempt": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "readOnly": true,
+            "type": "integer",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "callback": {
+            "$ref": "#/components/schemas/Callback"
+          },
+          "createTime": {
+            "description": "RFC3339 UTC timestamp with millisecond precision.",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d\\.\\d{3}(?:Z))$",
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "createdBy": {
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "endTime": {
+            "description": "RFC3339 UTC timestamp with millisecond precision.",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d\\.\\d{3}(?:Z))$",
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "error": {
+            "$ref": "#/components/schemas/RunError",
+            "readOnly": true,
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "failureReason": {
+            "description": "Open enum; known values: EXIT_CODE, OOM_KILLED, DEADLINE_EXCEEDED, EVICTED, DISRUPTED, HEARTBEAT_TIMEOUT, JOB_CREATE_FAILED, JOB_LOST, QUEUE_TIMEOUT. Unknown values must be treated as opaque strings.",
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "input": {
+            "additionalProperties": {},
+            "type": "object",
+            "x-field-behavior": [
+              "REQUIRED",
+              "IMMUTABLE"
+            ]
+          },
+          "jobName": {
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "jobStatus": {
+            "$ref": "#/components/schemas/JobStatus",
+            "readOnly": true,
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "logTail": {
+            "description": "Failed runs only; last 100 lines, at most 16KB.",
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "name": {
+            "pattern": "^functions\\/[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?\\/runs\\/[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "priority": {
+            "maximum": 9,
+            "minimum": 0,
+            "type": "integer",
+            "x-field-behavior": [
+              "OPTIONAL",
+              "IMMUTABLE"
+            ]
+          },
+          "result": {
+            "$ref": "#/components/schemas/Result",
+            "description": "Opaque JSON result. The root cannot be null; nested opaque JSON data is preserved.",
+            "readOnly": true,
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "resultUri": {
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "runtimeStatus": {
+            "$ref": "#/components/schemas/RuntimeStatus",
+            "readOnly": true,
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "scheduleTime": {
+            "description": "RFC3339 UTC timestamp with millisecond precision.",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d\\.\\d{3}(?:Z))$",
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "startTime": {
+            "description": "RFC3339 UTC timestamp with millisecond precision.",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d\\.\\d{3}(?:Z))$",
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "state": {
+            "description": "Open enum; known values: QUEUED, SCHEDULED, RUNNING, SUCCEEDED, FAILED, CANCELLING, CANCELLED. Unknown values must be treated as opaque strings.",
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "state",
+          "attempt",
+          "priority",
+          "createdBy",
+          "createTime",
+          "input"
+        ],
+        "type": "object"
+      },
+      "RunError": {
+        "additionalProperties": false,
+        "properties": {
+          "details": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "source": {
+            "description": "Open enum; known values: FUNCTION, KUBERNETES, KRUN. Unknown values must be treated as opaque strings.",
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "message"
+        ],
+        "type": "object"
+      },
+      "RunErrorInput": {
+        "additionalProperties": false,
+        "properties": {
+          "details": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "source": {
+            "description": "Open enum; known values: FUNCTION, KUBERNETES, KRUN. Unknown values must be treated as opaque strings.",
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "message"
+        ],
+        "type": "object"
+      },
+      "RunInput": {
+        "additionalProperties": false,
+        "description": "FULL Run. Unset fields are omitted, never null; result and resultUri are mutually exclusive.",
+        "properties": {
+          "attempt": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "readOnly": true,
+            "type": "integer",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "callback": {
+            "$ref": "#/components/schemas/CallbackInput"
+          },
+          "createTime": {
+            "description": "RFC3339 UTC timestamp with millisecond precision.",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d\\.\\d{3}(?:Z))$",
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "createdBy": {
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "endTime": {
+            "description": "RFC3339 UTC timestamp with millisecond precision.",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d\\.\\d{3}(?:Z))$",
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "error": {
+            "$ref": "#/components/schemas/RunErrorInput",
+            "readOnly": true,
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "failureReason": {
+            "description": "Open enum; known values: EXIT_CODE, OOM_KILLED, DEADLINE_EXCEEDED, EVICTED, DISRUPTED, HEARTBEAT_TIMEOUT, JOB_CREATE_FAILED, JOB_LOST, QUEUE_TIMEOUT. Unknown values must be treated as opaque strings.",
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "input": {
+            "additionalProperties": {},
+            "type": "object",
+            "x-field-behavior": [
+              "REQUIRED",
+              "IMMUTABLE"
+            ]
+          },
+          "jobName": {
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "jobStatus": {
+            "$ref": "#/components/schemas/JobStatusInput",
+            "readOnly": true,
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "logTail": {
+            "description": "Failed runs only; last 100 lines, at most 16KB.",
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "name": {
+            "pattern": "^functions\\/[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?\\/runs\\/[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "priority": {
+            "maximum": 9,
+            "minimum": 0,
+            "type": "integer",
+            "x-field-behavior": [
+              "OPTIONAL",
+              "IMMUTABLE"
+            ]
+          },
+          "result": {
+            "$ref": "#/components/schemas/ResultInput",
+            "description": "Opaque JSON result. The root cannot be null; nested opaque JSON data is preserved.",
+            "readOnly": true,
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "resultUri": {
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "runtimeStatus": {
+            "$ref": "#/components/schemas/RuntimeStatusInput",
+            "readOnly": true,
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "scheduleTime": {
+            "description": "RFC3339 UTC timestamp with millisecond precision.",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d\\.\\d{3}(?:Z))$",
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "startTime": {
+            "description": "RFC3339 UTC timestamp with millisecond precision.",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d\\.\\d{3}(?:Z))$",
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "state": {
+            "description": "Open enum; known values: QUEUED, SCHEDULED, RUNNING, SUCCEEDED, FAILED, CANCELLING, CANCELLED. Unknown values must be treated as opaque strings.",
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "state",
+          "attempt",
+          "priority",
+          "createdBy",
+          "createTime",
+          "input"
+        ],
+        "type": "object"
+      },
+      "RunSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "attempt": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "readOnly": true,
+            "type": "integer",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "callback": {
+            "$ref": "#/components/schemas/Callback"
+          },
+          "createTime": {
+            "description": "RFC3339 UTC timestamp with millisecond precision.",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d\\.\\d{3}(?:Z))$",
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "createdBy": {
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "endTime": {
+            "description": "RFC3339 UTC timestamp with millisecond precision.",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d\\.\\d{3}(?:Z))$",
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "error": {
+            "additionalProperties": false,
+            "properties": {
+              "message": {
+                "type": "string"
+              },
+              "source": {
+                "description": "Open enum; known values: FUNCTION, KUBERNETES, KRUN. Unknown values must be treated as opaque strings.",
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              }
+            },
+            "readOnly": true,
+            "required": [
+              "source",
+              "message"
+            ],
+            "type": "object",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "failureReason": {
+            "description": "Open enum; known values: EXIT_CODE, OOM_KILLED, DEADLINE_EXCEEDED, EVICTED, DISRUPTED, HEARTBEAT_TIMEOUT, JOB_CREATE_FAILED, JOB_LOST, QUEUE_TIMEOUT. Unknown values must be treated as opaque strings.",
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "jobName": {
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "jobStatus": {
+            "$ref": "#/components/schemas/JobStatus",
+            "readOnly": true,
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "name": {
+            "pattern": "^functions\\/[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?\\/runs\\/[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "priority": {
+            "maximum": 9,
+            "minimum": 0,
+            "type": "integer",
+            "x-field-behavior": [
+              "OPTIONAL",
+              "IMMUTABLE"
+            ]
+          },
+          "resultUri": {
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "runtimeStatus": {
+            "$ref": "#/components/schemas/RuntimeStatus",
+            "readOnly": true,
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "scheduleTime": {
+            "description": "RFC3339 UTC timestamp with millisecond precision.",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d\\.\\d{3}(?:Z))$",
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "startTime": {
+            "description": "RFC3339 UTC timestamp with millisecond precision.",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d\\.\\d{3}(?:Z))$",
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "state": {
+            "description": "Open enum; known values: QUEUED, SCHEDULED, RUNNING, SUCCEEDED, FAILED, CANCELLING, CANCELLED. Unknown values must be treated as opaque strings.",
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "state",
+          "attempt",
+          "priority",
+          "createdBy",
+          "createTime"
+        ],
+        "type": "object"
+      },
+      "RunSummaryInput": {
+        "additionalProperties": false,
+        "properties": {
+          "attempt": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "readOnly": true,
+            "type": "integer",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "callback": {
+            "$ref": "#/components/schemas/CallbackInput"
+          },
+          "createTime": {
+            "description": "RFC3339 UTC timestamp with millisecond precision.",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d\\.\\d{3}(?:Z))$",
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "createdBy": {
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "endTime": {
+            "description": "RFC3339 UTC timestamp with millisecond precision.",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d\\.\\d{3}(?:Z))$",
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "error": {
+            "additionalProperties": false,
+            "properties": {
+              "message": {
+                "type": "string"
+              },
+              "source": {
+                "description": "Open enum; known values: FUNCTION, KUBERNETES, KRUN. Unknown values must be treated as opaque strings.",
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              }
+            },
+            "readOnly": true,
+            "required": [
+              "source",
+              "message"
+            ],
+            "type": "object",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "failureReason": {
+            "description": "Open enum; known values: EXIT_CODE, OOM_KILLED, DEADLINE_EXCEEDED, EVICTED, DISRUPTED, HEARTBEAT_TIMEOUT, JOB_CREATE_FAILED, JOB_LOST, QUEUE_TIMEOUT. Unknown values must be treated as opaque strings.",
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "jobName": {
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "jobStatus": {
+            "$ref": "#/components/schemas/JobStatusInput",
+            "readOnly": true,
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "name": {
+            "pattern": "^functions\\/[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?\\/runs\\/[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "priority": {
+            "maximum": 9,
+            "minimum": 0,
+            "type": "integer",
+            "x-field-behavior": [
+              "OPTIONAL",
+              "IMMUTABLE"
+            ]
+          },
+          "resultUri": {
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "runtimeStatus": {
+            "$ref": "#/components/schemas/RuntimeStatusInput",
+            "readOnly": true,
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "scheduleTime": {
+            "description": "RFC3339 UTC timestamp with millisecond precision.",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d\\.\\d{3}(?:Z))$",
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "startTime": {
+            "description": "RFC3339 UTC timestamp with millisecond precision.",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d\\.\\d{3}(?:Z))$",
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          },
+          "state": {
+            "description": "Open enum; known values: QUEUED, SCHEDULED, RUNNING, SUCCEEDED, FAILED, CANCELLING, CANCELLED. Unknown values must be treated as opaque strings.",
+            "readOnly": true,
+            "type": "string",
+            "x-field-behavior": [
+              "OUTPUT_ONLY"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "state",
+          "attempt",
+          "priority",
+          "createdBy",
+          "createTime"
+        ],
+        "type": "object"
+      },
+      "RuntimeStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "progress": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "reportTime": {
+            "description": "RFC3339 UTC timestamp with millisecond precision.",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d\\.\\d{3}(?:Z))$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "reportTime"
+        ],
+        "type": "object"
+      },
+      "RuntimeStatusInput": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "progress": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "reportTime": {
+            "description": "RFC3339 UTC timestamp with millisecond precision.",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d\\.\\d{3}(?:Z))$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "reportTime"
+        ],
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "runToken": {
+        "description": "Per-run token; API keys rejected. Accepting run state required.",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "description": "Normative docs/INTERNAL-API.md; per-run token, isolated internal listener.",
+    "title": "krun internal API",
+    "version": "v1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/internal/v1/runs/{run}/error": {
+      "put": {
+        "operationId": "SetError",
+        "parameters": [
+          {
+            "description": "Lowercase UUID; malformed or unknown run is TOKEN_INVALID, not a schema error.",
+            "in": "path",
+            "name": "run",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Single opaque value up to128 characters;missing/empty/oversized/invalid values are replaced by UUIDv7 and echoed.",
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "details": {
+                    "additionalProperties": {},
+                    "description": "Opaque JSON object; at most 8192 compact UTF-8 bytes.",
+                    "type": "object"
+                  },
+                  "message": {
+                    "description": "At most 4096 bytes in compact UTF-8 JSON.",
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": {
+                    "description": "At most 128 bytes in compact UTF-8 JSON.",
+                    "minLength": 0,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "message"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Default Response",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Accepted or generated correlation ID.",
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "maximum": 2147483647,
+                          "minimum": -2147483648,
+                          "type": "integer"
+                        },
+                        "details": {
+                          "items": false,
+                          "maxItems": 1,
+                          "minItems": 1,
+                          "prefixItems": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "@type": {
+                                  "const": "type.googleapis.com/google.rpc.ErrorInfo",
+                                  "type": "string"
+                                },
+                                "domain": {
+                                  "const": "krun.io",
+                                  "type": "string"
+                                },
+                                "reason": {
+                                  "description": "Open enum: REQUEST_INVALID, TOKEN_INVALID, ROUTE_NOT_FOUND, UNSUPPORTED_API_VERSION, RESULT_TOO_LARGE, REQUEST_TOO_LARGE, CONTENT_TYPE_UNSUPPORTED, STATUS_RATE_LIMITED, INTERNAL, NOT_READY",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "@type",
+                                "reason",
+                                "domain"
+                              ],
+                              "type": "object"
+                            }
+                          ],
+                          "type": "array"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "description": "Open enum: INVALID_ARGUMENT, UNAUTHENTICATED, NOT_FOUND, RESOURCE_EXHAUSTED, INTERNAL, UNAVAILABLE",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "status",
+                        "details"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Accepted or generated correlation ID.",
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "maximum": 2147483647,
+                          "minimum": -2147483648,
+                          "type": "integer"
+                        },
+                        "details": {
+                          "items": false,
+                          "maxItems": 1,
+                          "minItems": 1,
+                          "prefixItems": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "@type": {
+                                  "const": "type.googleapis.com/google.rpc.ErrorInfo",
+                                  "type": "string"
+                                },
+                                "domain": {
+                                  "const": "krun.io",
+                                  "type": "string"
+                                },
+                                "reason": {
+                                  "description": "Open enum: REQUEST_INVALID, TOKEN_INVALID, ROUTE_NOT_FOUND, UNSUPPORTED_API_VERSION, RESULT_TOO_LARGE, REQUEST_TOO_LARGE, CONTENT_TYPE_UNSUPPORTED, STATUS_RATE_LIMITED, INTERNAL, NOT_READY",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "@type",
+                                "reason",
+                                "domain"
+                              ],
+                              "type": "object"
+                            }
+                          ],
+                          "type": "array"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "description": "Open enum: INVALID_ARGUMENT, UNAUTHENTICATED, NOT_FOUND, RESOURCE_EXHAUSTED, INTERNAL, UNAVAILABLE",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "status",
+                        "details"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Accepted or generated correlation ID.",
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "maximum": 2147483647,
+                          "minimum": -2147483648,
+                          "type": "integer"
+                        },
+                        "details": {
+                          "items": false,
+                          "maxItems": 1,
+                          "minItems": 1,
+                          "prefixItems": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "@type": {
+                                  "const": "type.googleapis.com/google.rpc.ErrorInfo",
+                                  "type": "string"
+                                },
+                                "domain": {
+                                  "const": "krun.io",
+                                  "type": "string"
+                                },
+                                "reason": {
+                                  "description": "Open enum: REQUEST_INVALID, TOKEN_INVALID, ROUTE_NOT_FOUND, UNSUPPORTED_API_VERSION, RESULT_TOO_LARGE, REQUEST_TOO_LARGE, CONTENT_TYPE_UNSUPPORTED, STATUS_RATE_LIMITED, INTERNAL, NOT_READY",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "@type",
+                                "reason",
+                                "domain"
+                              ],
+                              "type": "object"
+                            }
+                          ],
+                          "type": "array"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "description": "Open enum: INVALID_ARGUMENT, UNAUTHENTICATED, NOT_FOUND, RESOURCE_EXHAUSTED, INTERNAL, UNAVAILABLE",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "status",
+                        "details"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Accepted or generated correlation ID.",
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "maximum": 2147483647,
+                          "minimum": -2147483648,
+                          "type": "integer"
+                        },
+                        "details": {
+                          "items": false,
+                          "maxItems": 1,
+                          "minItems": 1,
+                          "prefixItems": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "@type": {
+                                  "const": "type.googleapis.com/google.rpc.ErrorInfo",
+                                  "type": "string"
+                                },
+                                "domain": {
+                                  "const": "krun.io",
+                                  "type": "string"
+                                },
+                                "reason": {
+                                  "description": "Open enum: REQUEST_INVALID, TOKEN_INVALID, ROUTE_NOT_FOUND, UNSUPPORTED_API_VERSION, RESULT_TOO_LARGE, REQUEST_TOO_LARGE, CONTENT_TYPE_UNSUPPORTED, STATUS_RATE_LIMITED, INTERNAL, NOT_READY",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "@type",
+                                "reason",
+                                "domain"
+                              ],
+                              "type": "object"
+                            }
+                          ],
+                          "type": "array"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "description": "Open enum: INVALID_ARGUMENT, UNAUTHENTICATED, NOT_FOUND, RESOURCE_EXHAUSTED, INTERNAL, UNAVAILABLE",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "status",
+                        "details"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Accepted or generated correlation ID.",
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "maximum": 2147483647,
+                          "minimum": -2147483648,
+                          "type": "integer"
+                        },
+                        "details": {
+                          "items": false,
+                          "maxItems": 1,
+                          "minItems": 1,
+                          "prefixItems": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "@type": {
+                                  "const": "type.googleapis.com/google.rpc.ErrorInfo",
+                                  "type": "string"
+                                },
+                                "domain": {
+                                  "const": "krun.io",
+                                  "type": "string"
+                                },
+                                "reason": {
+                                  "description": "Open enum: REQUEST_INVALID, TOKEN_INVALID, ROUTE_NOT_FOUND, UNSUPPORTED_API_VERSION, RESULT_TOO_LARGE, REQUEST_TOO_LARGE, CONTENT_TYPE_UNSUPPORTED, STATUS_RATE_LIMITED, INTERNAL, NOT_READY",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "@type",
+                                "reason",
+                                "domain"
+                              ],
+                              "type": "object"
+                            }
+                          ],
+                          "type": "array"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "description": "Open enum: INVALID_ARGUMENT, UNAUTHENTICATED, NOT_FOUND, RESOURCE_EXHAUSTED, INTERNAL, UNAVAILABLE",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "status",
+                        "details"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Accepted or generated correlation ID.",
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "maximum": 2147483647,
+                          "minimum": -2147483648,
+                          "type": "integer"
+                        },
+                        "details": {
+                          "items": false,
+                          "maxItems": 1,
+                          "minItems": 1,
+                          "prefixItems": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "@type": {
+                                  "const": "type.googleapis.com/google.rpc.ErrorInfo",
+                                  "type": "string"
+                                },
+                                "domain": {
+                                  "const": "krun.io",
+                                  "type": "string"
+                                },
+                                "reason": {
+                                  "description": "Open enum: REQUEST_INVALID, TOKEN_INVALID, ROUTE_NOT_FOUND, UNSUPPORTED_API_VERSION, RESULT_TOO_LARGE, REQUEST_TOO_LARGE, CONTENT_TYPE_UNSUPPORTED, STATUS_RATE_LIMITED, INTERNAL, NOT_READY",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "@type",
+                                "reason",
+                                "domain"
+                              ],
+                              "type": "object"
+                            }
+                          ],
+                          "type": "array"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "description": "Open enum: INVALID_ARGUMENT, UNAUTHENTICATED, NOT_FOUND, RESOURCE_EXHAUSTED, INTERNAL, UNAVAILABLE",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "status",
+                        "details"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response",
+            "headers": {
+              "Retry-After": {
+                "description": "Retry after 1 second.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "X-Request-Id": {
+                "description": "Accepted or generated correlation ID.",
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "maximum": 2147483647,
+                          "minimum": -2147483648,
+                          "type": "integer"
+                        },
+                        "details": {
+                          "items": false,
+                          "maxItems": 1,
+                          "minItems": 1,
+                          "prefixItems": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "@type": {
+                                  "const": "type.googleapis.com/google.rpc.ErrorInfo",
+                                  "type": "string"
+                                },
+                                "domain": {
+                                  "const": "krun.io",
+                                  "type": "string"
+                                },
+                                "reason": {
+                                  "description": "Open enum: REQUEST_INVALID, TOKEN_INVALID, ROUTE_NOT_FOUND, UNSUPPORTED_API_VERSION, RESULT_TOO_LARGE, REQUEST_TOO_LARGE, CONTENT_TYPE_UNSUPPORTED, STATUS_RATE_LIMITED, INTERNAL, NOT_READY",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "@type",
+                                "reason",
+                                "domain"
+                              ],
+                              "type": "object"
+                            }
+                          ],
+                          "type": "array"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "description": "Open enum: INVALID_ARGUMENT, UNAUTHENTICATED, NOT_FOUND, RESOURCE_EXHAUSTED, INTERNAL, UNAVAILABLE",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "status",
+                        "details"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Accepted or generated correlation ID.",
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "maximum": 2147483647,
+                          "minimum": -2147483648,
+                          "type": "integer"
+                        },
+                        "details": {
+                          "items": false,
+                          "maxItems": 1,
+                          "minItems": 1,
+                          "prefixItems": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "@type": {
+                                  "const": "type.googleapis.com/google.rpc.ErrorInfo",
+                                  "type": "string"
+                                },
+                                "domain": {
+                                  "const": "krun.io",
+                                  "type": "string"
+                                },
+                                "reason": {
+                                  "description": "Open enum: REQUEST_INVALID, TOKEN_INVALID, ROUTE_NOT_FOUND, UNSUPPORTED_API_VERSION, RESULT_TOO_LARGE, REQUEST_TOO_LARGE, CONTENT_TYPE_UNSUPPORTED, STATUS_RATE_LIMITED, INTERNAL, NOT_READY",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "@type",
+                                "reason",
+                                "domain"
+                              ],
+                              "type": "object"
+                            }
+                          ],
+                          "type": "array"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "description": "Open enum: INVALID_ARGUMENT, UNAUTHENTICATED, NOT_FOUND, RESOURCE_EXHAUSTED, INTERNAL, UNAVAILABLE",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "status",
+                        "details"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response",
+            "headers": {
+              "Retry-After": {
+                "description": "Retry after 1 second.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "X-Request-Id": {
+                "description": "Accepted or generated correlation ID.",
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "runToken": []
+          }
+        ]
+      }
+    },
+    "/internal/v1/runs/{run}/input": {
+      "get": {
+        "operationId": "GetInput",
+        "parameters": [
+          {
+            "description": "Lowercase UUID; malformed or unknown run is TOKEN_INVALID, not a schema error.",
+            "in": "path",
+            "name": "run",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Single opaque value up to128 characters;missing/empty/oversized/invalid values are replaced by UUIDv7 and echoed.",
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {},
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Accepted or generated correlation ID.",
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "maximum": 2147483647,
+                          "minimum": -2147483648,
+                          "type": "integer"
+                        },
+                        "details": {
+                          "items": false,
+                          "maxItems": 1,
+                          "minItems": 1,
+                          "prefixItems": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "@type": {
+                                  "const": "type.googleapis.com/google.rpc.ErrorInfo",
+                                  "type": "string"
+                                },
+                                "domain": {
+                                  "const": "krun.io",
+                                  "type": "string"
+                                },
+                                "reason": {
+                                  "description": "Open enum: REQUEST_INVALID, TOKEN_INVALID, ROUTE_NOT_FOUND, UNSUPPORTED_API_VERSION, RESULT_TOO_LARGE, REQUEST_TOO_LARGE, CONTENT_TYPE_UNSUPPORTED, STATUS_RATE_LIMITED, INTERNAL, NOT_READY",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "@type",
+                                "reason",
+                                "domain"
+                              ],
+                              "type": "object"
+                            }
+                          ],
+                          "type": "array"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "description": "Open enum: INVALID_ARGUMENT, UNAUTHENTICATED, NOT_FOUND, RESOURCE_EXHAUSTED, INTERNAL, UNAVAILABLE",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "status",
+                        "details"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Accepted or generated correlation ID.",
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "maximum": 2147483647,
+                          "minimum": -2147483648,
+                          "type": "integer"
+                        },
+                        "details": {
+                          "items": false,
+                          "maxItems": 1,
+                          "minItems": 1,
+                          "prefixItems": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "@type": {
+                                  "const": "type.googleapis.com/google.rpc.ErrorInfo",
+                                  "type": "string"
+                                },
+                                "domain": {
+                                  "const": "krun.io",
+                                  "type": "string"
+                                },
+                                "reason": {
+                                  "description": "Open enum: REQUEST_INVALID, TOKEN_INVALID, ROUTE_NOT_FOUND, UNSUPPORTED_API_VERSION, RESULT_TOO_LARGE, REQUEST_TOO_LARGE, CONTENT_TYPE_UNSUPPORTED, STATUS_RATE_LIMITED, INTERNAL, NOT_READY",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "@type",
+                                "reason",
+                                "domain"
+                              ],
+                              "type": "object"
+                            }
+                          ],
+                          "type": "array"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "description": "Open enum: INVALID_ARGUMENT, UNAUTHENTICATED, NOT_FOUND, RESOURCE_EXHAUSTED, INTERNAL, UNAVAILABLE",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "status",
+                        "details"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Accepted or generated correlation ID.",
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "maximum": 2147483647,
+                          "minimum": -2147483648,
+                          "type": "integer"
+                        },
+                        "details": {
+                          "items": false,
+                          "maxItems": 1,
+                          "minItems": 1,
+                          "prefixItems": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "@type": {
+                                  "const": "type.googleapis.com/google.rpc.ErrorInfo",
+                                  "type": "string"
+                                },
+                                "domain": {
+                                  "const": "krun.io",
+                                  "type": "string"
+                                },
+                                "reason": {
+                                  "description": "Open enum: REQUEST_INVALID, TOKEN_INVALID, ROUTE_NOT_FOUND, UNSUPPORTED_API_VERSION, RESULT_TOO_LARGE, REQUEST_TOO_LARGE, CONTENT_TYPE_UNSUPPORTED, STATUS_RATE_LIMITED, INTERNAL, NOT_READY",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "@type",
+                                "reason",
+                                "domain"
+                              ],
+                              "type": "object"
+                            }
+                          ],
+                          "type": "array"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "description": "Open enum: INVALID_ARGUMENT, UNAUTHENTICATED, NOT_FOUND, RESOURCE_EXHAUSTED, INTERNAL, UNAVAILABLE",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "status",
+                        "details"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Accepted or generated correlation ID.",
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "maximum": 2147483647,
+                          "minimum": -2147483648,
+                          "type": "integer"
+                        },
+                        "details": {
+                          "items": false,
+                          "maxItems": 1,
+                          "minItems": 1,
+                          "prefixItems": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "@type": {
+                                  "const": "type.googleapis.com/google.rpc.ErrorInfo",
+                                  "type": "string"
+                                },
+                                "domain": {
+                                  "const": "krun.io",
+                                  "type": "string"
+                                },
+                                "reason": {
+                                  "description": "Open enum: REQUEST_INVALID, TOKEN_INVALID, ROUTE_NOT_FOUND, UNSUPPORTED_API_VERSION, RESULT_TOO_LARGE, REQUEST_TOO_LARGE, CONTENT_TYPE_UNSUPPORTED, STATUS_RATE_LIMITED, INTERNAL, NOT_READY",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "@type",
+                                "reason",
+                                "domain"
+                              ],
+                              "type": "object"
+                            }
+                          ],
+                          "type": "array"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "description": "Open enum: INVALID_ARGUMENT, UNAUTHENTICATED, NOT_FOUND, RESOURCE_EXHAUSTED, INTERNAL, UNAVAILABLE",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "status",
+                        "details"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Accepted or generated correlation ID.",
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "maximum": 2147483647,
+                          "minimum": -2147483648,
+                          "type": "integer"
+                        },
+                        "details": {
+                          "items": false,
+                          "maxItems": 1,
+                          "minItems": 1,
+                          "prefixItems": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "@type": {
+                                  "const": "type.googleapis.com/google.rpc.ErrorInfo",
+                                  "type": "string"
+                                },
+                                "domain": {
+                                  "const": "krun.io",
+                                  "type": "string"
+                                },
+                                "reason": {
+                                  "description": "Open enum: REQUEST_INVALID, TOKEN_INVALID, ROUTE_NOT_FOUND, UNSUPPORTED_API_VERSION, RESULT_TOO_LARGE, REQUEST_TOO_LARGE, CONTENT_TYPE_UNSUPPORTED, STATUS_RATE_LIMITED, INTERNAL, NOT_READY",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "@type",
+                                "reason",
+                                "domain"
+                              ],
+                              "type": "object"
+                            }
+                          ],
+                          "type": "array"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "description": "Open enum: INVALID_ARGUMENT, UNAUTHENTICATED, NOT_FOUND, RESOURCE_EXHAUSTED, INTERNAL, UNAVAILABLE",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "status",
+                        "details"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Accepted or generated correlation ID.",
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "maximum": 2147483647,
+                          "minimum": -2147483648,
+                          "type": "integer"
+                        },
+                        "details": {
+                          "items": false,
+                          "maxItems": 1,
+                          "minItems": 1,
+                          "prefixItems": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "@type": {
+                                  "const": "type.googleapis.com/google.rpc.ErrorInfo",
+                                  "type": "string"
+                                },
+                                "domain": {
+                                  "const": "krun.io",
+                                  "type": "string"
+                                },
+                                "reason": {
+                                  "description": "Open enum: REQUEST_INVALID, TOKEN_INVALID, ROUTE_NOT_FOUND, UNSUPPORTED_API_VERSION, RESULT_TOO_LARGE, REQUEST_TOO_LARGE, CONTENT_TYPE_UNSUPPORTED, STATUS_RATE_LIMITED, INTERNAL, NOT_READY",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "@type",
+                                "reason",
+                                "domain"
+                              ],
+                              "type": "object"
+                            }
+                          ],
+                          "type": "array"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "description": "Open enum: INVALID_ARGUMENT, UNAUTHENTICATED, NOT_FOUND, RESOURCE_EXHAUSTED, INTERNAL, UNAVAILABLE",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "status",
+                        "details"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response",
+            "headers": {
+              "Retry-After": {
+                "description": "Retry after 1 second.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "X-Request-Id": {
+                "description": "Accepted or generated correlation ID.",
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "maximum": 2147483647,
+                          "minimum": -2147483648,
+                          "type": "integer"
+                        },
+                        "details": {
+                          "items": false,
+                          "maxItems": 1,
+                          "minItems": 1,
+                          "prefixItems": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "@type": {
+                                  "const": "type.googleapis.com/google.rpc.ErrorInfo",
+                                  "type": "string"
+                                },
+                                "domain": {
+                                  "const": "krun.io",
+                                  "type": "string"
+                                },
+                                "reason": {
+                                  "description": "Open enum: REQUEST_INVALID, TOKEN_INVALID, ROUTE_NOT_FOUND, UNSUPPORTED_API_VERSION, RESULT_TOO_LARGE, REQUEST_TOO_LARGE, CONTENT_TYPE_UNSUPPORTED, STATUS_RATE_LIMITED, INTERNAL, NOT_READY",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "@type",
+                                "reason",
+                                "domain"
+                              ],
+                              "type": "object"
+                            }
+                          ],
+                          "type": "array"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "description": "Open enum: INVALID_ARGUMENT, UNAUTHENTICATED, NOT_FOUND, RESOURCE_EXHAUSTED, INTERNAL, UNAVAILABLE",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "status",
+                        "details"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Accepted or generated correlation ID.",
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "maximum": 2147483647,
+                          "minimum": -2147483648,
+                          "type": "integer"
+                        },
+                        "details": {
+                          "items": false,
+                          "maxItems": 1,
+                          "minItems": 1,
+                          "prefixItems": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "@type": {
+                                  "const": "type.googleapis.com/google.rpc.ErrorInfo",
+                                  "type": "string"
+                                },
+                                "domain": {
+                                  "const": "krun.io",
+                                  "type": "string"
+                                },
+                                "reason": {
+                                  "description": "Open enum: REQUEST_INVALID, TOKEN_INVALID, ROUTE_NOT_FOUND, UNSUPPORTED_API_VERSION, RESULT_TOO_LARGE, REQUEST_TOO_LARGE, CONTENT_TYPE_UNSUPPORTED, STATUS_RATE_LIMITED, INTERNAL, NOT_READY",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "@type",
+                                "reason",
+                                "domain"
+                              ],
+                              "type": "object"
+                            }
+                          ],
+                          "type": "array"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "description": "Open enum: INVALID_ARGUMENT, UNAUTHENTICATED, NOT_FOUND, RESOURCE_EXHAUSTED, INTERNAL, UNAVAILABLE",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "status",
+                        "details"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response",
+            "headers": {
+              "Retry-After": {
+                "description": "Retry after 1 second.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "X-Request-Id": {
+                "description": "Accepted or generated correlation ID.",
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "runToken": []
+          }
+        ]
+      }
+    },
+    "/internal/v1/runs/{run}/result": {
+      "put": {
+        "operationId": "SetResult",
+        "parameters": [
+          {
+            "description": "Lowercase UUID; malformed or unknown run is TOKEN_INVALID, not a schema error.",
+            "in": "path",
+            "name": "run",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Single opaque value up to128 characters;missing/empty/oversized/invalid values are replaced by UUIDv7 and echoed.",
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "items": {},
+                    "type": "array"
+                  },
+                  {
+                    "additionalProperties": {},
+                    "type": "object"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Default Response",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Accepted or generated correlation ID.",
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "maximum": 2147483647,
+                          "minimum": -2147483648,
+                          "type": "integer"
+                        },
+                        "details": {
+                          "items": false,
+                          "maxItems": 1,
+                          "minItems": 1,
+                          "prefixItems": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "@type": {
+                                  "const": "type.googleapis.com/google.rpc.ErrorInfo",
+                                  "type": "string"
+                                },
+                                "domain": {
+                                  "const": "krun.io",
+                                  "type": "string"
+                                },
+                                "reason": {
+                                  "description": "Open enum: REQUEST_INVALID, TOKEN_INVALID, ROUTE_NOT_FOUND, UNSUPPORTED_API_VERSION, RESULT_TOO_LARGE, REQUEST_TOO_LARGE, CONTENT_TYPE_UNSUPPORTED, STATUS_RATE_LIMITED, INTERNAL, NOT_READY",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "@type",
+                                "reason",
+                                "domain"
+                              ],
+                              "type": "object"
+                            }
+                          ],
+                          "type": "array"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "description": "Open enum: INVALID_ARGUMENT, UNAUTHENTICATED, NOT_FOUND, RESOURCE_EXHAUSTED, INTERNAL, UNAVAILABLE",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "status",
+                        "details"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Accepted or generated correlation ID.",
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "maximum": 2147483647,
+                          "minimum": -2147483648,
+                          "type": "integer"
+                        },
+                        "details": {
+                          "items": false,
+                          "maxItems": 1,
+                          "minItems": 1,
+                          "prefixItems": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "@type": {
+                                  "const": "type.googleapis.com/google.rpc.ErrorInfo",
+                                  "type": "string"
+                                },
+                                "domain": {
+                                  "const": "krun.io",
+                                  "type": "string"
+                                },
+                                "reason": {
+                                  "description": "Open enum: REQUEST_INVALID, TOKEN_INVALID, ROUTE_NOT_FOUND, UNSUPPORTED_API_VERSION, RESULT_TOO_LARGE, REQUEST_TOO_LARGE, CONTENT_TYPE_UNSUPPORTED, STATUS_RATE_LIMITED, INTERNAL, NOT_READY",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "@type",
+                                "reason",
+                                "domain"
+                              ],
+                              "type": "object"
+                            }
+                          ],
+                          "type": "array"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "description": "Open enum: INVALID_ARGUMENT, UNAUTHENTICATED, NOT_FOUND, RESOURCE_EXHAUSTED, INTERNAL, UNAVAILABLE",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "status",
+                        "details"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Accepted or generated correlation ID.",
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "maximum": 2147483647,
+                          "minimum": -2147483648,
+                          "type": "integer"
+                        },
+                        "details": {
+                          "items": false,
+                          "maxItems": 1,
+                          "minItems": 1,
+                          "prefixItems": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "@type": {
+                                  "const": "type.googleapis.com/google.rpc.ErrorInfo",
+                                  "type": "string"
+                                },
+                                "domain": {
+                                  "const": "krun.io",
+                                  "type": "string"
+                                },
+                                "reason": {
+                                  "description": "Open enum: REQUEST_INVALID, TOKEN_INVALID, ROUTE_NOT_FOUND, UNSUPPORTED_API_VERSION, RESULT_TOO_LARGE, REQUEST_TOO_LARGE, CONTENT_TYPE_UNSUPPORTED, STATUS_RATE_LIMITED, INTERNAL, NOT_READY",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "@type",
+                                "reason",
+                                "domain"
+                              ],
+                              "type": "object"
+                            }
+                          ],
+                          "type": "array"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "description": "Open enum: INVALID_ARGUMENT, UNAUTHENTICATED, NOT_FOUND, RESOURCE_EXHAUSTED, INTERNAL, UNAVAILABLE",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "status",
+                        "details"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Accepted or generated correlation ID.",
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "maximum": 2147483647,
+                          "minimum": -2147483648,
+                          "type": "integer"
+                        },
+                        "details": {
+                          "items": false,
+                          "maxItems": 1,
+                          "minItems": 1,
+                          "prefixItems": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "@type": {
+                                  "const": "type.googleapis.com/google.rpc.ErrorInfo",
+                                  "type": "string"
+                                },
+                                "domain": {
+                                  "const": "krun.io",
+                                  "type": "string"
+                                },
+                                "reason": {
+                                  "description": "Open enum: REQUEST_INVALID, TOKEN_INVALID, ROUTE_NOT_FOUND, UNSUPPORTED_API_VERSION, RESULT_TOO_LARGE, REQUEST_TOO_LARGE, CONTENT_TYPE_UNSUPPORTED, STATUS_RATE_LIMITED, INTERNAL, NOT_READY",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "@type",
+                                "reason",
+                                "domain"
+                              ],
+                              "type": "object"
+                            }
+                          ],
+                          "type": "array"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "description": "Open enum: INVALID_ARGUMENT, UNAUTHENTICATED, NOT_FOUND, RESOURCE_EXHAUSTED, INTERNAL, UNAVAILABLE",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "status",
+                        "details"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Accepted or generated correlation ID.",
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "maximum": 2147483647,
+                          "minimum": -2147483648,
+                          "type": "integer"
+                        },
+                        "details": {
+                          "items": false,
+                          "maxItems": 1,
+                          "minItems": 1,
+                          "prefixItems": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "@type": {
+                                  "const": "type.googleapis.com/google.rpc.ErrorInfo",
+                                  "type": "string"
+                                },
+                                "domain": {
+                                  "const": "krun.io",
+                                  "type": "string"
+                                },
+                                "reason": {
+                                  "description": "Open enum: REQUEST_INVALID, TOKEN_INVALID, ROUTE_NOT_FOUND, UNSUPPORTED_API_VERSION, RESULT_TOO_LARGE, REQUEST_TOO_LARGE, CONTENT_TYPE_UNSUPPORTED, STATUS_RATE_LIMITED, INTERNAL, NOT_READY",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "@type",
+                                "reason",
+                                "domain"
+                              ],
+                              "type": "object"
+                            }
+                          ],
+                          "type": "array"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "description": "Open enum: INVALID_ARGUMENT, UNAUTHENTICATED, NOT_FOUND, RESOURCE_EXHAUSTED, INTERNAL, UNAVAILABLE",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "status",
+                        "details"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Accepted or generated correlation ID.",
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "maximum": 2147483647,
+                          "minimum": -2147483648,
+                          "type": "integer"
+                        },
+                        "details": {
+                          "items": false,
+                          "maxItems": 1,
+                          "minItems": 1,
+                          "prefixItems": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "@type": {
+                                  "const": "type.googleapis.com/google.rpc.ErrorInfo",
+                                  "type": "string"
+                                },
+                                "domain": {
+                                  "const": "krun.io",
+                                  "type": "string"
+                                },
+                                "reason": {
+                                  "description": "Open enum: REQUEST_INVALID, TOKEN_INVALID, ROUTE_NOT_FOUND, UNSUPPORTED_API_VERSION, RESULT_TOO_LARGE, REQUEST_TOO_LARGE, CONTENT_TYPE_UNSUPPORTED, STATUS_RATE_LIMITED, INTERNAL, NOT_READY",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "@type",
+                                "reason",
+                                "domain"
+                              ],
+                              "type": "object"
+                            }
+                          ],
+                          "type": "array"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "description": "Open enum: INVALID_ARGUMENT, UNAUTHENTICATED, NOT_FOUND, RESOURCE_EXHAUSTED, INTERNAL, UNAVAILABLE",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "status",
+                        "details"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response",
+            "headers": {
+              "Retry-After": {
+                "description": "Retry after 1 second.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "X-Request-Id": {
+                "description": "Accepted or generated correlation ID.",
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "maximum": 2147483647,
+                          "minimum": -2147483648,
+                          "type": "integer"
+                        },
+                        "details": {
+                          "items": false,
+                          "maxItems": 1,
+                          "minItems": 1,
+                          "prefixItems": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "@type": {
+                                  "const": "type.googleapis.com/google.rpc.ErrorInfo",
+                                  "type": "string"
+                                },
+                                "domain": {
+                                  "const": "krun.io",
+                                  "type": "string"
+                                },
+                                "reason": {
+                                  "description": "Open enum: REQUEST_INVALID, TOKEN_INVALID, ROUTE_NOT_FOUND, UNSUPPORTED_API_VERSION, RESULT_TOO_LARGE, REQUEST_TOO_LARGE, CONTENT_TYPE_UNSUPPORTED, STATUS_RATE_LIMITED, INTERNAL, NOT_READY",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "@type",
+                                "reason",
+                                "domain"
+                              ],
+                              "type": "object"
+                            }
+                          ],
+                          "type": "array"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "description": "Open enum: INVALID_ARGUMENT, UNAUTHENTICATED, NOT_FOUND, RESOURCE_EXHAUSTED, INTERNAL, UNAVAILABLE",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "status",
+                        "details"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Accepted or generated correlation ID.",
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "maximum": 2147483647,
+                          "minimum": -2147483648,
+                          "type": "integer"
+                        },
+                        "details": {
+                          "items": false,
+                          "maxItems": 1,
+                          "minItems": 1,
+                          "prefixItems": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "@type": {
+                                  "const": "type.googleapis.com/google.rpc.ErrorInfo",
+                                  "type": "string"
+                                },
+                                "domain": {
+                                  "const": "krun.io",
+                                  "type": "string"
+                                },
+                                "reason": {
+                                  "description": "Open enum: REQUEST_INVALID, TOKEN_INVALID, ROUTE_NOT_FOUND, UNSUPPORTED_API_VERSION, RESULT_TOO_LARGE, REQUEST_TOO_LARGE, CONTENT_TYPE_UNSUPPORTED, STATUS_RATE_LIMITED, INTERNAL, NOT_READY",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "@type",
+                                "reason",
+                                "domain"
+                              ],
+                              "type": "object"
+                            }
+                          ],
+                          "type": "array"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "description": "Open enum: INVALID_ARGUMENT, UNAUTHENTICATED, NOT_FOUND, RESOURCE_EXHAUSTED, INTERNAL, UNAVAILABLE",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "status",
+                        "details"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response",
+            "headers": {
+              "Retry-After": {
+                "description": "Retry after 1 second.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "X-Request-Id": {
+                "description": "Accepted or generated correlation ID.",
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "runToken": []
+          }
+        ]
+      }
+    },
+    "/internal/v1/runs/{run}/status": {
+      "post": {
+        "operationId": "ReportStatus",
+        "parameters": [
+          {
+            "description": "Lowercase UUID; malformed or unknown run is TOKEN_INVALID, not a schema error.",
+            "in": "path",
+            "name": "run",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Single opaque value up to128 characters;missing/empty/oversized/invalid values are replaced by UUIDv7 and echoed.",
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "data": {
+                    "additionalProperties": {},
+                    "description": "Opaque JSON object; at most 4096 compact UTF-8 bytes.",
+                    "type": "object"
+                  },
+                  "message": {
+                    "description": "At most 1024 bytes in compact UTF-8 JSON.",
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "progress": {
+                    "maximum": 1,
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "message"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Default Response",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Accepted or generated correlation ID.",
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "maximum": 2147483647,
+                          "minimum": -2147483648,
+                          "type": "integer"
+                        },
+                        "details": {
+                          "items": false,
+                          "maxItems": 1,
+                          "minItems": 1,
+                          "prefixItems": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "@type": {
+                                  "const": "type.googleapis.com/google.rpc.ErrorInfo",
+                                  "type": "string"
+                                },
+                                "domain": {
+                                  "const": "krun.io",
+                                  "type": "string"
+                                },
+                                "reason": {
+                                  "description": "Open enum: REQUEST_INVALID, TOKEN_INVALID, ROUTE_NOT_FOUND, UNSUPPORTED_API_VERSION, RESULT_TOO_LARGE, REQUEST_TOO_LARGE, CONTENT_TYPE_UNSUPPORTED, STATUS_RATE_LIMITED, INTERNAL, NOT_READY",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "@type",
+                                "reason",
+                                "domain"
+                              ],
+                              "type": "object"
+                            }
+                          ],
+                          "type": "array"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "description": "Open enum: INVALID_ARGUMENT, UNAUTHENTICATED, NOT_FOUND, RESOURCE_EXHAUSTED, INTERNAL, UNAVAILABLE",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "status",
+                        "details"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Accepted or generated correlation ID.",
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "maximum": 2147483647,
+                          "minimum": -2147483648,
+                          "type": "integer"
+                        },
+                        "details": {
+                          "items": false,
+                          "maxItems": 1,
+                          "minItems": 1,
+                          "prefixItems": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "@type": {
+                                  "const": "type.googleapis.com/google.rpc.ErrorInfo",
+                                  "type": "string"
+                                },
+                                "domain": {
+                                  "const": "krun.io",
+                                  "type": "string"
+                                },
+                                "reason": {
+                                  "description": "Open enum: REQUEST_INVALID, TOKEN_INVALID, ROUTE_NOT_FOUND, UNSUPPORTED_API_VERSION, RESULT_TOO_LARGE, REQUEST_TOO_LARGE, CONTENT_TYPE_UNSUPPORTED, STATUS_RATE_LIMITED, INTERNAL, NOT_READY",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "@type",
+                                "reason",
+                                "domain"
+                              ],
+                              "type": "object"
+                            }
+                          ],
+                          "type": "array"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "description": "Open enum: INVALID_ARGUMENT, UNAUTHENTICATED, NOT_FOUND, RESOURCE_EXHAUSTED, INTERNAL, UNAVAILABLE",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "status",
+                        "details"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Accepted or generated correlation ID.",
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "maximum": 2147483647,
+                          "minimum": -2147483648,
+                          "type": "integer"
+                        },
+                        "details": {
+                          "items": false,
+                          "maxItems": 1,
+                          "minItems": 1,
+                          "prefixItems": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "@type": {
+                                  "const": "type.googleapis.com/google.rpc.ErrorInfo",
+                                  "type": "string"
+                                },
+                                "domain": {
+                                  "const": "krun.io",
+                                  "type": "string"
+                                },
+                                "reason": {
+                                  "description": "Open enum: REQUEST_INVALID, TOKEN_INVALID, ROUTE_NOT_FOUND, UNSUPPORTED_API_VERSION, RESULT_TOO_LARGE, REQUEST_TOO_LARGE, CONTENT_TYPE_UNSUPPORTED, STATUS_RATE_LIMITED, INTERNAL, NOT_READY",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "@type",
+                                "reason",
+                                "domain"
+                              ],
+                              "type": "object"
+                            }
+                          ],
+                          "type": "array"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "description": "Open enum: INVALID_ARGUMENT, UNAUTHENTICATED, NOT_FOUND, RESOURCE_EXHAUSTED, INTERNAL, UNAVAILABLE",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "status",
+                        "details"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Accepted or generated correlation ID.",
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "maximum": 2147483647,
+                          "minimum": -2147483648,
+                          "type": "integer"
+                        },
+                        "details": {
+                          "items": false,
+                          "maxItems": 1,
+                          "minItems": 1,
+                          "prefixItems": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "@type": {
+                                  "const": "type.googleapis.com/google.rpc.ErrorInfo",
+                                  "type": "string"
+                                },
+                                "domain": {
+                                  "const": "krun.io",
+                                  "type": "string"
+                                },
+                                "reason": {
+                                  "description": "Open enum: REQUEST_INVALID, TOKEN_INVALID, ROUTE_NOT_FOUND, UNSUPPORTED_API_VERSION, RESULT_TOO_LARGE, REQUEST_TOO_LARGE, CONTENT_TYPE_UNSUPPORTED, STATUS_RATE_LIMITED, INTERNAL, NOT_READY",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "@type",
+                                "reason",
+                                "domain"
+                              ],
+                              "type": "object"
+                            }
+                          ],
+                          "type": "array"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "description": "Open enum: INVALID_ARGUMENT, UNAUTHENTICATED, NOT_FOUND, RESOURCE_EXHAUSTED, INTERNAL, UNAVAILABLE",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "status",
+                        "details"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Accepted or generated correlation ID.",
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "maximum": 2147483647,
+                          "minimum": -2147483648,
+                          "type": "integer"
+                        },
+                        "details": {
+                          "items": false,
+                          "maxItems": 1,
+                          "minItems": 1,
+                          "prefixItems": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "@type": {
+                                  "const": "type.googleapis.com/google.rpc.ErrorInfo",
+                                  "type": "string"
+                                },
+                                "domain": {
+                                  "const": "krun.io",
+                                  "type": "string"
+                                },
+                                "reason": {
+                                  "description": "Open enum: REQUEST_INVALID, TOKEN_INVALID, ROUTE_NOT_FOUND, UNSUPPORTED_API_VERSION, RESULT_TOO_LARGE, REQUEST_TOO_LARGE, CONTENT_TYPE_UNSUPPORTED, STATUS_RATE_LIMITED, INTERNAL, NOT_READY",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "@type",
+                                "reason",
+                                "domain"
+                              ],
+                              "type": "object"
+                            }
+                          ],
+                          "type": "array"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "description": "Open enum: INVALID_ARGUMENT, UNAUTHENTICATED, NOT_FOUND, RESOURCE_EXHAUSTED, INTERNAL, UNAVAILABLE",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "status",
+                        "details"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Accepted or generated correlation ID.",
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "maximum": 2147483647,
+                          "minimum": -2147483648,
+                          "type": "integer"
+                        },
+                        "details": {
+                          "items": false,
+                          "maxItems": 1,
+                          "minItems": 1,
+                          "prefixItems": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "@type": {
+                                  "const": "type.googleapis.com/google.rpc.ErrorInfo",
+                                  "type": "string"
+                                },
+                                "domain": {
+                                  "const": "krun.io",
+                                  "type": "string"
+                                },
+                                "reason": {
+                                  "description": "Open enum: REQUEST_INVALID, TOKEN_INVALID, ROUTE_NOT_FOUND, UNSUPPORTED_API_VERSION, RESULT_TOO_LARGE, REQUEST_TOO_LARGE, CONTENT_TYPE_UNSUPPORTED, STATUS_RATE_LIMITED, INTERNAL, NOT_READY",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "@type",
+                                "reason",
+                                "domain"
+                              ],
+                              "type": "object"
+                            }
+                          ],
+                          "type": "array"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "description": "Open enum: INVALID_ARGUMENT, UNAUTHENTICATED, NOT_FOUND, RESOURCE_EXHAUSTED, INTERNAL, UNAVAILABLE",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "status",
+                        "details"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response",
+            "headers": {
+              "Retry-After": {
+                "description": "Retry after 1 second.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "X-Request-Id": {
+                "description": "Accepted or generated correlation ID.",
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "maximum": 2147483647,
+                          "minimum": -2147483648,
+                          "type": "integer"
+                        },
+                        "details": {
+                          "items": false,
+                          "maxItems": 1,
+                          "minItems": 1,
+                          "prefixItems": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "@type": {
+                                  "const": "type.googleapis.com/google.rpc.ErrorInfo",
+                                  "type": "string"
+                                },
+                                "domain": {
+                                  "const": "krun.io",
+                                  "type": "string"
+                                },
+                                "reason": {
+                                  "description": "Open enum: REQUEST_INVALID, TOKEN_INVALID, ROUTE_NOT_FOUND, UNSUPPORTED_API_VERSION, RESULT_TOO_LARGE, REQUEST_TOO_LARGE, CONTENT_TYPE_UNSUPPORTED, STATUS_RATE_LIMITED, INTERNAL, NOT_READY",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "@type",
+                                "reason",
+                                "domain"
+                              ],
+                              "type": "object"
+                            }
+                          ],
+                          "type": "array"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "description": "Open enum: INVALID_ARGUMENT, UNAUTHENTICATED, NOT_FOUND, RESOURCE_EXHAUSTED, INTERNAL, UNAVAILABLE",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "status",
+                        "details"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Accepted or generated correlation ID.",
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "maximum": 2147483647,
+                          "minimum": -2147483648,
+                          "type": "integer"
+                        },
+                        "details": {
+                          "items": false,
+                          "maxItems": 1,
+                          "minItems": 1,
+                          "prefixItems": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "@type": {
+                                  "const": "type.googleapis.com/google.rpc.ErrorInfo",
+                                  "type": "string"
+                                },
+                                "domain": {
+                                  "const": "krun.io",
+                                  "type": "string"
+                                },
+                                "reason": {
+                                  "description": "Open enum: REQUEST_INVALID, TOKEN_INVALID, ROUTE_NOT_FOUND, UNSUPPORTED_API_VERSION, RESULT_TOO_LARGE, REQUEST_TOO_LARGE, CONTENT_TYPE_UNSUPPORTED, STATUS_RATE_LIMITED, INTERNAL, NOT_READY",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "@type",
+                                "reason",
+                                "domain"
+                              ],
+                              "type": "object"
+                            }
+                          ],
+                          "type": "array"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "description": "Open enum: INVALID_ARGUMENT, UNAUTHENTICATED, NOT_FOUND, RESOURCE_EXHAUSTED, INTERNAL, UNAVAILABLE",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "status",
+                        "details"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response",
+            "headers": {
+              "Retry-After": {
+                "description": "Retry after 1 second.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "X-Request-Id": {
+                "description": "Accepted or generated correlation ID.",
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "runToken": []
+          }
+        ]
+      }
+    }
+  }
+}

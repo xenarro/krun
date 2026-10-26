@@ -20,6 +20,67 @@ Health/telemetry acceptance covers real Prometheus collection through Fastify `i
 
 The `gateway` command now starts a real scoped serving process. `gateway --help` remains finite and configuration-free; the `scheduler` command still prints its name and exits. `validate` is a real offline Function validator and `migrate` is a real database command, as described below. Apply migrations explicitly before starting serving replicas. Gateway process implementation now passes local source, rebuilt-container and current gateway phase/supporting acceptance. Both independent review findings are resolved; the code is pushed and exact-head hosted CI passes. Protected-stack integration remains pending; no merged delivery is claimed. Scheduler wiring and execution remain later work. See [PLAN.md](PLAN.md) for acceptance criteria and progress.
 
+## Internal API (P3.8)
+
+The internal listener now serves `GetInput`, `ReportStatus`, `SetResult` and
+`SetError` under `/internal/v1`, using the actual shared Store. Authentication
+hashes the per-run token and compares in constant time; only queued runs with a
+token, scheduled runs and running runs accept calls. Public API keys do not work
+here. Route/version errors precede authentication, followed by media type, body
+cap, strict validation, accepted-status rate limit and state-guarded persistence.
+
+Input is re-serialized JSON with `Content-Length`. Status replaces the whole
+report, stores gateway time as `at` and renders public `reportTime`; only a
+successful report starts the replica-local one-second window. Result and error
+writes replace earlier reports without changing lifecycle state. Native
+Content-Length/chunked caps and compact-JSON UTF-8 field limits are enforced;
+errors use the canonical envelope and log User-Agent without credentials/bodies.
+This includes a configured zero-byte result cap under both framings and recursive
+finite-JSON validation before Store work. At the end of the configured drain,
+unfinished internal body transports are closed while validated writes settle;
+responses finishing during close do not leave keep-alive sockets behind.
+
+Internal Store calls have a five-second Effect deadline, including status-lock
+and database-pool acquisition. PostgreSQL calls use per-call driver and server
+timeouts, active-query cancellation and settled rollback/release, rather than
+abandoning a write that could later commit. Forward-only migration
+`0004_opaque_reports` preserves the full opaque JSON Unicode domain in reports
+and callback/event payloads; an additive heartbeat timestamp projection avoids
+SQL decoding unrelated opaque fields. A database trigger invalidates it for
+legacy status-only writers; current writers republish it in the same transaction.
+The legacy fallback decodes authoritative report time without narrowing Unicode.
+Existing migrations and wire fields stay unchanged. Apply migrations before starting the gateway.
+
+Local `make check` passes 1209 TypeScript tests and one Python test; the standalone
+gateway phase gate passes 297 tests, including real SQLite and PostgreSQL routes
+and the existing POST-then-GET acceptance. Dedicated checks cover every internal
+error-table row, 10 Hz status reports, concurrent/failed reports, byte boundaries,
+unknown versions, token isolation, real locked-write cancellation, exhausted-pool
+recovery, opaque Unicode and forward-migration rollback. Double generation is
+byte-identical; `docs/api/openapi-internal.json` lists all four operations with
+open string response statuses and no nullable schema.
+
+The rebuilt `krun-test-p38-repair:local` image passes twelve hardened real-process
+lifecycle groups, including all four internal methods, API-key rejection,
+public readback, status rate limit, result cap and continued internal service
+after readiness turns unavailable. Two exact Docker process-state exit checks
+finish the configured two-second drain in 2051 ms and 2049 ms with exit 0;
+Docker CLI/cleanup elapsed time is recorded separately. The image matches 73
+current emitted-module hashes across all five workspaces and passes seven CLI groups and the
+fixable-critical scan. Helm, workflow syntax and production dependency audit pass.
+
+All four independent P3.8 findings have been reproduced and repaired locally,
+including mixed-writer heartbeat freshness, nested JSON validation, zero result
+caps and unfinished-body shutdown. Source commit `d4d759df93dafba34717610b37dbc76b328e7e0f` is
+pushed and code-head green in [PR #35](https://github.com/xenarro/krun/pull/35), stacked against
+`feat/gateway-process-wiring` (PR #34). [Exact code CI](https://github.com/xenarro/krun/actions/runs/40285156613)
+passes all nine gates with 1209 TypeScript tests and one Python test, including
+current-source image build/lifecycle checks. Only P3.8 is marked complete after
+that acceptance; the documentation tracking commit has its own full-check and
+exact-head CI requirement. The Phase 3 gateway gate passes. This stack is not
+merged or auto-merged; protected-main independent review is not bypassed.
+Scheduler execution, full platform e2e and concrete object storage remain later work.
+
 ## Gateway process (P3.7)
 
 `krun gateway` composes the existing parsed configuration, pino-backed Effect
@@ -27,8 +88,8 @@ logging, telemetry, SQLite/PostgreSQL Store, Kubernetes Function LIST/WATCH
 cache, keys and separate public/internal/admin listeners as scoped layers under
 `NodeRuntime.runMain`. Initial LIST blocks readiness, not liveness or listener
 startup. Public methods implemented through P3.6 are mounted on the public
-listener only; the internal transport reserves its port, while real internal
-methods remain P3.8. Concrete object-store integration remains P6.1.
+listener only; P3.8 now mounts the four token-scoped internal methods on the
+separate internal listener. Concrete object-store integration remains P6.1.
 
 SIGTERM/SIGINT mark readiness unavailable, keep normal public requests serving
 for the configured shutdown delay, finish existing CreateRun waits with their
@@ -86,8 +147,9 @@ and diagnostic assertions. No application behavior, timeout value or worker
 setting changes. This increases the full test total by three; the accepted
 original code-head count above remains its historical 1158.
 The PR remains open, not merged; required protected-main review is not bypassed
-and an empty review decision is not approval. P3.8 internal methods and the
-remaining gateway/scheduler/object-store/application gates remain future work.
+and an empty review decision is not approval. The P3.8 local implementation above
+awaits independent review; remaining scheduler/object-store/application gates are
+future work.
 Tests use explicitly owned loopback fake Kubernetes and disposable databases,
 never a production cluster or ambient user context.
 

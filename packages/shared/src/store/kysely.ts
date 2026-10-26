@@ -75,7 +75,10 @@ interface Tables<Timestamp, Serialized extends boolean> {
 }
 
 export type PostgresTables = Omit<Tables<Date, false>, "runs"> & {
-  runs: RunsTable<Date, false> & { idempotency_key_nul: Generated<Buffer | null> };
+  runs: RunsTable<Date, false> & {
+    idempotency_key_nul: Generated<Buffer | null>;
+    runtime_status_at: Generated<Date | null>;
+  };
 };
 export type SqliteTables = Omit<Tables<string, true>, "run_events"> & {
   run_events: RunEventsTable<string, true> & { rowid: Generated<number> };

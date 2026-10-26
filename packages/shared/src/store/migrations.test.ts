@@ -55,7 +55,7 @@ describe("migration preparation", () => {
       expect(Object.keys(migrations)).toEqual(
         dialect === "sqlite"
           ? ["0001_init", "0002_event_rowid"]
-          : ["0001_init", "0002_opaque_unicode", "0003_opaque_results"],
+          : ["0001_init", "0002_opaque_unicode", "0003_opaque_results", "0004_opaque_reports"],
       );
       for (const migration of Object.values(migrations)) {
         expect(migration.up).toBeTypeOf("function");

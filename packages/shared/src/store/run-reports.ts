@@ -2,6 +2,7 @@ import { DateTime, Effect } from "effect";
 import { sql } from "kysely";
 import { z } from "zod";
 import { Database } from "../runtime/database.js";
+import { InternalStoreSignal, internalStoreCall } from "../runtime/internal-store-call.js";
 import { DatabaseError } from "./errors.js";
 import type { StoreShape } from "./index.js";
 import { decodeRun } from "./rows.js";
@@ -18,8 +19,9 @@ const encode = (value: unknown, result = false) => {
 };
 const adapter = (operation: keyof Methods, execute: () => Promise<boolean>) =>
   Effect.gen(function* () {
+    const signal = yield* InternalStoreSignal;
     const changed = yield* Effect.tryPromise({
-      try: execute,
+      try: () => internalStoreCall(signal, execute),
       catch: () => new DatabaseError({ operation }),
     });
     yield* Effect.annotateCurrentSpan("db.response.returned_rows", changed ? 1 : 0);
@@ -51,6 +53,7 @@ export const makeRunReports = Effect.map(Database, ({ db, dialect }): Methods =>
     id: string,
     column: "runtime_status" | "result" | "error",
     value: () => unknown,
+    at?: DateTime.Utc,
   ) =>
     traced(
       operation,
@@ -65,8 +68,15 @@ export const makeRunReports = Effect.map(Database, ({ db, dialect }): Methods =>
           ).rows[0];
           if (updated === undefined) return false;
           decodeRun(updated, dialect);
-          if (dialect === "postgres" && operation === "setRuntimeStatus")
+          if (dialect === "postgres" && operation === "setRuntimeStatus") {
+            // The status trigger invalidates every replacement, even legacy
+            // writers. Publish this writer's projection before commit, under
+            // the row lock already held by the guarded UPDATE.
+            await sql`update runs set runtime_status_at=${at === undefined ? null : DateTime.formatIso(at)} where id=${id}`.execute(
+              tx,
+            );
             await sql`select pg_notify('krun_runs',${`${id}:status`})`.execute(tx);
+          }
           // Reports do not change lifecycle state, append events or deliver a
           // callback. setError replaces a previous report; transition's coalesce
           // preserves this function report against a later infrastructure error.
@@ -76,10 +86,16 @@ export const makeRunReports = Effect.map(Database, ({ db, dialect }): Methods =>
     );
   return {
     setRuntimeStatus: (id, status) =>
-      report("setRuntimeStatus", id, "runtime_status", () => ({
-        ...status,
-        at: DateTime.formatIso(status.at),
-      })),
+      report(
+        "setRuntimeStatus",
+        id,
+        "runtime_status",
+        () => ({
+          ...status,
+          at: DateTime.formatIso(status.at),
+        }),
+        status.at,
+      ),
     setResult: (id, result) => report("setResult", id, "result", () => result),
     setError: (id, error) =>
       report("setError", id, "error", () => ({ ...error, source: "function" })),

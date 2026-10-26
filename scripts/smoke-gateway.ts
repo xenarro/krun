@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { request as httpRequest } from "node:http";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,6 +17,7 @@ const namespace = "krun-test-gateway-smoke";
 const kube = await startFakeKube(namespace, true);
 const groups: string[] = [];
 let logs = "";
+const partialClients: ReturnType<typeof httpRequest>[] = [];
 let child: ReturnType<typeof spawn> | undefined;
 const docker = (args: string[]) => {
   const result = spawnSync("docker", args, { encoding: "utf8", timeout: 20000 });
@@ -32,6 +34,9 @@ const freePort = async () => {
 };
 try {
   const token = randomBytes(32).toString("hex");
+  const runToken = randomBytes(32).toString("base64url");
+  const runId = "0192f000-0000-7000-8000-000000000038";
+  const runHash = createHash("sha256").update(runToken).digest("hex");
   const keys = join(dir, "keys.json"),
     config = join(dir, "kubeconfig"),
     launcher = join(dir, "start.cjs");
@@ -68,7 +73,7 @@ try {
   );
   await writeFile(
     launcher,
-    `const assert=require('node:assert/strict');const {spawnSync}=require('node:child_process');assert.equal(process.getuid(),65532);assert.equal(process.getgid(),65532);const r=spawnSync(process.execPath,['/app/bin/krun.js','migrate'],{encoding:'utf8',timeout:20000});assert.equal(r.status,0,'Owned image migration failed');process.argv=[process.execPath,'/app/bin/krun.js','gateway'];import('/app/bin/krun.js');\n`,
+    `const assert=require('node:assert/strict');const {spawnSync}=require('node:child_process');assert.equal(process.getuid(),65532);assert.equal(process.getgid(),65532);const r=spawnSync(process.execPath,['/app/bin/krun.js','migrate'],{encoding:'utf8',timeout:20000});assert.equal(r.status,0,'Owned image migration failed');const {DatabaseSync}=require('node:sqlite');const db=new DatabaseSync('/data/krun.db');db.prepare('insert into runs(id,request_hash,function_name,input,state,priority,attempt,job_token_hash,created_by,created_at) values(?,?,?,?,?,?,?,?,?,?)').run(${JSON.stringify(runId)},'a'.repeat(64),'echo','{"internal":true}','queued',0,0,${JSON.stringify(runHash)},'smoke','2026-10-26T00:00:00.000Z');db.close();process.argv=[process.execPath,'/app/bin/krun.js','gateway'];import('/app/bin/krun.js');\n`,
     { mode: 0o444 },
   );
   const ports = await Promise.all([freePort(), freePort(), freePort()]);
@@ -76,7 +81,6 @@ try {
     "docker",
     [
       "run",
-      "--rm",
       "--name",
       name,
       "--read-only",
@@ -112,6 +116,8 @@ try {
       `KRUN_ADMIN_LISTEN_ADDR=127.0.0.1:${ports[2]}`,
       "--env",
       "KRUN_SHUTDOWN_DELAY=2s",
+      "--env",
+      "KRUN_MAX_RESULT_BYTES=64",
       "--entrypoint",
       "/nodejs/bin/node",
       image,
@@ -182,26 +188,113 @@ try {
   assert.equal(created.code, 201);
   assert.equal((await request(`/v1/${created.body.name}`)).body.state, "QUEUED");
   groups.push("migrated-real-store-create-read");
+  const internal = async (operation: string, body?: string, bearer = runToken) => {
+    const response = await fetch(
+      `http://127.0.0.1:${ports[1]}/internal/v1/runs/${runId}/${operation}`,
+      {
+        method: operation === "input" ? "GET" : operation === "status" ? "POST" : "PUT",
+        headers: {
+          authorization: `Bearer ${bearer}`,
+          "content-type": "application/json",
+          "user-agent": "krun-test-p38-image",
+        },
+        ...(body === undefined ? {} : { body }),
+        signal: AbortSignal.timeout(10000),
+      },
+    );
+    const text = await response.text();
+    return {
+      code: response.status,
+      headers: response.headers,
+      text,
+      body: text ? JSON.parse(text) : undefined,
+    };
+  };
+  const input = await internal("input");
+  assert.equal(input.code, 200);
+  assert.deepEqual(input.body, { internal: true });
+  assert.equal(Number(input.headers.get("content-length")), Buffer.byteLength(input.text));
+  assert.equal((await internal("input", undefined, token)).code, 401);
+  assert.equal(
+    (await internal("status", '{"message":"working","data":{"opaque":[null]}}')).code,
+    204,
+  );
+  assert.equal((await internal("status", '{"message":"too fast"}')).code, 429);
+  assert.equal((await internal("result", "false")).code, 204);
+  assert.equal(
+    (await internal("error", '{"message":"reported","details":{"opaque":[null]}}')).code,
+    204,
+  );
+  const reported = await request(`/v1/functions/echo/runs/${runId}`);
+  assert.equal(reported.body.result, false);
+  assert.equal(reported.body.error.source, "FUNCTION");
+  assert.equal(reported.body.runtimeStatus.message, "working");
+  assert.equal(typeof reported.body.runtimeStatus.reportTime, "string");
+  assert.equal("at" in reported.body.runtimeStatus, false);
+  const capped = await internal("result", " ".repeat(65));
+  assert.equal(capped.code, 413);
+  assert.equal(capped.body.error.details[0].reason, "RESULT_TOO_LARGE");
+  assert.equal(capped.headers.get("connection"), "close");
+  groups.push("internal-four-methods-token-state-rate-cap-and-public-projection");
   const waiting = request("/v1/functions/echo/runs?wait=60s", 0, { input: { wait: true } });
   waiting.catch(() => {});
-  await until(async () => (await request("/v1/functions/echo/runs")).body.runs.length === 2);
+  await until(async () => (await request("/v1/functions/echo/runs")).body.runs.length === 3);
+  // Authenticated, under-cap bodies never complete. Closing the listener must
+  // own these transports; no client timeout/abort may make this proof pass.
+  const partialClosed: Promise<void>[] = [];
+  for (const framing of [{ "content-length": "10" }, { "transfer-encoding": "chunked" }]) {
+    const client = httpRequest(
+      `http://127.0.0.1:${ports[1]}/internal/v1/runs/${runId}/result`,
+      {
+        method: "PUT",
+        headers: {
+          authorization: `Bearer ${runToken}`,
+          "content-type": "application/json",
+          ...framing,
+        },
+      },
+      (response) => response.resume(),
+    );
+    partialClients.push(client);
+    client.on("error", () => {});
+    partialClosed.push(new Promise<void>((resolve) => client.once("close", resolve)));
+    await new Promise<void>((resolve) =>
+      client.once("socket", (socket) => socket.once("connect", resolve)),
+    );
+    client.flushHeaders();
+    client.write("{");
+  }
   const start = performance.now();
   docker(["kill", "--signal=TERM", name]);
   await until(async () => (await request("/readyz", 2)).code === 503);
   assert.equal((await request("/healthz", 2)).code, 200);
   assert.equal((await request("/v1/functions/echo")).code, 200);
+  assert.equal((await internal("input")).code, 200);
   groups.push("readiness-first-live-during-fixed-drain");
   const response = await waiting;
   assert.equal(response.code, 201);
   assert.deepEqual(response.body.input, { wait: true });
   groups.push("inflight-create-wait-settles-current-run");
   assert.equal(await done, 0);
-  const elapsed = performance.now() - start;
-  assert.ok(elapsed >= 1900 && elapsed < 5000);
+  await Promise.all(partialClosed);
+  groups.push("internal-unfinished-bodies-closed-at-drain-end");
+  const cliElapsed = performance.now() - start;
+  // Measure the container process exit, not docker --rm filesystem cleanup.
+  // Retain this named disposable container until its exact State is read back.
+  const state = JSON.parse(docker(["inspect", "--format", "{{json .State}}", name]));
+  assert.equal(state.ExitCode, 0);
+  assert.equal(state.Running, false);
+  const elapsed = Date.parse(state.FinishedAt) - (performance.timeOrigin + start);
+  assert.ok(
+    elapsed >= 1900 && elapsed < 5000,
+    `Owned process drain elapsed ${elapsed}ms;Docker CLI ${cliElapsed}ms`,
+  );
   groups.push("sigterm-exit-zero-within-five-seconds");
   assert.equal(kube.snapshot().activeWatches, 0);
   groups.push("watch-sockets-closed");
   assert.equal(logs.includes(token), false);
+  assert.equal(logs.includes(runToken), false);
+  assert.equal(logs.includes("krun-test-p38-image"), true);
   groups.push("credential-privacy");
   groups.push("nonroot-readonly-capability-dropped-runtime");
   console.log(
@@ -210,14 +303,15 @@ try {
       groups,
       count: groups.length,
       elapsedMilliseconds: Math.round(elapsed),
+      dockerCliElapsedMilliseconds: Math.round(cliElapsed),
       uid: 65532,
       gid: 65532,
       listWatch: kube.snapshot(),
     }),
   );
 } finally {
-  if (child && child.exitCode === null)
-    spawnSync("docker", ["rm", "--force", name], { stdio: "ignore", timeout: 10000 });
+  for (const client of partialClients) client.destroy();
+  spawnSync("docker", ["rm", "--force", name], { stdio: "ignore", timeout: 10000 });
   await kube.close();
   await rm(dir, { recursive: true, force: true });
 }

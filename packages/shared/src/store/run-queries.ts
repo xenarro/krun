@@ -4,6 +4,7 @@ import { DateTime, Effect } from "effect";
 import { sql } from "kysely";
 import { z } from "zod";
 import { Database } from "../runtime/database.js";
+import { InternalStoreSignal, internalStoreCall } from "../runtime/internal-store-call.js";
 import { DatabaseError, NotFoundError } from "./errors.js";
 import type { StoreShape } from "./index.js";
 import { toRunSummary } from "./mappers.js";
@@ -160,11 +161,13 @@ export const makeRunQueries = Effect.map(
         "getRun",
         id,
         Effect.gen(function* () {
+          const signal = yield* InternalStoreSignal;
           const row = yield* Effect.tryPromise({
-            try: async () => {
-              const raw = (await sql`select * from runs where id=${id}`.execute(db)).rows[0];
-              return raw === undefined ? undefined : decodeRun(raw, dialect);
-            },
+            try: () =>
+              internalStoreCall(signal, async () => {
+                const raw = (await sql`select * from runs where id=${id}`.execute(db)).rows[0];
+                return raw === undefined ? undefined : decodeRun(raw, dialect);
+              }),
             catch: () => new DatabaseError({ operation: "getRun" }),
           });
           if (row === undefined) return yield* Effect.fail(new NotFoundError({ id }));

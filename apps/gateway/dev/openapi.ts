@@ -10,6 +10,7 @@ import {
   validatorCompiler,
 } from "fastify-type-provider-zod";
 import { z } from "zod";
+import { internalContractProjection, internalContracts } from "../src/internal-contracts.ts";
 import {
   publicContractProjection,
   publicContracts,
@@ -36,7 +37,7 @@ const canonical = (value: unknown): unknown => {
 const documentationOnly = (): never => {
   throw new Error("Documentation-only route has no executable method implementation");
 };
-export const renderPublicOpenApi = (): Promise<PublicDocument> =>
+const renderOpenApi = (internal = false): Promise<PublicDocument> =>
   Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
@@ -47,7 +48,10 @@ export const renderPublicOpenApi = (): Promise<PublicDocument> =>
         const conversion: NonNullable<
           Parameters<typeof createJsonSchemaTransform>[0]["zodToJsonConfig"]
         > = {
-          unrepresentable: publicContractProjection,
+          unrepresentable: (ctx) => {
+            const own = internal ? internalContractProjection(ctx) : "throw";
+            return own === "throw" ? publicContractProjection(ctx) : own;
+          },
           override: ({ zodSchema, jsonSchema }) => {
             // The provider's scoped registry does not inherit global .describe/
             // readOnly metadata. Copy authored per-node annotations via its public
@@ -64,17 +68,20 @@ export const renderPublicOpenApi = (): Promise<PublicDocument> =>
             openapi: {
               openapi: "3.1.0",
               info: {
-                title: "krun public API",
+                title: internal ? "krun internal API" : "krun public API",
                 version: "v1",
-                description:
-                  "Normative docs/API.md contract. This artifact does not imply that later PLAN method/listener tasks are implemented.",
+                description: internal
+                  ? "Normative docs/INTERNAL-API.md; per-run token, isolated internal listener."
+                  : "Normative docs/API.md contract. This artifact does not imply that later PLAN method/listener tasks are implemented.",
               },
               components: {
                 securitySchemes: {
-                  bearerAuth: {
+                  [internal ? "runToken" : "bearerAuth"]: {
                     type: "http",
                     scheme: "bearer",
-                    description: "API key; route scope,Function globs and run ownership apply.",
+                    description: internal
+                      ? "Per-run token; API keys rejected. Accepting run state required."
+                      : "API key; route scope,Function globs and run ownership apply.",
                   },
                 },
               },
@@ -91,7 +98,7 @@ export const renderPublicOpenApi = (): Promise<PublicDocument> =>
           });
           app.setValidatorCompiler(validatorCompiler);
           app.setSerializerCompiler(serializerCompiler);
-          for (const contract of Object.values(publicContracts)) {
+          for (const contract of Object.values(internal ? internalContracts : publicContracts)) {
             const route: RouteOptions = {
               method: contract.method,
               url: contract.url,
@@ -106,7 +113,7 @@ export const renderPublicOpenApi = (): Promise<PublicDocument> =>
         if (!("openapi" in document) || document.openapi !== "3.1.0")
           return yield* Effect.die(new Error("Swagger did not produce OpenAPI 3.1"));
         for (const path of Object.values(document.paths ?? {}))
-          for (const method of ["get", "post"] as const) {
+          for (const method of ["get", "post", "put"] as const) {
             const operation = path?.[method];
             if (!operation) continue;
             operation.parameters = [
@@ -144,6 +151,7 @@ export const renderPublicOpenApi = (): Promise<PublicDocument> =>
                   schema: { type: "string" },
                 };
               }
+              if (status === "204") delete response.content;
               if (status === "307") {
                 delete response.content;
                 response.headers.Location = {
@@ -162,6 +170,14 @@ export const renderPublicOpenApi = (): Promise<PublicDocument> =>
       }),
     ),
   );
+export const renderPublicOpenApi = () => renderOpenApi();
+export const renderInternalOpenApi = () => renderOpenApi(true);
+export const writeInternalOpenApi = async (root: string): Promise<void> => {
+  const document = await renderInternalOpenApi();
+  const path = resolve(root, "docs/api/openapi-internal.json");
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, JSON.stringify(canonical(document), null, 2) + "\n");
+};
 export const writePublicOpenApi = async (root: string): Promise<void> => {
   const document = await renderPublicOpenApi();
   const path = resolve(root, "docs/api/openapi-public.json");

@@ -400,7 +400,12 @@ for (const dialect of ["sqlite", "postgres"] as const)
                       }>`select name from kysely_migration order by name`.execute(db)
                     ).rows,
                 )).map((x) => x.name),
-              ).toEqual(["0001_init", "0002_opaque_unicode", "0003_opaque_results"]);
+              ).toEqual([
+                "0001_init",
+                "0002_opaque_unicode",
+                "0003_opaque_results",
+                "0004_opaque_reports",
+              ]);
             }),
           ),
       );
