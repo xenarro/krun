@@ -20,7 +20,7 @@ Health/telemetry acceptance covers real Prometheus collection through Fastify `i
 
 The `gateway` command now starts a real scoped serving process. `gateway --help` remains finite and configuration-free; the `scheduler` command still prints its name and exits. `validate` is a real offline Function validator and `migrate` is a real database command, as described below. Apply migrations explicitly before starting serving replicas. Gateway process implementation now passes local source, rebuilt-container and current gateway phase/supporting acceptance. Both independent review findings are resolved; the code is pushed and exact-head hosted CI passes. Protected-stack integration remains pending; no merged delivery is claimed. Scheduler wiring and execution remain later work. See [PLAN.md](PLAN.md) for acceptance criteria and progress.
 
-## Scheduler leader election (P4.2, local implementation)
+## Scheduler leader election (P4.2)
 
 `runLeaderElection` owns one Lease term and a separate scope for leader-only
 resource acquisition. It uses `krun-scheduler`, the caller's pod name, a
@@ -50,7 +50,11 @@ explicit interrupt-only teardown policy; the installed runner default returns
 fixable-critical scan also pass.
 
 Both independent reviews found no confirmed material defect; repair/integration
-retains the reviewed runtime unchanged. This uncommitted slice awaits delivery.
+retains the reviewed runtime unchanged. Code commit `5fb7e60` is pushed
+in [PR #39](https://github.com/xenarro/krun/pull/39) against its still-open P4.1 tracking parent,
+`feat/scheduler-job-builders` (PR #38). [Exact code-head CI](https://github.com/xenarro/krun/actions/runs/40309685305)
+passes all nine gates. This is pushed/green, not merged; PLAN/README tracking
+receives its own full precommit check and exact-head hosted verification.
 The `scheduler` command is still the finite scaffold: later process wiring must supply pod
 metadata.name and join this election effect using that teardown policy. Actual
 Job/Pod informers, loops and the status writer are later components; tests verify
