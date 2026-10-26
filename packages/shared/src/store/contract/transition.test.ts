@@ -130,6 +130,32 @@ for (const dialect of ["sqlite", "postgres"] as const) {
       );
 
     it.effect(
+      "an inline result accepted before the terminal CAS excludes a checked object reference",
+      () =>
+        run(
+          Effect.gen(function* () {
+            yield* seed(1, { callback_url: "https://callback.invalid/terminal" }, "scheduled");
+            yield* query((db) =>
+              sql`update runs set result=${JSON.stringify({ winner: "inline" })} where id=${id(1)}`.execute(
+                db,
+              ),
+            );
+            const transition = yield* makeTransition;
+            expect(
+              yield* transition(id(1), "scheduled", "succeeded", null, {
+                result_ref: "s3://krun-test-p44/runs/result.json",
+              }),
+            ).toBe(true);
+            const row = yield* stored(1);
+            expect(row.result).toEqual({ winner: "inline" });
+            expect(row.result_ref).toBeNull();
+            const [delivery] = yield* deliveries();
+            expect(json(delivery?.payload)).not.toHaveProperty("resultUri");
+          }),
+        ),
+    );
+
+    it.effect(
       "running CAS sets started_at exactly to event at, carries actor and preserves creation time",
       () =>
         run(

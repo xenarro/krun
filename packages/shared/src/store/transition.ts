@@ -58,7 +58,6 @@ export const makeTransition = Effect.map(
                 job_name: patch.job_name,
                 job_token_hash: patch.job_token_hash,
                 result: json(patch.result),
-                result_ref: patch.result_ref,
                 log_tail: patch.log_tail,
                 failure_reason: classification?.success
                   ? classification.data
@@ -83,6 +82,16 @@ export const makeTransition = Effect.map(
               const assignments = Object.entries(values)
                 .filter(([, value]) => value !== undefined)
                 .map(([column, value]) => sql`${sql.ref(column)}=${value}`);
+              if (patch.result_ref !== undefined) {
+                // A function can accept an inline result while the scheduler
+                // checks object storage. Resolve precedence in this same CAS,
+                // not with another racy pre-transition read (both dialects).
+                const reference =
+                  patch.result === undefined
+                    ? sql`case when result is null or trim(cast(result as text))=${"null"} then ${patch.result_ref} else null end`
+                    : sql`${patch.result_ref}`;
+                assignments.push(sql`result_ref=${reference}`);
+              }
               assignments.push(sql`state=${to}`);
               if (patch.error !== undefined)
                 assignments.push(sql`error=coalesce(error,${json(patch.error)})`);

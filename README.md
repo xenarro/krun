@@ -20,6 +20,70 @@ Health/telemetry acceptance covers real Prometheus collection through Fastify `i
 
 The `gateway` command now starts a real scoped serving process. `gateway --help` remains finite and configuration-free; the `scheduler` command still prints its name and exits. `validate` is a real offline Function validator and `migrate` is a real database command, as described below. Apply migrations explicitly before starting serving replicas. Gateway process implementation now passes local source, rebuilt-container and current gateway phase/supporting acceptance. Both independent review findings are resolved; the code is pushed and exact-head hosted CI passes. Protected-stack integration remains pending; no merged delivery is claimed. Scheduler wiring and execution remain later work. See [PLAN.md](PLAN.md) for acceptance criteria and progress.
 
+## Scheduler Job/Pod informers and terminal handling (P4.4)
+
+`makeJobPodSource` supplies leader-scoped Job and Pod informer caches and Effect
+Streams, restricted to the jobs namespace and the `krun.io/run-id` label selector.
+D86 uses `makeInformer`'s actual native `ListWatch` cache through its public
+constructor with an owned `Watch` transport: the installed factory cannot abort
+an outstanding LIST/watch handshake and signals connect before processing LIST.
+Both processed LISTs, including empty ones, gate the controller. Native typed
+LIST calls and authenticated watch handshakes share the scheduler limiter and
+ten-second budget; streaming bodies follow the leader scope. Scope closure
+aborts pending calls and bodies, detaches listeners and destroys dispatchers.
+Error handlers restart stopped watches with Clock-driven backoff capped at thirty
+seconds; native resourceVersion and 410 relisting behavior are retained.
+
+`makeJobController` consumes live events, reconciles the caches once after sync
+and every five minutes, and serializes handlers per run. It derives `jobStatus`,
+ignores `observedAt` when comparing changes, keeps image-pull failures scheduled,
+and maps pod `Running` and terminal Job conditions to actual Store transitions.
+D88 retains one compact outstanding terminal deletion observation per run,
+including the relevant Pod status, before a queued-state gate or fallible Store
+read. Replay and reconciliation include that work even when both native caches
+are empty. A transient object check, cleanup failure or interrupted settlement
+keeps it retryable; successful ordered cleanup or resolved cancellation/orphan
+disposition prunes it. Leader-scope close forgets it without teardown replay.
+No historical full-object/spec/env cache is added. Its `replayCached` capability
+connects directly to the scheduling loop's post-`markScheduled` replay, including
+a Complete already evicted while the run was queued. Cancelling runs continue
+changed `jobStatus` updates only, never lifecycle/log/cleanup work.
+
+Terminal handling checks the completed run's object only without an inline
+result, then performs the real Store CAS with final status, failure/error/log
+data and missing start time (terminated container, else Job `status.startTime`),
+deletes the Secret, and deletes the Job
+with explicit background propagation. The terminal transaction inserts its
+callback. Already-terminal reads and terminal CAS winners receive deletes only;
+404 succeeds, cleanup failures retry, and object-check errors retain the active
+run and cached/retained terminal observation. D87 resolves an inline-result/object-check race atomically in
+the CAS on both databases, so a concurrently accepted inline result excludes the
+checked reference from the run and its callback. The object check is a required,
+fallible capability, not a no-op default: the actual S3 adapter remains P6.2.
+
+Local repair acceptance passes 87 focused tests, 160 scheduler tests, and full
+`make check` with 1374 TypeScript tests plus one Python test. Sixteen compiled
+native-informer/client and real-Store groups pass on SQLite and PostgreSQL, each
+on host and in a rebuilt nonroot/read-only image with 82 matching runtime module
+hashes. They include a native completion before the real scheduling CAS, image
+pull/running events, object-check retry and inline-result precedence, terminal
+replay, failed-run logs/reported errors, cleanup retry, and pending LIST/watch
+cancellation. Added native groups verify evicted completions across scheduling,
+object/cleanup failures, Job-only start-time fallback for Complete and Failed,
+and status-only cancellation. Both reviews' three findings are reproduced and
+repaired. Separate clock-driven tests cover reconnect backoff, unchanged and
+five-minute retries with empty caches, Store-read failure, duplicate/orphan debt
+pruning, timestamp precedence, late terminal settlement and leader-scope close. Image CLI/gateway smoke, Helm,
+workflow syntax, production audit, fixable-critical scan and stable double
+generation pass.
+
+This is locally repaired component implementation awaiting re-verification and delivery;
+P4.4 is not checked in PLAN here. The `scheduler` command still exits as a finite
+scaffold: production process assembly remains P4.11, lost-Job detection P4.5,
+remaining leader/failure metrics P4.6/P4.8 and the S3 adapter P6.2. `make e2e`
+still exits 2 with the explicit P4.12 harness placeholder; kind scenarios remain
+P4.13. Native loopback receivers are not Kubernetes admission or Job execution.
+
 ## Scheduler cancellation handling (P4.3c)
 
 Main-loop step 5 reads `cancelling` runs in bounded batches, deletes each Job
@@ -66,8 +130,8 @@ to main after parent PR41 and PR40 merged. Normal ancestry reconciliation
 This is pushed/green, not merged; required independent main approval remains.
 Only P4.3c closes in PLAN after code CI; this PLAN/README tracking receives its own
 fresh full check and exact-head hosted verification. No auto-merge or protection
-bypass. Production informer/terminal handler and scheduler process wiring remain
-P4.4/P4.11; the command remains the finite scaffold. `make e2e` still exits 2 at the explicit P4.12 placeholder, with
+bypass. Job/Pod informers and terminal handling are covered by P4.4 above;
+scheduler process wiring remains P4.11; the command remains the finite scaffold. `make e2e` still exits 2 at the explicit P4.12 placeholder, with
 whole-phase kind scenarios pending P4.13. Native loopback tests are not Kubernetes
 admission, actual Job execution or whole Phase 4 acceptance.
 
@@ -104,8 +168,8 @@ can lose them, and cleanup does not detach late database writes.
 A required cache-replay capability is invoked after a successful scheduling CAS,
 not a no-op default or API re-read. Acceptance supplies a cache-backed handler
 that observes `Complete` before scheduling and performs a real Store transition
-to `succeeded`. Informer construction and the production terminal handler remain
-P4.4. Cancellation is now covered by P4.3c above; lost-Job detection, remaining
+to `succeeded`. Informer construction and the cache-backed terminal handler are
+covered by P4.4 above. Cancellation is now covered by P4.3c above; lost-Job detection, remaining
 leader metrics and scheduler process assembly remain P4.5/P4.6/P4.11. The finite `scheduler` command is
 unchanged.
 
