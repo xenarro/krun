@@ -16,7 +16,10 @@
   },
   "dependencies": {
     "@effect/platform-node": "~4.0.6",
-    "effect": "~4.0.6"
+    "@krun/shared": "workspace:*",
+    "@kubernetes/client-node": "^2.0.1",
+    "effect": "~4.0.6",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "vitest": "^5.0"

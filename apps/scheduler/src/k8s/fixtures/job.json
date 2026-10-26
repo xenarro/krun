@@ -1,0 +1,160 @@
+{
+  "apiVersion": "batch/v1",
+  "kind": "Job",
+  "metadata": {
+    "name": "krun-0192f000-0000-7000-8000-000000000041",
+    "namespace": "krun-test-builders",
+    "labels": {
+      "krun.io/run-id": "0192f000-0000-7000-8000-000000000041",
+      "krun.io/function": "echo",
+      "krun.io/created-by": "Owner.Test_1",
+      "app.kubernetes.io/managed-by": "krun"
+    }
+  },
+  "spec": {
+    "backoffLimit": 0,
+    "activeDeadlineSeconds": 123,
+    "ttlSecondsAfterFinished": 600,
+    "template": {
+      "metadata": {
+        "labels": {
+          "krun.io/run-id": "0192f000-0000-7000-8000-000000000041",
+          "krun.io/function": "echo",
+          "krun.io/created-by": "Owner.Test_1",
+          "app.kubernetes.io/managed-by": "krun"
+        }
+      },
+      "spec": {
+        "restartPolicy": "Never",
+        "terminationGracePeriodSeconds": 30,
+        "serviceAccountName": "krun-job-custom",
+        "automountServiceAccountToken": false,
+        "imagePullSecrets": [
+          {
+            "name": "registry"
+          }
+        ],
+        "nodeSelector": {
+          "kubernetes.io/os": "linux",
+          "pool": "functions"
+        },
+        "tolerations": [
+          {
+            "key": "node.kubernetes.io/not-ready",
+            "operator": "Exists",
+            "effect": "NoExecute",
+            "tolerationSeconds": 60
+          },
+          {
+            "key": "node.kubernetes.io/unreachable",
+            "operator": "Exists",
+            "effect": "NoExecute",
+            "tolerationSeconds": 60
+          }
+        ],
+        "securityContext": {
+          "runAsNonRoot": true,
+          "runAsUser": 1234,
+          "runAsGroup": 2345,
+          "seccompProfile": {
+            "type": "RuntimeDefault"
+          }
+        },
+        "containers": [
+          {
+            "name": "function",
+            "image": "registry.example.invalid/echo@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "imagePullPolicy": "IfNotPresent",
+            "resources": {
+              "requests": {
+                "cpu": "100m",
+                "memory": "64Mi"
+              },
+              "limits": {
+                "cpu": "1",
+                "memory": "128Mi",
+                "ephemeral-storage": "1Gi"
+              }
+            },
+            "env": [
+              {
+                "name": "HOME",
+                "value": "/tmp"
+              },
+              {
+                "name": "KRUN_RUN_ID",
+                "value": "0192f000-0000-7000-8000-000000000041"
+              },
+              {
+                "name": "KRUN_FUNCTION",
+                "value": "echo"
+              },
+              {
+                "name": "KRUN_GATEWAY_URL",
+                "value": "http://krun-gateway-internal.krun-test.svc:8081"
+              },
+              {
+                "name": "KRUN_TOKEN",
+                "valueFrom": {
+                  "secretKeyRef": {
+                    "name": "krun-0192f000-0000-7000-8000-000000000041",
+                    "key": "token"
+                  }
+                }
+              },
+              {
+                "name": "KRUN_RESULT_UPLOAD_URL",
+                "value": "https://example.invalid/runs/example/result.json"
+              },
+              {
+                "name": "KRUN_MAX_RESULT_BYTES",
+                "value": "262144"
+              },
+              {
+                "name": "KRUN_HEARTBEAT_TIMEOUT",
+                "value": "60"
+              },
+              {
+                "name": "APP_MODE",
+                "value": "example"
+              }
+            ],
+            "envFrom": [
+              {
+                "secretRef": {
+                  "name": "function-config"
+                }
+              },
+              {
+                "secretRef": {
+                  "name": "database-config"
+                }
+              }
+            ],
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "readOnlyRootFilesystem": true,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              }
+            },
+            "volumeMounts": [
+              {
+                "name": "tmp",
+                "mountPath": "/tmp"
+              }
+            ]
+          }
+        ],
+        "volumes": [
+          {
+            "name": "tmp",
+            "emptyDir": {}
+          }
+        ]
+      }
+    }
+  }
+}
