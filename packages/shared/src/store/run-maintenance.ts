@@ -6,6 +6,7 @@ import { Database } from "../runtime/database.js";
 import { DatabaseError } from "./errors.js";
 import type { StoreShape } from "./index.js";
 import { toRunSummary } from "./mappers.js";
+import { observeRunChange } from "./observations.js";
 import { decodeDelivery, decodeRun } from "./rows.js";
 
 type Methods = Pick<StoreShape, "expireQueued" | "sweep" | "claimDeliveries" | "updateDelivery">;
@@ -38,7 +39,7 @@ export const makeRunMaintenance = Effect.map(
     expireQueued: (fn, olderThan) =>
       Effect.gen(function* () {
         const now = yield* DateTime.now;
-        return yield* adapter("expireQueued", () =>
+        const runs = yield* adapter("expireQueued", () =>
           db.transaction().execute(async (tx) => {
             const at = DateTime.formatIso(now);
             const changed = (
@@ -67,7 +68,9 @@ export const makeRunMaintenance = Effect.map(
             return { value: runs, rowCount: runs.length };
           }),
         );
-      }),
+        for (const run of runs) yield* observeRunChange(run, "queued");
+        return runs;
+      }).pipe(Effect.uninterruptible),
     sweep: (finishedBefore, batch) =>
       adapter("sweep", () =>
         db.transaction().execute(async (tx) => {

@@ -5,6 +5,7 @@ import { Database } from "../runtime/database.js";
 import { DatabaseError } from "./errors.js";
 import type { StoreShape } from "./index.js";
 import { type State, states } from "./model.js";
+import { observeRunChange } from "./observations.js";
 import { decodeRun } from "./rows.js";
 
 // Match runs_active_idx literally, shared by the actual count/list statements.
@@ -122,18 +123,19 @@ export const makeRunLeasing = Effect.map(
               const at = DateTime.formatIso(now);
               const updated = (
                 await sql`update runs set state='scheduled',scheduled_at=${at},lease_owner=null,lease_until=null
-        where id=${id} and state='queued' returning id`.execute(tx)
+        where id=${id} and state='queued' returning *`.execute(tx)
               ).rows;
-              if (updated.length === 0) return { value: false, rowCount: 0 };
+              if (updated.length === 0) return { value: undefined, rowCount: 0 };
               await sql`insert into run_events(run_id,at,from_state,to_state,reason,payload)
         values(${id},${at},'queued','scheduled',null,null)`.execute(tx);
               if (dialect === "postgres")
                 await sql`select pg_notify('krun_runs',${`${id}:scheduled`})`.execute(tx);
-              return { value: true, rowCount: updated.length };
+              return { value: decodeRun(updated[0], dialect), rowCount: updated.length };
             }),
           );
-          if (!changed) yield* Effect.logDebug("Stale markScheduled ignored");
-          return changed;
+          if (changed === undefined) yield* Effect.logDebug("Stale markScheduled ignored");
+          else yield* observeRunChange(changed, "queued");
+          return changed !== undefined;
         }),
       ),
     countByState: () =>

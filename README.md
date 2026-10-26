@@ -20,6 +20,61 @@ Health/telemetry acceptance covers real Prometheus collection through Fastify `i
 
 The `gateway` command now starts a real scoped serving process. `gateway --help` remains finite and configuration-free; the `scheduler` command still prints its name and exits. `validate` is a real offline Function validator and `migrate` is a real database command, as described below. Apply migrations explicitly before starting serving replicas. Gateway process implementation now passes local source, rebuilt-container and current gateway phase/supporting acceptance. Both independent review findings are resolved; the code is pushed and exact-head hosted CI passes. Protected-stack integration remains pending; no merged delivery is claimed. Scheduler wiring and execution remain later work. See [PLAN.md](PLAN.md) for acceptance criteria and progress.
 
+## Scheduler run metrics and request tracing (P4.6)
+
+Leader main-loop and Job-controller writes now publish
+`krun_runs_transitions_total{function,to}`, plus queue-wait, cold-start and
+run-duration histograms with exactly the SPEC names and labels. D91 observes the
+actual committed Store rows, not a fallible later read: stale CAS, rollback,
+status-only updates and plain gateway/standby Store calls emit no lifecycle
+samples. PostgreSQL and SQLite use the same observer. Durations are persisted
+lifecycle differences in seconds; terminal start-time recovery supplies duration
+without inventing a running transition or cold-start observation. Metrics are
+process-lifetime operational signals, not an exactly-once audit across crashes.
+
+The first `countByState` snapshot of each main-loop iteration also publishes
+`krun_runs_current{function,state}`. Missing previously published pairs become
+zero, including deleted Functions; closing the leader scope clears its gauges
+without teardown replay. No run IDs or private values become metric labels.
+
+D92 adds one request span at the shared native Fastify boundary for public and
+internal API requests, including pre-handler failures. Valid incoming
+`traceparent` supplies its parent; malformed/zero/multiple values are ignored.
+The request runner carries that parent through Store work, and response or
+transport closure ends the request span once. CreateRun's assigned ID annotates
+the request span at completion. The existing per-run scheduler iteration child
+and Kubernetes spans carry the same `krun.run_id`, but remain separate traces:
+no stored trace context or Job trace environment is added. Multi-run iteration
+spans do not falsely claim one run ID. Admin routes have no request span.
+
+Local repair acceptance passes 268 focused tests, 183 scheduler tests and
+`make check` with 1405 TypeScript tests plus one Python test. The real CreateRun
+handler, native Job/Pod informers and Kubernetes clients run against
+`test/fake-kube`, completing one Job and scraping the real admin `/metrics`:
+queue wait is 2 seconds, cold start 3 seconds and run duration 5 seconds. The
+in-memory exporter verifies incoming parenting, per-run correlation and separate
+scheduler tracing, with no private payload in spans or metric labels. This
+compiled acceptance passes on host and rebuilt read-only/nonroot image against
+both SQLite and PostgreSQL, checking all 84 compiled runtime module hashes.
+Additional contracts cover fractional seconds, stale/rollback/status paths,
+terminal start fallback, expiry, pending interruption and gauge teardown.
+
+Both independent reviews are consumed. Contracts finding P46-C1 is reproduced:
+malformed run-path/audit values previously reached `krun.run_id`, even on a 401.
+D93 validates the selected identity with the existing Zod UUIDv7 contract before
+span attachment. Invalid values are omitted, never repaired or replaced by a
+lower-precedence path value; valid values remain unchanged. Two permanent
+regressions cover path and late audit sources, malformed/wrong-version/nil IDs,
+invalid prefixes/suffixes, valid identities and exact case preservation. Native
+HTTP 401 controls on both backends pass on host and rebuilt image while valid
+CreateRun correlation, metric values and traceparent behavior stay intact.
+
+This acceptance establishes reviewed-and-repaired components, not whole-phase
+scheduler execution. PLAN records task delivery and exact-head hosted CI;
+production scheduler assembly remains P4.11. `make e2e` still exits 2 at its explicit P4.12 placeholder;
+Kubernetes admission/Job execution, kind scenarios and actual S3 are not proved
+by the loopback fixture. Those gates remain P4.12/P4.13/P6.2.
+
 ## Scheduler lost-Job detection (P4.5)
 
 `makeMainLoop` now requires the controller's real `checkLost` capability as step
