@@ -37,7 +37,7 @@ interruption exits 0; startup/finalization failures exit 1. A scoped 25-second
 watchdog bounds pathological cleanup. No custom signal handlers or automatic
 serving-replica migrations are introduced.
 
-The repaired local full `make check` passes 1158 TypeScript tests and one Python
+The repaired local full `make check` passes 1161 TypeScript tests and one Python
 test; the exact standalone gateway phase gate passes all 252 gateway tests.
 Twelve dedicated entrypoint/process/ownership
 acceptance tests cover real SQLite and PostgreSQL processes, initial LIST/WATCH,
@@ -79,6 +79,12 @@ Source commit `e0dd5713dc14aaa49ba810de658ad0e985af6dce` is pushed in
 passes all nine gates on attempt 1, including 1158 TypeScript tests and
 one Python test. PLAN records only P3.7 after that code acceptance; its tracking
 update receives a separate full precommit check and exact-head hosted CI.
+Tracking CI exposed an inherited aggregate CLI test timeout twice. The four
+existing installation-ceiling subprocess cases now run as separate parameterized
+tests, each with the unchanged default five-second limit and identical exit-code
+and diagnostic assertions. No application behavior, timeout value or worker
+setting changes. This increases the full test total by three; the accepted
+original code-head count above remains its historical 1158.
 The PR remains open, not merged; required protected-main review is not bypassed
 and an empty review decision is not approval. P3.8 internal methods and the
 remaining gateway/scheduler/object-store/application gates remain future work.
