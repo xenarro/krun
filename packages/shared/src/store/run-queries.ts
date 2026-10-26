@@ -69,6 +69,12 @@ const decodeCursor = (cursor: string, hash: string) => {
   z.literal(hash).parse(scope);
   return { at, id };
 };
+// HTTP adapters validate untrusted navigation before calling the Store so
+// malformed cursors do not become indistinguishable from database failures.
+export const validateRunCursor = (cursor: string, filter: RunFilter): void => {
+  filterSchema.parse(filter);
+  decodeCursor(cursor, scopeHash(filter));
+};
 const encodeCursor = (at: DateTime.Utc, id: string, filter: RunFilter) =>
   Buffer.from(`${DateTime.formatIso(at)}|${id}|${scopeHash(filter)}`, "utf8").toString("base64url");
 

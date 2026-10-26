@@ -18,7 +18,7 @@ import { migrate } from "../migrations.js";
 import type { NewRun, RunFilter, RunSummary, State } from "../model.js";
 import { decodeRun } from "../rows.js";
 import { runFilterSchema } from "../run-filter.js";
-import { listRunsQuery, makeRunQueries } from "../run-queries.js";
+import { listRunsQuery, makeRunQueries, validateRunCursor } from "../run-queries.js";
 
 let container: StartedPostgreSqlContainer | undefined;
 let dsn: string;
@@ -208,6 +208,11 @@ for (const dialect of ["sqlite", "postgres"] as const) {
           const filter = { function_name: "function-a", created_by: "owner-a" };
           const first = yield* m.listRuns(filter, null, 1);
           expect(first.runs.map((r) => r.name)).toEqual([`functions/function-a/runs/${id(2)}`]);
+          const cursor = first.next ?? "";
+          expect(() => validateRunCursor(cursor, filter)).not.toThrow();
+          expect(() => validateRunCursor(cursor, { ...filter, created_by: "owner-b" })).toThrow();
+          for (const invalid of ["!", `${cursor}=`, Buffer.from("not-json").toString("base64url")])
+            expect(() => validateRunCursor(invalid, filter)).toThrow();
           expect((yield* m.listRuns(filter, first.next, 100)).runs.map((r) => r.name)).toEqual([
             `functions/function-a/runs/${id(1)}`,
           ]);
