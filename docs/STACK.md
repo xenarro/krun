@@ -117,7 +117,7 @@ Schema, against principle 2). Revisit when `effect/sql` is stable.
 
 | Package | Range | Use | Rules |
 |---|---|---|---|
-| `@kubernetes/client-node` | `^2.0` | Jobs, Pods, Secrets, Leases, Functions (CustomObjectsApi), informers | 2.x runs on undici. Wrapped in a `Kube` service: every call under the `KRUN_K8S_CONCURRENCY` semaphore and a 10 s `Effect.timeout`; informers exposed as `Stream`s. |
+| `@kubernetes/client-node` | `^2.0` | Jobs, Pods, Secrets, Leases, Functions (CustomObjectsApi), informers | 2.x runs on undici. Wrapped in a `Kube` service: every call under the `KRUN_K8S_CONCURRENCY` semaphore and a 10 s `Effect.timeout`; informers exposed as `Stream`s. D86: Job/Pod informers use makeInformer’s public `ListWatch` cache with a scoped `Watch` subclass; native typed LIST and watch handshakes share that bound, watch bodies follow the leader scope, initial sync follows processed LIST rather than connect. |
 | `@aws-sdk/client-s3` | `^3.1156` | object existence check | `requestChecksumCalculation: "WHEN_REQUIRED"`. |
 | `@aws-sdk/s3-request-presigner` | `^3.1156` | presigned PUT (host only signed) and GET | No signed `Content-Type`. |
 
