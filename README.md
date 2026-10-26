@@ -73,10 +73,15 @@ smoke, critical scan, Helm, frozen install and stable generators pass. Run
 `pnpm exec vitest run apps/scheduler/src/main-loop.test.ts apps/scheduler/src/main-loop-telemetry.test.ts`
 for the checked-in acceptance.
 
-This is local implementation acceptance, pending independent review and delivery;
-no commit, push or P4.3b PLAN closure is claimed. Native loopback fixtures do not
-establish Kubernetes admission or the whole Phase 4 gate: `make e2e` still exits
-2 with the P4.12 harness placeholder; kind scenarios remain P4.13.
+Code `eb0b278` is pushed in [PR #41](https://github.com/xenarro/krun/pull/41) against
+its still-unmerged P4.3a parent, `feat/scheduler-kubernetes-api`/PR #40.
+[Exact-code-head CI](https://github.com/xenarro/krun/actions/runs/40343964037)
+passes all nine gates. This is pushed/green, not independently approved or merged.
+Only P4.3b is checked in PLAN after accepted code CI; this tracking update gets
+its own fresh full check and exact-head hosted verification. Native loopback
+fixtures do not establish Kubernetes admission or the whole Phase 4 gate:
+`make e2e` still exits 2 with the P4.12 harness placeholder; kind scenarios remain
+P4.13.
 
 ## Scheduler Kubernetes API plumbing (P4.3a)
 
