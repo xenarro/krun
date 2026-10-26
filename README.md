@@ -77,8 +77,16 @@ pruning, timestamp precedence, late terminal settlement and leader-scope close. 
 workflow syntax, production audit, fixable-critical scan and stable double
 generation pass.
 
-This is locally repaired component implementation awaiting re-verification and delivery;
-P4.4 is not checked in PLAN here. The `scheduler` command still exits as a finite
+Delivered in [PR #44](https://github.com/xenarro/krun/pull/44) against main after parent PR43 merged.
+Code `29d2d6d` and content-preserving reconciliation `7da86a6`
+pass [exact-head hosted CI](https://github.com/xenarro/krun/actions/runs/40386333038) with all nine gates,
+1374 TypeScript tests and one Python test. All three review findings are repaired
+and freshly delivery-verified. Only P4.4 closes in PLAN after accepted code CI;
+this tracking update receives its own full check and exact-head CI. The source PR was
+merged externally as `0207e8f`; this job did not merge it.
+PLAN/README tracking is delivered separately with its own PR and exact-head
+checks; no auto-merge or protection bypass is used.
+The `scheduler` command still exits as a finite
 scaffold: production process assembly remains P4.11, lost-Job detection P4.5,
 remaining leader/failure metrics P4.6/P4.8 and the S3 adapter P6.2. `make e2e`
 still exits 2 with the explicit P4.12 harness placeholder; kind scenarios remain
