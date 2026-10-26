@@ -59,10 +59,15 @@ Existing ten-group scheduling and two-group review-regression probes also pass
 on each combination. Image CLI/gateway smoke, fixable-critical scan, Helm,
 workflow syntax, frozen install and stable double generation pass.
 
-This is local repair acceptance after independent review, pending delivery;
-no commit, push or P4.3c PLAN closure is claimed. Production informer/terminal
-handler and scheduler process wiring remain P4.4/P4.11; the command remains the
-finite scaffold. `make e2e` still exits 2 at the explicit P4.12 placeholder, with
+Code `0eeaf7d` is pushed in [PR #43](https://github.com/xenarro/krun/pull/43)
+to main after parent PR41 and PR40 merged. Normal ancestry reconciliation
+`98dcc12` preserves the accepted feature tree; its
+[exact-head CI](https://github.com/xenarro/krun/actions/runs/40362250064) passes all nine gates.
+This is pushed/green, not merged; required independent main approval remains.
+Only P4.3c closes in PLAN after code CI; this PLAN/README tracking receives its own
+fresh full check and exact-head hosted verification. No auto-merge or protection
+bypass. Production informer/terminal handler and scheduler process wiring remain
+P4.4/P4.11; the command remains the finite scaffold. `make e2e` still exits 2 at the explicit P4.12 placeholder, with
 whole-phase kind scenarios pending P4.13. Native loopback tests are not Kubernetes
 admission, actual Job execution or whole Phase 4 acceptance.
 
