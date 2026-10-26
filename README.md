@@ -20,6 +20,44 @@ Health/telemetry acceptance covers real Prometheus collection through Fastify `i
 
 The `gateway` command now starts a real scoped serving process. `gateway --help` remains finite and configuration-free; the `scheduler` command still prints its name and exits. `validate` is a real offline Function validator and `migrate` is a real database command, as described below. Apply migrations explicitly before starting serving replicas. Gateway process implementation now passes local source, rebuilt-container and current gateway phase/supporting acceptance. Both independent review findings are resolved; the code is pushed and exact-head hosted CI passes. Protected-stack integration remains pending; no merged delivery is claimed. Scheduler wiring and execution remain later work. See [PLAN.md](PLAN.md) for acceptance criteria and progress.
 
+## Scheduler leader election (P4.2, local implementation)
+
+`runLeaderElection` owns one Lease term and a separate scope for leader-only
+resource acquisition. It uses `krun-scheduler`, the caller's pod name, a
+15-second lease, two-second retries and an independent ten-second renewal
+watchdog. Every write follows a read and carries its resourceVersion. Candidates
+judge expiry from local observation, not remote timestamp age; even same-name
+restarts wait out an observed held lease. Renewals continue during stalled
+resource initialization. Known holder loss or a missed renewal deadline stops
+work and fails the election rather than silently becoming a standby again.
+
+The native `LeaseApiLive` uses the existing bounded Kubernetes connection,
+per-request AbortSignal middleware and dispatcher cleanup. Its validated read
+view preserves client-node's wire MicroTime strings, including microsecond-only
+changes (D78). Leader readiness state and the real `krun_scheduler_leader` gauge
+change together. Leader resources and requests stop before one bounded,
+owner-checked read/replace clears the holder on shutdown.
+
+Local acceptance passes 41 scheduler tests, including clock-driven election and
+real native-client loopback tests. Full `make check` passes 1249 TypeScript tests
+and one Python test. Four actual NodeRuntime process cases run both on the host
+and in a freshly rebuilt nonroot/read-only image with 76 matching module hashes:
+SIGTERM releases and exits zero; holder loss, repeated renewal failure and a
+stalled native renewal exit one; pending transport abort and real Prometheus
+leader gauge values one/zero are checked. The probes use the repository's
+explicit interrupt-only teardown policy; the installed runner default returns
+130 on interruption. Existing image CLI/gateway lifecycle checks and the
+fixable-critical scan also pass.
+
+Both independent reviews found no confirmed material defect; repair/integration
+retains the reviewed runtime unchanged. This uncommitted slice awaits delivery.
+The `scheduler` command is still the finite scaffold: later process wiring must supply pod
+metadata.name and join this election effect using that teardown policy. Actual
+Job/Pod informers, loops and the status writer are later components; tests verify
+that their resource-acquisition program is leader-scoped, not that those
+components already exist. No real-cluster admission, two-scheduler kind takeover
+(P7.6) or complete Phase 4 e2e gate is claimed; `make e2e` remains pending P4.12.
+
 ## Scheduler manifests (P4.1)
 
 `apps/scheduler/src/k8s/manifests.ts` builds typed Kubernetes Job and immutable
