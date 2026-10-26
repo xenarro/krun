@@ -1,6 +1,6 @@
 import { Keys } from "@krun/shared/dist/auth/keys.js";
 import { Functions } from "@krun/shared/dist/functions/cache.js";
-import { httpOptions } from "@krun/shared/dist/runtime/http.js";
+import { httpOptions, requestTraceFields } from "@krun/shared/dist/runtime/http.js";
 import { Store } from "@krun/shared/dist/store/index.js";
 import { Data, Effect } from "effect";
 import Fastify, { type FastifyPluginAsync } from "fastify";
@@ -70,7 +70,10 @@ export const makePublicApp = (options: PublicAppOptions = {}) =>
       const envelope = errorEnvelope(error);
       if (envelope.error.code >= 500)
         request.log.error(
-          { reason: envelope.error.details[0]?.reason ?? "INTERNAL" },
+          {
+            ...requestTraceFields(request),
+            reason: envelope.error.details[0]?.reason ?? "INTERNAL",
+          },
           "Request failed",
         );
       return sendError(reply, error);

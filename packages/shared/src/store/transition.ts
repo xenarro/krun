@@ -7,6 +7,7 @@ import { DatabaseError } from "./errors.js";
 import type { StoreShape } from "./index.js";
 import { toRunSummary } from "./mappers.js";
 import { failureReasons } from "./model.js";
+import { observeRunChange } from "./observations.js";
 import { decodeRun } from "./rows.js";
 
 // Either existing argument may supply the classification, but when both are
@@ -103,7 +104,7 @@ export const makeTransition = Effect.map(
                 await sql`update runs set ${sql.join(assignments)}
                   where id=${id} and state=${from} returning *`.execute(tx)
               ).rows[0];
-              if (updated === undefined) return false;
+              if (updated === undefined) return undefined;
               // Validate only a winning CAS. Failure rolls back its tentative row
               // before any event/callback/hint; invalid stale calls still return false.
               if (classification !== undefined && !classification.success)
@@ -125,13 +126,14 @@ export const makeTransition = Effect.map(
               }
               if (dialect === "postgres")
                 await sql`select pg_notify('krun_runs',${`${id}:${to}`})`.execute(tx);
-              return true;
+              return run;
             }),
           catch: () => new DatabaseError({ operation: "transition" }),
         });
         yield* Effect.annotateCurrentSpan("db.response.returned_rows", changed ? 1 : 0);
-        if (!changed) yield* Effect.logDebug("Stale transition ignored");
-        return changed;
+        if (changed === undefined) yield* Effect.logDebug("Stale transition ignored");
+        else yield* observeRunChange(changed, from);
+        return changed !== undefined;
       }).pipe(
         // Driver promises are uncancellable. Finish commit/rollback and release
         // before interruption can close the owning Database scope.

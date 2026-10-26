@@ -3,6 +3,7 @@ import type { SchedulerConfig } from "@krun/shared/dist/config/index.js";
 import { type FunctionEntry, Functions } from "@krun/shared/dist/functions/cache.js";
 import type { FunctionResource } from "@krun/shared/dist/functions/schema.js";
 import { KubeApiError, kubeApiStatus } from "@krun/shared/dist/k8s/errors.js";
+import { leaderRunStore, makeRunGauges } from "@krun/shared/dist/runtime/run-metrics.js";
 import type { DatabaseError } from "@krun/shared/dist/store/errors.js";
 import { type Run, Store } from "@krun/shared/dist/store/index.js";
 import {
@@ -71,6 +72,8 @@ export const makeMainLoop = (options: Options) =>
     const store = yield* Store,
       functions = yield* Functions,
       kube = yield* Kube;
+    const publishCounts = yield* makeRunGauges;
+    const lifecycle = leaderRunStore(store);
     const policy = yield* makeCreationPolicy;
     const gate = yield* Semaphore.make(1);
     const cleanupDebt = yield* Ref.make<ReadonlyMap<string, Run>>(new Map());
@@ -214,7 +217,7 @@ export const makeMainLoop = (options: Options) =>
           if (decision?.kind === "permanent") {
             if (secretPresent) yield* kube.deleteSecret(target(run));
             yield* checkDeadline;
-            yield* store.transition(run.id, "queued", "failed", decision.failureReason, {
+            yield* lifecycle.transition(run.id, "queued", "failed", decision.failureReason, {
               error: decision.error,
               failure_reason: decision.failureReason,
             });
@@ -227,7 +230,7 @@ export const makeMainLoop = (options: Options) =>
             // Preserve a committed scheduling result before pending interruption can
             // trigger cleanup. The Store itself already settles its transaction.
             const scheduled = yield* Effect.gen(function* () {
-              const changed = yield* store.markScheduled(run.id);
+              const changed = yield* lifecycle.markScheduled(run.id);
               if (changed) {
                 yield* Ref.update(replayDebt, (map) => new Map(map).set(run.id, run));
                 yield* policy.succeeded(fn.name);
@@ -251,6 +254,7 @@ export const makeMainLoop = (options: Options) =>
         );
       const body = Effect.gen(function* () {
         const counts = yield* store.countByState();
+        yield* publishCounts(counts);
         yield* checkDeadline;
         // Successful scheduling is already committed. Replay only in an active
         // iteration, never in a teardown finalizer or uninterruptible handler.
@@ -269,7 +273,7 @@ export const makeMainLoop = (options: Options) =>
           const entry = yield* functions.getAny(name);
           const timeout = entry?.result.queueTimeout ?? Duration.hours(1);
           const expired = yield* Effect.gen(function* () {
-            const rows = yield* store.expireQueued(
+            const rows = yield* lifecycle.expireQueued(
               name,
               DateTime.subtract(yield* DateTime.now, { milliseconds: Duration.toMillis(timeout) }),
             );
@@ -349,7 +353,7 @@ export const makeMainLoop = (options: Options) =>
             yield* checkDeadline;
             yield* kube.deleteSecret(target(run));
             yield* checkDeadline;
-            yield* store.transition(run.id, "cancelling", "cancelled", null, {});
+            yield* lifecycle.transition(run.id, "cancelling", "cancelled", null, {});
           }).pipe(
             Effect.withSpan("scheduler.cancel_run", {
               attributes: { "krun.run_id": run.id, "krun.function": run.function_name },

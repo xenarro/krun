@@ -1,4 +1,5 @@
 import type { KubeApiError } from "@krun/shared/dist/k8s/errors.js";
+import { leaderRunStore } from "@krun/shared/dist/runtime/run-metrics.js";
 import type { DatabaseError, JobStatus, Run } from "@krun/shared/dist/store/index.js";
 import { Store } from "@krun/shared/dist/store/index.js";
 import type { V1Job, V1Pod } from "@kubernetes/client-node";
@@ -124,6 +125,7 @@ export const makeJobController = (options: {
 }) =>
   Effect.gen(function* () {
     const store = yield* Store;
+    const lifecycle = leaderRunStore(store);
     const kube = yield* Kube;
     const source = yield* JobPodSource;
     // A gate lives only while a handler or its waiters own it; no per-history map.
@@ -238,7 +240,7 @@ export const makeJobController = (options: {
         yield* captureTail(id, pod, failed);
         if (!job || (!complete && !failed)) {
           if (run.state === "scheduled" && pod?.status?.phase === "Running")
-            yield* store.transition(id, "scheduled", "running", null, {});
+            yield* lifecycle.transition(id, "scheduled", "running", null, {});
           return;
         }
         // No stale function report/result is copied back over concurrent writes. The
@@ -263,7 +265,7 @@ export const makeJobController = (options: {
                 },
               }),
         };
-        const changed = yield* store.transition(
+        const changed = yield* lifecycle.transition(
           id,
           run.state,
           complete ? "succeeded" : "failed",
@@ -362,7 +364,7 @@ export const makeJobController = (options: {
             firstAbsent.delete(id);
             return false;
           }
-          const changed = yield* store.transition(id, row.state, "failed", "job_lost", {
+          const changed = yield* lifecycle.transition(id, row.state, "failed", "job_lost", {
             failure_reason: "job_lost",
             error: {
               source: "krun",

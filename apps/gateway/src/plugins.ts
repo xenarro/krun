@@ -61,7 +61,15 @@ export const requestRunner = <R>(context: Context.Context<R>) => {
     if (request.raw.aborted || reply.raw.destroyed) abort();
     else if (request.signal.aborted) signalAbort();
     const pending = Promise.resolve().then(() =>
-      run(withPinoLogger(program, request.log), { signal: controller.signal }),
+      run(
+        withPinoLogger(
+          request.krunSpan === undefined
+            ? program
+            : program.pipe(Effect.withParentSpan(request.krunSpan)),
+          request.log,
+        ),
+        { signal: controller.signal },
+      ),
     );
     active.set(controller, pending);
     try {

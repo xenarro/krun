@@ -1,7 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 import { Transform } from "node:stream";
-import { httpOptions } from "@krun/shared/dist/runtime/http.js";
+import { httpOptions, requestTraceFields } from "@krun/shared/dist/runtime/http.js";
 import { InternalStoreSignal } from "@krun/shared/dist/runtime/internal-store-call.js";
 import { DatabaseError, NotFoundError } from "@krun/shared/dist/store/errors.js";
 import { Store } from "@krun/shared/dist/store/index.js";
@@ -19,7 +19,7 @@ export const makeInternalApp = (config: { readonly maxResultBytes: number }) =>
     const store = yield* Store;
     const runner = requestRunner(yield* Effect.context<Store>());
     const app = yield* Effect.acquireRelease(
-      Effect.map(httpOptions(false), (options) =>
+      Effect.map(httpOptions(false, true), (options) =>
         Fastify({
           ...options,
           exposeHeadRoutes: false,
@@ -28,6 +28,7 @@ export const makeInternalApp = (config: { readonly maxResultBytes: number }) =>
             request.log.info(
               {
                 event: "internal_request",
+                ...requestTraceFields(request),
                 user_agent: request.headers["user-agent"],
                 route: "unmatched",
                 code: errorEnvelope(error).error.code,
@@ -74,7 +75,10 @@ export const makeInternalApp = (config: { readonly maxResultBytes: number }) =>
       const envelope = errorEnvelope(mapped);
       if (envelope.error.code === 413 || !request.raw.complete) reply.header("Connection", "close");
       if (envelope.error.code >= 500)
-        request.log.error({ reason: envelope.error.details[0]?.reason }, "Internal request failed");
+        request.log.error(
+          { ...requestTraceFields(request), reason: envelope.error.details[0]?.reason },
+          "Internal request failed",
+        );
       return sendError(reply, mapped);
     });
     const notFound = (request: FastifyRequest) => {
@@ -169,6 +173,7 @@ export const makeInternalApp = (config: { readonly maxResultBytes: number }) =>
       request.log[reply.statusCode === 401 ? "warn" : "info"](
         {
           event: "internal_request",
+          ...requestTraceFields(request),
           user_agent: request.headers["user-agent"],
           route: request.routeOptions.url ?? "unmatched",
           code: reply.statusCode,
