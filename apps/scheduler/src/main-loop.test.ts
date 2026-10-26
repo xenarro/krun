@@ -5,7 +5,7 @@ import { type FunctionEntry, Functions } from "@krun/shared/dist/functions/cache
 import { functionResourceSchema } from "@krun/shared/dist/functions/schema.js";
 import { validateFunction } from "@krun/shared/dist/functions/validation.js";
 import { KubeConnection, makeKubeConnection } from "@krun/shared/dist/k8s/config.js";
-import { type NewRun, Store } from "@krun/shared/dist/store/index.js";
+import { DatabaseError, type NewRun, Store } from "@krun/shared/dist/store/index.js";
 import { StoreSqlite } from "@krun/shared/dist/store/live.js";
 import { BatchV1Api, CoreV1Api, type V1Job, type V1Secret } from "@kubernetes/client-node";
 import { DateTime, Deferred, Duration, Effect, Fiber, Metric, PubSub, Stream } from "effect";
@@ -88,6 +88,7 @@ const fixture = (
     vi.spyOn(BatchV1Api.prototype, "deleteNamespacedJob").mockImplementation(
       async ({ name, propagationPolicy }) => {
         log.push("deleteJob:" + name + ":" + propagationPolicy);
+        jobs.delete(name);
         return {};
       },
     );
@@ -212,6 +213,7 @@ const fixture = (
       loop,
       log,
       secrets,
+      jobs,
       notices,
       seed,
       ready,
@@ -743,4 +745,475 @@ it.effect(
         expect(f.creates()).toBe(1);
       }),
     ),
+);
+
+for (const present of [false, true])
+  it.effect(
+    `cancelling with ${present ? "a present" : "an absent"} Job deletes before the terminal CAS`,
+    () =>
+      database(
+        Effect.gen(function* () {
+          const f = yield* fixture(present ? {} : { entries: [] });
+          yield* f.seed(81);
+          if (present) {
+            yield* f.loop.iterate;
+            expect(f.jobs.size).toBe(1);
+          }
+          yield* f.store.transition(
+            id(81),
+            present ? "scheduled" : "queued",
+            "cancelling",
+            null,
+            {},
+          );
+          const transition = f.controlled.transition;
+          f.controlled.transition = (...args) =>
+            transition(...args).pipe(
+              Effect.tap(() => Effect.sync(() => f.log.push("cancelled:" + args[0]))),
+            );
+          if (!present) {
+            vi.mocked(BatchV1Api.prototype.deleteNamespacedJob).mockImplementationOnce(
+              async ({ name, propagationPolicy }) => {
+                f.log.push(`deleteJob:${name}:${propagationPolicy}`);
+                throw { code: 404 };
+              },
+            );
+            vi.mocked(CoreV1Api.prototype.deleteNamespacedSecret).mockImplementationOnce(
+              async ({ name }) => {
+                f.log.push(`deleteSecret:${name}`);
+                throw { code: 404 };
+              },
+            );
+          }
+          yield* f.loop.iterate;
+          const run = yield* f.store.getRun(id(81));
+          expect(run.state).toBe("cancelled");
+          expect(run.finished_at).not.toBeNull();
+          const job = f.log.indexOf(`deleteJob:krun-${id(81)}:Foreground`),
+            secret = f.log.indexOf(`deleteSecret:krun-${id(81)}`),
+            terminal = f.log.indexOf("cancelled:" + id(81));
+          expect(job).toBeGreaterThan(-1);
+          expect(job).toBeLessThan(secret);
+          expect(secret).toBeLessThan(terminal);
+          expect(f.jobs.size).toBe(0);
+          expect(f.secrets.size).toBe(0);
+          const deletes = vi.mocked(BatchV1Api.prototype.deleteNamespacedJob).mock.calls.length;
+          yield* f.loop.iterate;
+          expect(vi.mocked(BatchV1Api.prototype.deleteNamespacedJob).mock.calls.length).toBe(
+            deletes,
+          );
+        }),
+      ),
+  );
+
+it.effect(
+  "cancelling a running run preserves reported data and inserts one terminal delivery",
+  () =>
+    database(
+      Effect.gen(function* () {
+        const f = yield* fixture();
+        yield* f.seed(82, { callback_url: "https://callback.example.invalid/done" });
+        yield* f.loop.iterate;
+        yield* f.store.transition(id(82), "scheduled", "running", null, {});
+        yield* f.store.setResult(id(82), { owned: "kept" });
+        yield* f.store.setError(id(82), { source: "function", message: "owned report" });
+        yield* f.store.transition(id(82), "running", "cancelling", null, {});
+        yield* f.loop.iterate;
+        yield* f.loop.iterate;
+        const run = yield* f.store.getRun(id(82));
+        expect(run.state).toBe("cancelled");
+        expect(run.result).toEqual({ owned: "kept" });
+        expect(run.error?.source).toBe("function");
+        const deliveries = yield* f.store.claimDeliveries(yield* DateTime.now, 10);
+        expect(deliveries).toHaveLength(1);
+        expect(deliveries[0]?.payload).toMatchObject({ state: "CANCELLED" });
+      }),
+    ),
+);
+
+it.effect(
+  "cancelling Job-delete503 leaves state unchanged and retries before deleting Secret",
+  () =>
+    database(
+      Effect.gen(function* () {
+        const f = yield* fixture();
+        yield* f.seed(83);
+        yield* f.loop.iterate;
+        yield* f.store.transition(id(83), "scheduled", "cancelling", null, {});
+        vi.mocked(BatchV1Api.prototype.deleteNamespacedJob).mockRejectedValueOnce({ code: 503 });
+        yield* f.loop.iterate;
+        expect((yield* f.store.getRun(id(83))).state).toBe("cancelling");
+        expect(f.secrets.size).toBe(1);
+        expect(vi.mocked(CoreV1Api.prototype.deleteNamespacedSecret).mock.calls).toHaveLength(0);
+        yield* f.loop.iterate;
+        expect((yield* f.store.getRun(id(83))).state).toBe("cancelled");
+      }),
+    ),
+);
+
+it.effect(
+  "cancelling Secret-delete503 retries idempotent Job deletion without premature transition",
+  () =>
+    database(
+      Effect.gen(function* () {
+        const f = yield* fixture();
+        yield* f.seed(84);
+        yield* f.loop.iterate;
+        yield* f.store.transition(id(84), "scheduled", "cancelling", null, {});
+        vi.mocked(CoreV1Api.prototype.deleteNamespacedSecret).mockRejectedValueOnce({ code: 503 });
+        yield* f.loop.iterate;
+        expect((yield* f.store.getRun(id(84))).state).toBe("cancelling");
+        expect(f.jobs.size).toBe(0);
+        expect(f.secrets.size).toBe(1);
+        vi.mocked(BatchV1Api.prototype.deleteNamespacedJob).mockRejectedValueOnce({ code: 404 });
+        yield* f.loop.iterate;
+        expect((yield* f.store.getRun(id(84))).state).toBe("cancelled");
+        expect(f.secrets.size).toBe(0);
+      }),
+    ),
+);
+
+it.effect("cancelling delete429 pauses without counting a failed creation", () =>
+  database(
+    Effect.gen(function* () {
+      const f = yield* fixture({ entries: [] });
+      yield* f.seed(85);
+      yield* f.store.transition(id(85), "queued", "cancelling", null, {});
+      vi.mocked(BatchV1Api.prototype.deleteNamespacedJob).mockRejectedValueOnce({
+        code: 429,
+        headers: { "retry-after": "7" },
+      });
+      const counter = Metric.withAttributes(
+        Metric.counter("krun_job_create_errors_total", { incremental: true }),
+        { function: "echo", code: "429" },
+      );
+      const before = (yield* Metric.value(counter)).count;
+      const fiber = yield* Effect.forkScoped(f.loop.iterate);
+      while (vi.mocked(BatchV1Api.prototype.deleteNamespacedJob).mock.calls.length === 0)
+        yield* Effect.yieldNow;
+      for (let n = 0; n < 20; n++) yield* Effect.yieldNow;
+      expect((yield* f.store.getRun(id(85))).state).toBe("cancelling");
+      expect(fiber.pollUnsafe()).toBeUndefined();
+      yield* TestClock.adjust("7 seconds");
+      yield* Fiber.join(fiber);
+      expect((yield* Metric.value(counter)).count).toBe(before);
+      yield* f.loop.iterate;
+      expect((yield* f.store.getRun(id(85))).state).toBe("cancelled");
+    }),
+  ),
+);
+
+it.effect(
+  "cancelling delete deadline leaves unfinished rows retryable without starting later resources",
+  () =>
+    database(
+      Effect.gen(function* () {
+        const f = yield* fixture({ entries: [] });
+        for (const n of [86, 87]) {
+          yield* f.seed(n);
+          yield* f.store.transition(id(n), "queued", "cancelling", null, {});
+        }
+        vi.mocked(BatchV1Api.prototype.deleteNamespacedJob).mockImplementationOnce(
+          () => new Promise(() => {}),
+        );
+        const fiber = yield* Effect.forkScoped(f.loop.iterate);
+        while (vi.mocked(BatchV1Api.prototype.deleteNamespacedJob).mock.calls.length === 0)
+          yield* Effect.yieldNow;
+        yield* TestClock.adjust("10 seconds");
+        yield* Fiber.join(fiber);
+        for (const n of [86, 87]) expect((yield* f.store.getRun(id(n))).state).toBe("cancelling");
+        expect(vi.mocked(CoreV1Api.prototype.deleteNamespacedSecret).mock.calls).toHaveLength(0);
+        yield* f.loop.iterate;
+        for (const n of [86, 87]) expect((yield* f.store.getRun(id(n))).state).toBe("cancelled");
+      }),
+    ),
+);
+
+it.effect("cancelling terminal CAS does not duplicate a competing terminal delivery", () =>
+  database(
+    Effect.gen(function* () {
+      const f = yield* fixture({ entries: [] });
+      yield* f.seed(88, { callback_url: "https://callback.example.invalid/done" });
+      yield* f.store.transition(id(88), "queued", "cancelling", null, {});
+      const transition = f.controlled.transition;
+      f.controlled.transition = (...args) =>
+        Effect.gen(function* () {
+          if (args[1] === "cancelling" && args[2] === "cancelled")
+            yield* f.store.transition(args[0], "cancelling", "cancelled", null, {});
+          return yield* transition(...args);
+        });
+      yield* f.loop.iterate;
+      expect((yield* f.store.getRun(id(88))).state).toBe("cancelled");
+      expect(yield* f.store.claimDeliveries(yield* DateTime.now, 10)).toHaveLength(1);
+    }),
+  ),
+);
+
+it.effect(
+  "cancelling drains more rows than the global running cap using bounded Store batches",
+  () =>
+    database(
+      Effect.gen(function* () {
+        const f = yield* fixture({ entries: [], maxRunning: "1" });
+        for (const n of [89, 90]) {
+          yield* f.seed(n);
+          yield* f.store.transition(id(n), "queued", "cancelling", null, {});
+        }
+        const list = f.controlled.listByState,
+          limits: number[] = [];
+        f.controlled.listByState = (states, limit) => {
+          limits.push(limit);
+          return list(states, limit);
+        };
+        yield* f.loop.iterate;
+        for (const n of [89, 90]) expect((yield* f.store.getRun(id(n))).state).toBe("cancelled");
+        expect(limits).toEqual([1, 1, 1]);
+      }),
+    ),
+);
+
+for (const resource of ["job", "secret"] as const)
+  it.effect(
+    `cancelling repair: blocked ${resource} cancellation does not starve unrelated cancelling runs`,
+    () =>
+      database(
+        Effect.gen(function* () {
+          const f = yield* fixture({ entries: [], maxRunning: "1" });
+          for (const n of [301, 302]) {
+            yield* f.seed(n);
+            yield* f.store.setJobToken(id(n), "krun-" + id(n), "a".repeat(64));
+            yield* f.store.transition(id(n), "queued", "cancelling", null, {});
+            f.jobs.set("krun-" + id(n), {});
+            f.secrets.set("krun-" + id(n), {});
+          }
+          const attempts: string[] = [];
+          if (resource === "job")
+            vi.mocked(BatchV1Api.prototype.deleteNamespacedJob).mockImplementation(
+              async ({ name }) => {
+                attempts.push(name);
+                if (name === "krun-" + id(301))
+                  throw {
+                    code: 403,
+                    body: { reason: "Forbidden", message: "owned resource-specific delete denial" },
+                  };
+                f.jobs.delete(name);
+                return {};
+              },
+            );
+          else
+            vi.mocked(CoreV1Api.prototype.deleteNamespacedSecret).mockImplementation(
+              async ({ name }) => {
+                attempts.push(name);
+                if (name === "krun-" + id(301))
+                  throw {
+                    code: 403,
+                    body: { reason: "Forbidden", message: "owned resource-specific delete denial" },
+                  };
+                f.secrets.delete(name);
+                return {};
+              },
+            );
+          for (let n = 0; n < 3; n++) yield* f.loop.iterate;
+          const blocked = (yield* f.store.getRun(id(301))).state,
+            healthy = (yield* f.store.getRun(id(302))).state;
+          expect(attempts.filter((name) => name === `krun-${id(301)}`)).toHaveLength(3);
+          expect(attempts.filter((name) => name === `krun-${id(302)}`)).toHaveLength(1);
+          expect(f.jobs.has(`krun-${id(302)}`)).toBe(false);
+          expect(f.secrets.has(`krun-${id(302)}`)).toBe(false);
+          expect(blocked).toBe("cancelling");
+          expect(healthy).toBe("cancelled");
+        }),
+      ),
+  );
+it.effect(
+  "cancelling repair: interrupted Secret delete leaves cancellation retryable without terminal CAS",
+  () =>
+    database(
+      Effect.gen(function* () {
+        const f = yield* fixture({ entries: [] });
+        yield* f.seed(311);
+        yield* f.store.transition(id(311), "queued", "cancelling", null, {});
+        vi.mocked(CoreV1Api.prototype.deleteNamespacedSecret).mockImplementationOnce(
+          () => new Promise(() => {}),
+        );
+        const fiber = yield* Effect.forkScoped(f.loop.iterate);
+        while (vi.mocked(CoreV1Api.prototype.deleteNamespacedSecret).mock.calls.length === 0)
+          yield* Effect.yieldNow;
+        yield* TestClock.adjust("10 seconds");
+        yield* Fiber.join(fiber);
+        expect((yield* f.store.getRun(id(311))).state).toBe("cancelling");
+        yield* f.loop.iterate;
+        expect((yield* f.store.getRun(id(311))).state).toBe("cancelled");
+      }),
+    ),
+);
+it.effect(
+  "cancelling repair: late successful cancellation CAS settles once and never repeats deletes",
+  () =>
+    database(
+      Effect.gen(function* () {
+        const f = yield* fixture({ entries: [] });
+        yield* f.seed(312, { callback_url: "https://callback.example.invalid/review" });
+        yield* f.store.transition(id(312), "queued", "cancelling", null, {});
+        const transition = f.controlled.transition;
+        let committed = false;
+        f.controlled.transition = (...args) =>
+          transition(...args).pipe(
+            Effect.tap(() =>
+              Effect.sync(() => {
+                committed = true;
+              }),
+            ),
+            Effect.tap(() => Effect.sleep("11 seconds")),
+            Effect.uninterruptible,
+          );
+        const fiber = yield* Effect.forkScoped(f.loop.iterate);
+        while (!committed) yield* Effect.yieldNow;
+        yield* TestClock.adjust("10 seconds");
+        expect(fiber.pollUnsafe()).toBeUndefined();
+        yield* TestClock.adjust("1 second");
+        yield* Fiber.join(fiber);
+        expect((yield* f.store.getRun(id(312))).state).toBe("cancelled");
+        const count = vi.mocked(BatchV1Api.prototype.deleteNamespacedJob).mock.calls.length;
+        yield* f.loop.iterate;
+        expect(vi.mocked(BatchV1Api.prototype.deleteNamespacedJob).mock.calls.length).toBe(count);
+        expect(yield* f.store.claimDeliveries(yield* DateTime.now, 10)).toHaveLength(1);
+      }),
+    ),
+);
+it.effect(
+  "cancelling repair: cancellation CAS preserves a competing failed terminal state and delivery",
+  () =>
+    database(
+      Effect.gen(function* () {
+        const f = yield* fixture({ entries: [] });
+        yield* f.seed(313, { callback_url: "https://callback.example.invalid/review" });
+        yield* f.store.transition(id(313), "queued", "cancelling", null, {});
+        const transition = f.controlled.transition;
+        f.controlled.transition = (...args) =>
+          Effect.gen(function* () {
+            if (args[1] === "cancelling" && args[2] === "cancelled")
+              yield* f.store.transition(args[0], "cancelling", "failed", "heartbeat_timeout", {
+                error: { source: "krun", message: "owned competing terminal" },
+              });
+            return yield* transition(...args);
+          });
+        yield* f.loop.iterate;
+        const row = yield* f.store.getRun(id(313));
+        expect(row.state).toBe("failed");
+        expect(row.failure_reason).toBe("heartbeat_timeout");
+        expect(row.error?.message).toBe("owned competing terminal");
+        const deliveries = yield* f.store.claimDeliveries(yield* DateTime.now, 10);
+        expect(deliveries).toHaveLength(1);
+        expect(deliveries[0]?.payload).toMatchObject({ state: "FAILED" });
+      }),
+    ),
+);
+
+it.effect("cancelling repair: terminal Store failure cannot starve a healthy row", () =>
+  database(
+    Effect.gen(function* () {
+      const f = yield* fixture({ entries: [], maxRunning: "1" });
+      for (const n of [321, 322]) {
+        yield* f.seed(n, { callback_url: "https://callback.example.invalid/repair" });
+        yield* f.store.transition(id(n), "queued", "cancelling", null, {});
+      }
+      const transition = f.controlled.transition;
+      let blocked = true;
+      let attempts = 0;
+      f.controlled.transition = (...args) =>
+        args[0] === id(321) && blocked
+          ? Effect.sync(() => {
+              attempts++;
+            }).pipe(Effect.andThen(Effect.fail(new DatabaseError({ operation: "transition" }))))
+          : transition(...args);
+      yield* f.loop.iterate;
+      expect(attempts).toBe(1);
+      expect((yield* f.store.getRun(id(321))).state).toBe("cancelling");
+      expect((yield* f.store.getRun(id(322))).state).toBe("cancelled");
+      expect(yield* f.store.claimDeliveries(yield* DateTime.now, 10)).toHaveLength(1);
+      blocked = false;
+      yield* f.loop.iterate;
+      expect((yield* f.store.getRun(id(321))).state).toBe("cancelled");
+      expect(yield* f.store.claimDeliveries(yield* DateTime.now, 10)).toHaveLength(1);
+    }),
+  ),
+);
+
+it.effect("cancelling repair: bounded cursor pages survive repeated iteration deadlines", () =>
+  database(
+    Effect.gen(function* () {
+      const f = yield* fixture({ entries: [], maxRunning: "1" });
+      for (const n of [331, 332, 333, 334]) {
+        yield* f.seed(n, { callback_url: "https://callback.example.invalid/repair" });
+        yield* f.store.transition(id(n), "queued", "cancelling", null, {});
+      }
+      vi.mocked(BatchV1Api.prototype.deleteNamespacedJob).mockImplementation(async ({ name }) => {
+        if (name === `krun-${id(331)}`) throw { code: 503 };
+        return {};
+      });
+      const listRuns = f.controlled.listRuns;
+      const cursors: (string | null)[] = [];
+      f.controlled.listRuns = (...args) =>
+        listRuns(...args).pipe(
+          Effect.tap((page) =>
+            Effect.sync(() => {
+              expect(args[2]).toBe(1);
+              expect(page.runs.length).toBeLessThanOrEqual(1);
+              cursors.push(args[1]);
+            }),
+          ),
+          Effect.tap(() => Effect.sleep("11 seconds")),
+          Effect.uninterruptible,
+        );
+      for (let n = 0; n < 5; n++) {
+        const before = cursors.length;
+        const fiber = yield* Effect.forkScoped(f.loop.iterate);
+        while (cursors.length === before && fiber.pollUnsafe() === undefined)
+          yield* Effect.yieldNow;
+        if (cursors.length > before) yield* TestClock.adjust("11 seconds");
+        yield* Fiber.join(fiber);
+      }
+      expect(cursors).toHaveLength(4);
+      expect(cursors[0]).toBeNull();
+      expect(cursors.slice(1).every((cursor) => cursor !== null)).toBe(true);
+      expect(new Set(cursors).size).toBe(4);
+      expect((yield* f.store.getRun(id(331))).state).toBe("cancelling");
+      for (const n of [332, 333, 334])
+        expect((yield* f.store.getRun(id(n))).state).toBe("cancelled");
+      expect(yield* f.store.claimDeliveries(yield* DateTime.now, 10)).toHaveLength(3);
+    }),
+  ),
+);
+
+it.effect("cancelling repair: fallback429 stops traversal for the global pause", () =>
+  database(
+    Effect.gen(function* () {
+      const f = yield* fixture({ entries: [], maxRunning: "1" });
+      for (const n of [341, 342, 343]) {
+        yield* f.seed(n);
+        yield* f.store.transition(id(n), "queued", "cancelling", null, {});
+      }
+      let limited = true;
+      vi.mocked(BatchV1Api.prototype.deleteNamespacedJob).mockImplementation(async ({ name }) => {
+        if (name === `krun-${id(341)}`) throw { code: 503 };
+        if (limited) throw { code: 429, headers: { "retry-after": "7" } };
+        return {};
+      });
+      const fiber = yield* Effect.forkScoped(f.loop.iterate);
+      while (vi.mocked(BatchV1Api.prototype.deleteNamespacedJob).mock.calls.length < 2)
+        yield* Effect.yieldNow;
+      for (let n = 0; n < 20; n++) yield* Effect.yieldNow;
+      expect(fiber.pollUnsafe()).toBeUndefined();
+      expect(vi.mocked(BatchV1Api.prototype.deleteNamespacedJob).mock.calls).toHaveLength(2);
+      expect(vi.mocked(CoreV1Api.prototype.deleteNamespacedSecret).mock.calls).toHaveLength(0);
+      yield* TestClock.adjust("7 seconds");
+      yield* Fiber.join(fiber);
+      limited = false;
+      yield* f.loop.iterate;
+      yield* f.loop.iterate;
+      for (const n of [342, 343]) expect((yield* f.store.getRun(id(n))).state).toBe("cancelled");
+      expect((yield* f.store.getRun(id(341))).state).toBe("cancelling");
+    }),
+  ),
 );

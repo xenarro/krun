@@ -28,6 +28,12 @@ import { buildJob, buildSecret } from "./k8s/manifests.js";
 
 class IterationExpired extends Data.TaggedError("IterationExpired") {}
 class MainLoopInvalid extends Data.TaggedError("MainLoopInvalid") {}
+type CancellationTarget = Pick<Run, "id" | "job_name" | "function_name">;
+interface CancellationScan {
+  readonly pending: readonly CancellationTarget[];
+  readonly cursor: string | null;
+  readonly done: boolean;
+}
 type Config = Pick<
   SchedulerConfig,
   | "KRUN_MAX_RUNNING"
@@ -50,7 +56,7 @@ const encodedToken = z
   .refine((value) => Buffer.from(value, "base64").toString("base64") === value);
 
 /** Construct within one leader term; run owns its ticker/subscription fibers.
- * Only steps 1-4 live here. Cancelling, informers/lost Jobs and process assembly
+ * Only steps 1-5 live here. Informers/lost Jobs and process assembly
  * are separate PLAN tasks. Existing Store writes settle before cancellation.
  */
 export const makeMainLoop = (options: Options) =>
@@ -67,6 +73,7 @@ export const makeMainLoop = (options: Options) =>
     const gate = yield* Semaphore.make(1);
     const cleanupDebt = yield* Ref.make<ReadonlyMap<string, Run>>(new Map());
     const replayDebt = yield* Ref.make<ReadonlyMap<string, Run>>(new Map());
+    const cancellationScan = yield* Ref.make<CancellationScan | undefined>(undefined);
     const replayKnown = (run: Run) =>
       replay(run).pipe(
         Effect.andThen(
@@ -83,7 +90,7 @@ export const makeMainLoop = (options: Options) =>
         for (const run of runs) next.set(run.id, run);
         return next;
       });
-    const target = (run: Run) => ({
+    const target = (run: CancellationTarget) => ({
       namespace: config.KRUN_JOBS_NAMESPACE,
       name: run.job_name ?? `krun-${run.id}`,
       function: run.function_name,
@@ -322,6 +329,91 @@ export const makeMainLoop = (options: Options) =>
           if (yield* policy.isBackingOff(fn.name)) continue;
           const decision = yield* schedule(run, fn);
           if (decision?.pauseSeconds !== undefined) return decision.pauseSeconds;
+        }
+        // Step 5 normally drains the active prefix. On an isolated failure,
+        // keyset traversal passes retained rows without an unbounded query or
+        // repeatedly retrying the same poisoned prefix. Keep one page across
+        // deadlines so a slow sweep can progress in later active iterations.
+        const attempted = new Set<string>();
+        const beginScan = Ref.update(
+          cancellationScan,
+          (scan) => scan ?? { pending: [], cursor: null, done: false },
+        );
+        const cancelOne = (run: CancellationTarget) =>
+          Effect.gen(function* () {
+            attempted.add(run.id);
+            yield* checkDeadline;
+            yield* kube.deleteJob(target(run), "Foreground");
+            yield* checkDeadline;
+            yield* kube.deleteSecret(target(run));
+            yield* checkDeadline;
+            yield* store.transition(run.id, "cancelling", "cancelled", null, {});
+          }).pipe(
+            Effect.withSpan("scheduler.cancel_run", {
+              attributes: { "krun.run_id": run.id, "krun.function": run.function_name },
+            }),
+            Effect.catchTags({
+              KubeApiError: (error) =>
+                error.status === 429 ? Effect.fail(error) : isolatedFailure(run, error),
+              DatabaseError: (error) => isolatedFailure(run, error),
+            }),
+          );
+        const isolatedFailure = (run: CancellationTarget, error: KubeApiError | DatabaseError) =>
+          beginScan.pipe(
+            Effect.andThen(
+              Effect.logWarning("Scheduler cancellation failed; retaining run for retry"),
+            ),
+            Effect.annotateLogs({ "krun.run_id": run.id, errorTag: error._tag }),
+          );
+        while (true) {
+          yield* checkDeadline;
+          const scan = yield* Ref.get(cancellationScan);
+          if (scan === undefined) {
+            const cancelling = yield* store.listByState(["cancelling"], config.KRUN_MAX_RUNNING);
+            if (cancelling.length === 0) break;
+            for (const run of cancelling) {
+              yield* checkDeadline;
+              if (attempted.has(run.id)) yield* beginScan;
+              else yield* cancelOne(run);
+            }
+          } else if (scan.pending.length === 0) {
+            if (scan.done) {
+              yield* Ref.set(cancellationScan, undefined);
+              break;
+            }
+            // Store reads settle on interruption. Publish the returned page
+            // atomically, but never mask the subsequent resource operations.
+            yield* Effect.gen(function* () {
+              const page = yield* store.listRuns(
+                { terms: [{ field: "state", operator: "=", value: "cancelling" }] },
+                scan.cursor,
+                config.KRUN_MAX_RUNNING,
+              );
+              yield* Ref.set(cancellationScan, {
+                pending: page.runs.map((summary) => {
+                  // The Store's canonical BASIC resource name, not API input.
+                  const parts = summary.name.split("/");
+                  return {
+                    id: z.string().parse(parts[3]),
+                    function_name: z.string().parse(parts[1]),
+                    job_name: summary.jobName ?? null,
+                  };
+                }),
+                cursor: page.next,
+                done: page.next === null,
+              });
+            }).pipe(Effect.uninterruptible);
+          } else {
+            for (const run of scan.pending) {
+              yield* checkDeadline;
+              // A failed/interrupted attempt is retried next sweep; retaining
+              // the remaining page avoids losing later rows at the deadline.
+              yield* Ref.update(cancellationScan, (current) =>
+                current === undefined ? current : { ...current, pending: current.pending.slice(1) },
+              );
+              if (!attempted.has(run.id)) yield* cancelOne(run);
+            }
+          }
         }
         return undefined;
       });

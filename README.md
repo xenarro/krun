@@ -20,6 +20,57 @@ Health/telemetry acceptance covers real Prometheus collection through Fastify `i
 
 The `gateway` command now starts a real scoped serving process. `gateway --help` remains finite and configuration-free; the `scheduler` command still prints its name and exits. `validate` is a real offline Function validator and `migrate` is a real database command, as described below. Apply migrations explicitly before starting serving replicas. Gateway process implementation now passes local source, rebuilt-container and current gateway phase/supporting acceptance. Both independent review findings are resolved; the code is pushed and exact-head hosted CI passes. Protected-stack integration remains pending; no merged delivery is claimed. Scheduler wiring and execution remain later work. See [PLAN.md](PLAN.md) for acceptance criteria and progress.
 
+## Scheduler cancellation handling (P4.3c)
+
+Main-loop step 5 reads `cancelling` runs in bounded batches, deletes each Job
+with foreground propagation, deletes its Secret, then performs the real Store
+`cancelling` to `cancelled` compare-and-set. The same terminal transaction records
+its timestamp, event, notification and callback delivery. Already absent Jobs
+and Secrets are successful deletes; a failed/interrupted delete leaves the row
+`cancelling` for an ordered retry. A losing CAS never overwrites a competing
+terminal transition or creates another terminal delivery.
+
+Cancellation does not require a Ready or existing Function. Batches are bounded
+by `KRUN_MAX_RUNNING` but draining continues while the iteration budget permits,
+so queued cancellations are not capped by admission capacity. A resource-specific
+Job/Secret or terminal-write failure is isolated to its run. After such a failure,
+bounded state-filtered keyset pages pass the retained row rather than repeatedly
+reading the same oldest prefix (D85). One pending page and cursor survive iteration
+deadlines within the leader term; failed rows are attempted at most once per
+iteration and remain retryable in a later sweep. Clock checks
+separate reads, runs, both deletes and the transition. Existing non-create 429
+handling pauses without incrementing creation counters. Correlated
+`scheduler.cancel_run` spans parent native delete calls; actual OTLP acceptance
+checks run identity and excludes input, env, token and private Status data.
+
+Local repair acceptance passes 17 cancellation cases, 43 focused main-loop/telemetry
+tests, 118 scheduler tests overall and full `make check` with 1330 TypeScript
+tests plus one Python test. Both reviews' shared starvation finding is reproduced
+and repaired. Eleven compiled native-client/real-Store cancellation
+scenarios pass on both SQLite and PostgreSQL, each on host and in a rebuilt
+nonroot/read-only image with 80 matching runtime module hashes. They verify
+present/absent resources, retry ordering, 429/deadline behavior, preserved reports,
+terminal CAS/delivery atomicity, a backlog larger than the running cap and healthy
+row completion despite persistent Job/Secret denial at batch size one. Separate
+native HTTP503 isolation probes pass on host and image; clock-driven tests also
+cover terminal Store failures, fallback429, repeated cursor-page deadlines and
+late/competing CAS settlement.
+Existing ten-group scheduling and two-group review-regression probes also pass
+on each combination. Image CLI/gateway smoke, fixable-critical scan, Helm,
+workflow syntax, frozen install and stable double generation pass.
+
+Code `0eeaf7d` is pushed in [PR #43](https://github.com/xenarro/krun/pull/43)
+to main after parent PR41 and PR40 merged. Normal ancestry reconciliation
+`98dcc12` preserves the accepted feature tree; its
+[exact-head CI](https://github.com/xenarro/krun/actions/runs/40362250064) passes all nine gates.
+This is pushed/green, not merged; required independent main approval remains.
+Only P4.3c closes in PLAN after code CI; this PLAN/README tracking receives its own
+fresh full check and exact-head hosted verification. No auto-merge or protection
+bypass. Production informer/terminal handler and scheduler process wiring remain
+P4.4/P4.11; the command remains the finite scaffold. `make e2e` still exits 2 at the explicit P4.12 placeholder, with
+whole-phase kind scenarios pending P4.13. Native loopback tests are not Kubernetes
+admission, actual Job execution or whole Phase 4 acceptance.
+
 ## Scheduler main loop (P4.3b)
 
 `makeMainLoop` supplies the leader-local scheduling loop over the real Store,
@@ -54,8 +105,8 @@ A required cache-replay capability is invoked after a successful scheduling CAS,
 not a no-op default or API re-read. Acceptance supplies a cache-backed handler
 that observes `Complete` before scheduling and performs a real Store transition
 to `succeeded`. Informer construction and the production terminal handler remain
-P4.4; cancelling, lost-Job detection, remaining leader metrics and scheduler
-process assembly remain P4.3c/P4.5/P4.6/P4.11. The finite `scheduler` command is
+P4.4. Cancellation is now covered by P4.3c above; lost-Job detection, remaining
+leader metrics and scheduler process assembly remain P4.5/P4.6/P4.11. The finite `scheduler` command is
 unchanged.
 
 Local repair acceptance passes 25 main-loop tests plus an actual OTLP/Prometheus test,
