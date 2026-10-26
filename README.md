@@ -20,7 +20,7 @@ Health/telemetry acceptance covers real Prometheus collection through Fastify `i
 
 The `gateway` command now starts a real scoped serving process. `gateway --help` remains finite and configuration-free; the `scheduler` command still prints its name and exits. `validate` is a real offline Function validator and `migrate` is a real database command, as described below. Apply migrations explicitly before starting serving replicas. Gateway process implementation now passes local source, rebuilt-container and current gateway phase/supporting acceptance. Both independent review findings are resolved; the code is pushed and exact-head hosted CI passes. Protected-stack integration remains pending; no merged delivery is claimed. Scheduler wiring and execution remain later work. See [PLAN.md](PLAN.md) for acceptance criteria and progress.
 
-## Scheduler manifests (P4.1, local implementation)
+## Scheduler manifests (P4.1)
 
 `apps/scheduler/src/k8s/manifests.ts` builds typed Kubernetes Job and immutable
 Secret resources as pure functions. They reproduce SPEC section 7: deterministic
@@ -40,9 +40,12 @@ snapshot isolation; the scheduler suite passes 19 tests. Full `make check` passe
 network-isolated image passes seven compiled-builder/identity groups with 74 emitted
 module hashes, seven CLI groups and the fixable-critical scan.
 
-Both independent reviews found no confirmed material defect. This uncommitted
-implementation awaits delivery;
-P4.1 remains unchecked. The `scheduler` command is still the finite scaffold.
+Both independent reviews found no confirmed material defect. The code is pushed
+and [exact-head hosted CI](https://github.com/xenarro/krun/actions/runs/40295121160)
+passes in [PR #37](https://github.com/xenarro/krun/pull/37), now based on main
+after the prior stack merged and normal ancestry reconciliation preserved the
+reviewed source. P4.1 is checked; PR #37 is not merged and required independent
+review still applies. The `scheduler` command is still the finite scaffold.
 Leader election, API orchestration, actual Job execution and the Phase 4 kind e2e
 gate remain later PLAN tasks; no cluster admission or running-function claim.
 
