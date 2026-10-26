@@ -16,6 +16,7 @@ import { Store } from "../index.js";
 import { StoreLive } from "../live.js";
 import * as initial from "../migrations/postgres/0001_init.js";
 import * as unicode from "../migrations/postgres/0002_opaque_unicode.js";
+import * as opaqueResults from "../migrations/postgres/0003_opaque_results.js";
 import type { NewRun } from "../model.js";
 import { requestHash } from "../request-hash.js";
 import { decodeRun } from "../rows.js";
@@ -94,6 +95,40 @@ for (const dialect of ["sqlite", "postgres"] as const)
         Effect.scoped,
       );
 
+    it.effect("retains opaque Unicode results through both reporting and terminal CAS writes", () =>
+      use(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          yield* store.migrate();
+          const values = [
+            "before\0after",
+            { "\0key": ["\0", { literal: "\\u0000", unicode: "🧪" }] },
+            JSON.parse('{"__proto__":{"nul":"\\u0000"},"nested":[null,false,0]}'),
+          ];
+          for (const [n, value] of values.entries()) {
+            const reported = yield* fresh(20 + n, null);
+            yield* store.createRun(reported);
+            yield* store.setJobToken(reported.id, "krun-test-p36-result", "b".repeat(64));
+            yield* store.markScheduled(reported.id);
+            expect(yield* store.setResult(reported.id, value)).toBe(true);
+            expect((yield* store.getRun(reported.id)).result).toEqual(value);
+            yield* store.transition(reported.id, "scheduled", "succeeded", null, {});
+            expect((yield* store.getRun(reported.id)).result).toEqual(value);
+            const patched = yield* fresh(30 + n, null);
+            yield* store.createRun(patched);
+            yield* store.setJobToken(patched.id, "krun-test-p36-result", "b".repeat(64));
+            yield* store.markScheduled(patched.id);
+            expect(
+              yield* store.transition(patched.id, "scheduled", "succeeded", null, {
+                result: value,
+              }),
+            ).toBe(true);
+            expect((yield* store.getRun(patched.id)).result).toEqual(value);
+          }
+        }),
+      ),
+    );
+
     it.effect(
       "retains literal keys, values and exact opaque IDs across insertion, lookup, BASIC and scope reopen",
       () => {
@@ -104,7 +139,7 @@ for (const dialect of ["sqlite", "postgres"] as const)
           null,
           "\0🧪\0",
           "a\0b\u200b",
-          "a".repeat(127) + "\0",
+          `${"a".repeat(127)}\0`,
         ];
         return Effect.gen(function* () {
           yield* use(
@@ -225,6 +260,86 @@ for (const dialect of ["sqlite", "postgres"] as const)
         if (result.error) throw new Error("Owned initial migration failed");
       });
       it.effect(
+        "upgrades result storage from the shipped two-migration schema atomically without changing data or events",
+        () =>
+          use(
+            Effect.gen(function* () {
+              yield* query(async (db) => {
+                const result = await new Migrator({
+                  db,
+                  provider: {
+                    getMigrations: async () => ({
+                      "0001_init": initial,
+                      "0002_opaque_unicode": unicode,
+                    }),
+                  },
+                }).migrateToLatest();
+                if (result.error) throw new Error("Owned previous-schema setup failed");
+              });
+              const store = yield* Store;
+              const run = yield* fresh(1, null, { legacy: true });
+              yield* store.createRun(run);
+              yield* store.setJobToken(run.id, "krun-test-p36-upgrade", "b".repeat(64));
+              yield* store.markScheduled(run.id);
+              yield* store.setResult(run.id, { legacy: [false, 0, null], literal: "\\u0000" });
+              const before = yield* store.getRun(run.id);
+              const beforeEvents = yield* query(
+                async (db) => (await sql`select * from run_events`.execute(db)).rows,
+              );
+              const failed = yield* query(
+                async (db) =>
+                  await new Migrator({
+                    db,
+                    provider: {
+                      getMigrations: async () => ({
+                        "0001_init": initial,
+                        "0002_opaque_unicode": unicode,
+                        "0003_opaque_results": {
+                          up: async (tx) => {
+                            await opaqueResults.up(tx);
+                            throw new Error("Owned post-DDL failure");
+                          },
+                        },
+                      }),
+                    },
+                  }).migrateToLatest(),
+              );
+              expect(failed.error).toBeDefined();
+              const storage = () =>
+                query(
+                  async (db) =>
+                    (
+                      await sql<{
+                        storage: string;
+                      }>`select pg_typeof(result)::text as storage from runs limit 1`.execute(db)
+                    ).rows[0]?.storage,
+                );
+              expect(yield* storage()).toBe("jsonb");
+              expect(yield* store.getRun(run.id)).toEqual(before);
+              expect(
+                (yield* query(
+                  async (db) =>
+                    (
+                      await sql<{
+                        name: string;
+                      }>`select name from kysely_migration order by name`.execute(db)
+                    ).rows,
+                )).map((r) => r.name),
+              ).toEqual(["0001_init", "0002_opaque_unicode"]);
+              yield* store.migrate();
+              yield* store.migrate();
+              expect(yield* storage()).toBe("json");
+              expect(yield* store.getRun(run.id)).toEqual(before);
+              expect(
+                yield* query(async (db) => (await sql`select * from run_events`.execute(db)).rows),
+              ).toEqual(beforeEvents);
+              expect(yield* store.setResult(run.id, "after\0upgrade")).toBe(true);
+              expect((yield* store.getRun(run.id)).result).toBe("after\0upgrade");
+            }),
+          ),
+      );
+
+      it.effect(
         "upgrades shipped data without rewriting text keys and preserves legacy SQL writers/readers",
         () =>
           use(
@@ -285,7 +400,7 @@ for (const dialect of ["sqlite", "postgres"] as const)
                       }>`select name from kysely_migration order by name`.execute(db)
                     ).rows,
                 )).map((x) => x.name),
-              ).toEqual(["0001_init", "0002_opaque_unicode"]);
+              ).toEqual(["0001_init", "0002_opaque_unicode", "0003_opaque_results"]);
             }),
           ),
       );
