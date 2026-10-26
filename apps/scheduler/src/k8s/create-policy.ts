@@ -78,6 +78,11 @@ const retrySeconds = (header: string | undefined, now: number): number => {
   return parsed === undefined ? 1 : Math.min(60, Math.max(0, Math.ceil((parsed - now) / 1000)));
 };
 
+/** Non-create API calls can rate-limit the loop too, without incrementing
+ * create-error counters or exposing the private header/status view. */
+export const retryAfterSeconds = (error: KubeApiError): Effect.Effect<number> =>
+  Effect.map(Clock.currentTimeMillis, (now) => retrySeconds(kubeApiStatus(error).retryAfter, now));
+
 /** Build inside the leader term. This policy does not retry API calls, mutate the
  * Store or hold permits while waiting; the later loop owns release-before-pause.
  * A permanent decision contains persistence-only Status data: never log it.
