@@ -20,7 +20,7 @@ Health/telemetry acceptance covers real Prometheus collection through Fastify `i
 
 The `gateway` command now starts a real scoped serving process. `gateway --help` remains finite and configuration-free; the `scheduler` command still prints its name and exits. `validate` is a real offline Function validator and `migrate` is a real database command, as described below. Apply migrations explicitly before starting serving replicas. Gateway process implementation now passes local source, rebuilt-container and current gateway phase/supporting acceptance. Both independent review findings are resolved; the code is pushed and exact-head hosted CI passes. Protected-stack integration remains pending; no merged delivery is claimed. Scheduler wiring and execution remain later work. See [PLAN.md](PLAN.md) for acceptance criteria and progress.
 
-## Internal API (P3.8, local implementation)
+## Internal API (P3.8)
 
 The internal listener now serves `GetInput`, `ReportStatus`, `SetResult` and
 `SetError` under `/internal/v1`, using the actual shared Store. Authentication
@@ -71,10 +71,15 @@ fixable-critical scan. Helm, workflow syntax and production dependency audit pas
 
 All four independent P3.8 findings have been reproduced and repaired locally,
 including mixed-writer heartbeat freshness, nested JSON validation, zero result
-caps and unfinished-body shutdown. P3.8 remains uncommitted awaiting repair review
-and delivery;
-its PLAN checkbox remains open. Scheduler execution, full platform e2e and
-concrete object storage remain later work. No new PR, hosted CI or merge is claimed.
+caps and unfinished-body shutdown. Source commit `d4d759df93dafba34717610b37dbc76b328e7e0f` is
+pushed and code-head green in [PR #35](https://github.com/xenarro/krun/pull/35), stacked against
+`feat/gateway-process-wiring` (PR #34). [Exact code CI](https://github.com/xenarro/krun/actions/runs/40285156613)
+passes all nine gates with 1209 TypeScript tests and one Python test, including
+current-source image build/lifecycle checks. Only P3.8 is marked complete after
+that acceptance; the documentation tracking commit has its own full-check and
+exact-head CI requirement. The Phase 3 gateway gate passes. This stack is not
+merged or auto-merged; protected-main independent review is not bypassed.
+Scheduler execution, full platform e2e and concrete object storage remain later work.
 
 ## Gateway process (P3.7)
 
