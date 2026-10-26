@@ -44,8 +44,9 @@ Both independent reviews found no confirmed material defect. The code is pushed
 and [exact-head hosted CI](https://github.com/xenarro/krun/actions/runs/40295121160)
 passes in [PR #37](https://github.com/xenarro/krun/pull/37), now based on main
 after the prior stack merged and normal ancestry reconciliation preserved the
-reviewed source. P4.1 is checked; PR #37 is not merged and required independent
-review still applies. The `scheduler` command is still the finite scaffold.
+reviewed source. P4.1 code is approved and merged via PR #37; its PLAN/README
+tracking updates require their own exact-head hosted verification. The
+`scheduler` command is still the finite scaffold.
 Leader election, API orchestration, actual Job execution and the Phase 4 kind e2e
 gate remain later PLAN tasks; no cluster admission or running-function claim.
 
