@@ -18,7 +18,7 @@ Readiness's HTTP deadline does not wait for database cancellation cleanup. Overl
 
 Health/telemetry acceptance covers real Prometheus collection through Fastify `inject`, stalled-database timing through `TestClock` (including slow finalizers and uninterruptible work), real socket disconnects, handler/dependency teardown ordering, reader/provider cleanup, and actual OTLP JSON sent to a disposable local collector. Run `pnpm exec vitest run packages/shared/src/health packages/shared/src/runtime` for this slice. P0.7 module acceptance and hosted CI passed for [PR #3](https://github.com/xenarro/krun/pull/3), including the reviewed lifecycle repairs, container rebuild, smoke, audit and fixable-critical scan. [Code CI](https://github.com/xenarro/krun/actions/runs/40019565091) verified reconciled head `9f870d4`, containing implementation commit `afc0375`. The PR remains unmerged pending required independent approval. PLAN records this bounded task; Phase 0 and the application are not complete.
 
-The `gateway` command now starts a real scoped serving process. `gateway --help` remains finite and configuration-free; the `scheduler` command still prints its name and exits. `validate` is a real offline Function validator and `migrate` is a real database command, as described below. Apply migrations explicitly before starting serving replicas. Gateway process implementation now passes local source, rebuilt-container and current gateway phase/supporting acceptance. Independent review and delivery remain pending; no hosted P3.7 CI or merged delivery is claimed. Scheduler wiring and execution remain later work. See [PLAN.md](PLAN.md) for acceptance criteria and progress.
+The `gateway` command now starts a real scoped serving process. `gateway --help` remains finite and configuration-free; the `scheduler` command still prints its name and exits. `validate` is a real offline Function validator and `migrate` is a real database command, as described below. Apply migrations explicitly before starting serving replicas. Gateway process implementation now passes local source, rebuilt-container and current gateway phase/supporting acceptance. Both independent review findings are resolved; the code is pushed and exact-head hosted CI passes. Protected-stack integration remains pending; no merged delivery is claimed. Scheduler wiring and execution remain later work. See [PLAN.md](PLAN.md) for acceptance criteria and progress.
 
 ## Gateway process (P3.7)
 
@@ -73,11 +73,17 @@ cover both cases. D73 records these ownership and transport-boundary repairs.
 Original review findings and failed receipts remain immutable; repair-owner
 verification is not an independent approval or hosted delivery claim.
 
-The source is intentionally uncommitted for delivery;
-PLAN P3.7 remains unchecked. No new hosted CI, PR, merge or completion of the
-remaining gateway/internal/scheduler phases is claimed. Tests use explicitly
-owned loopback fake Kubernetes and disposable databases, never a production
-cluster or ambient user context.
+Source commit `e0dd5713dc14aaa49ba810de658ad0e985af6dce` is pushed in
+[PR #34](https://github.com/xenarro/krun/pull/34) against the immediate still-unmerged
+`feat/gateway-run-results` / PR33 parent. [Exact code-head CI](https://github.com/xenarro/krun/actions/runs/40270654763)
+passes all nine gates on attempt 1, including 1158 TypeScript tests and
+one Python test. PLAN records only P3.7 after that code acceptance; its tracking
+update receives a separate full precommit check and exact-head hosted CI.
+The PR remains open, not merged; required protected-main review is not bypassed
+and an empty review decision is not approval. P3.8 internal methods and the
+remaining gateway/scheduler/object-store/application gates remain future work.
+Tests use explicitly owned loopback fake Kubernetes and disposable databases,
+never a production cluster or ambient user context.
 
 ## Run admission (P3.3)
 
