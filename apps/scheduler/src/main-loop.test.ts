@@ -54,6 +54,7 @@ const fixture = (
     stallJob?: boolean;
     beforeCount?: () => Effect.Effect<void>;
     beforeReplay?: () => Effect.Effect<void>;
+    beforeLost?: (log: readonly string[]) => Effect.Effect<void>;
   } = {},
 ) =>
   Effect.gen(function* () {
@@ -135,6 +136,16 @@ const fixture = (
     const kube = yield* makeKube().pipe(Effect.provideService(KubeConnection, connection));
     const controlled = {
       ...store,
+      transition: (...args: Parameters<typeof store.transition>) =>
+        store
+          .transition(...args)
+          .pipe(
+            Effect.tap((changed) =>
+              options.beforeLost === undefined
+                ? Effect.void
+                : Effect.sync(() => log.push(`transition:${args[1]}->${args[2]}:${changed}`)),
+            ),
+          ),
       countByState: () =>
         Effect.gen(function* () {
           log.push("count");
@@ -166,6 +177,7 @@ const fixture = (
     const loop = yield* makeMainLoop({
       owner: "krun-test-scheduler",
       config,
+      checkLost: Effect.suspend(() => options.beforeLost?.(log) ?? Effect.void),
       replayCached: (run) =>
         Effect.gen(function* () {
           log.push("replay:" + run.id);
@@ -1216,4 +1228,48 @@ it.effect("cancelling repair: fallback429 stops traversal for the global pause",
       expect((yield* f.store.getRun(id(341))).state).toBe("cancelling");
     }),
   ),
+);
+
+it.effect("P45: main-loop step6 follows cancelling resource deletion and settled CAS", () =>
+  Effect.gen(function* () {
+    let snapshot: readonly string[] = [];
+    const f = yield* fixture({
+      entries: [],
+      beforeLost: (log) =>
+        Effect.sync(() => {
+          snapshot = [...log];
+        }),
+    });
+    yield* f.seed(1);
+    yield* f.store.transition(id(1), "queued", "cancelling", null, {});
+    yield* f.loop.iterate;
+    expect(snapshot.at(-1)).toBe("transition:cancelling->cancelled:true");
+    expect(snapshot).toContain(`deleteJob:krun-${id(1)}:Foreground`);
+    expect(snapshot).toContain(`deleteSecret:krun-${id(1)}`);
+    expect((yield* f.store.getRun(id(1))).state).toBe("cancelled");
+  }).pipe(Effect.provide(StoreSqlite(":memory:"))),
+);
+
+it.effect("P45: a stalled step6 remains inside the iteration deadline and interruption scope", () =>
+  Effect.gen(function* () {
+    const entered = yield* Deferred.make<void>();
+    let interrupted = false;
+    const f = yield* fixture({
+      entries: [],
+      beforeLost: () =>
+        Deferred.succeed(entered, undefined).pipe(
+          Effect.andThen(Effect.never),
+          Effect.onInterrupt(() =>
+            Effect.sync(() => {
+              interrupted = true;
+            }),
+          ),
+        ),
+    });
+    const iteration = yield* Effect.forkScoped(f.loop.iterate);
+    yield* Deferred.await(entered);
+    yield* TestClock.adjust("10 seconds");
+    yield* Fiber.join(iteration);
+    expect(interrupted).toBe(true);
+  }).pipe(Effect.provide(StoreSqlite(":memory:"))),
 );

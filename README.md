@@ -20,6 +20,70 @@ Health/telemetry acceptance covers real Prometheus collection through Fastify `i
 
 The `gateway` command now starts a real scoped serving process. `gateway --help` remains finite and configuration-free; the `scheduler` command still prints its name and exits. `validate` is a real offline Function validator and `migrate` is a real database command, as described below. Apply migrations explicitly before starting serving replicas. Gateway process implementation now passes local source, rebuilt-container and current gateway phase/supporting acceptance. Both independent review findings are resolved; the code is pushed and exact-head hosted CI passes. Protected-stack integration remains pending; no merged delivery is claimed. Scheduler wiring and execution remain later work. See [PLAN.md](PLAN.md) for acceptance criteria and progress.
 
+## Scheduler lost-Job detection (P4.5)
+
+`makeMainLoop` now requires the controller's real `checkLost` capability as step
+6, after cancellation work and inside the existing iteration deadline. The same
+check runs during the controller's initial and five-minute reconciliation. Both
+processed Job/Pod LISTs gate it. It reads only the bounded
+`listByState(["scheduled", "running"], KRUN_MAX_RUNNING)` selection and native
+canonical-name cache lookups, never one-off Job API reads.
+
+Each leader owns its first-absent Clock timestamps. A Job reappearing clears its
+entry; a missing Job receives a full two-minute grace, including after initial
+sync or a leader change. A fresh active-state read and the shared per-run handler
+gate protect the terminal CAS. Cached Jobs and retained D88 terminal deletion
+work stay on the normal informer path, not `job_lost`. Startup logs the initial
+missing-Job count once without run input or private API data.
+
+D90 publishes a per-run pending generation synchronously at native Job-event
+ingress, before enqueueing. An unrelated slow consumer therefore cannot hide an
+already received reappearance or terminal deletion from the loss check. Pending
+work fences only its own run, even beyond the grace. The controller acknowledges
+the exact generation only after resetting presence and retaining terminal work;
+an older acknowledgement cannot clear a newer event. This handoff precedes
+fallible Store/object work, so retries retain terminal ownership. The loss path
+rechecks after its fresh Store read and immediately before CAS dispatch. Latest
+safe acknowledgement prunes the compact entry; scope close clears it without
+replay, an API reread, polling or a historical object cache.
+
+The winning CAS records `failed` / `job_lost`, a krun fallback error and the
+terminal callback while preserving accepted result and function-reported error.
+Only then does loss handling delete the per-run Secret; it does not delete a Job
+or request object results or logs. D89 retains a compact known cleanup target
+atomically with settled CAS ownership, so interruption or a transient delete
+failure retries cleanup without another terminal write or callback. Active checks
+precede retry-only cleanup debt; a bounded-selection cursor and rotated debt
+advance before interruptible work, preventing poisoned deletes from starving later
+runs across iteration deadlines. Closing the leader scope clears its maps without
+teardown work, not a historical cache or terminal-row scanner.
+
+Local repair acceptance passes 108 focused tests, 183 scheduler tests and
+`make check` with 1397 TypeScript tests plus one Python test. Twenty-eight compiled
+native-client/informer and real-Store groups pass on SQLite and PostgreSQL, each
+on host and in a rebuilt nonroot/read-only image with 82 matching runtime module
+hashes. Ten new native groups cover both active states, preserved result/error,
+reappearance (including a presence event consumed after cache eviction), actual
+main-loop step 6, five-minute reconciliation, Secret retry,
+known evicted terminal work and pre-sync gating. Two added native groups verify
+received presence/Complete behind another run's blocked handler on both databases,
+including multi-minute backlogs, safe acknowledgement and fresh grace after drain.
+Both independent reviews' shared P45-C1 finding is reproduced and repaired; the
+independent four-case native/SQLite race probe also passes on host and image.
+Clock-driven tests also cover
+startup logging, competing/late CAS settlement, fresh leader grace and the
+reproduced cleanup-starvation regression, newer-generation protection, unrelated
+pending-run isolation, ingress during a Store read, retained terminal work after
+an acknowledged failed read, and leader-scope pending cleanup. Container CLI/gateway smoke, Helm,
+workflow syntax, production audit, frozen offline install, fixable-critical scan
+and stable double generation pass.
+
+This is uncommitted reviewed-and-repaired component work awaiting delivery; this
+job does not close PLAN or claim hosted CI. Production scheduler composition
+remains P4.11. `make e2e` still exits 2 at the explicit P4.12 placeholder, and kind
+scenarios remain P4.13. Native loopback acceptance is not Kubernetes admission,
+Job execution or whole-phase acceptance; the object-store service remains P6.2.
+
 ## Scheduler Job/Pod informers and terminal handling (P4.4)
 
 `makeJobPodSource` supplies leader-scoped Job and Pod informer caches and Effect

@@ -21,6 +21,9 @@ import { nativeRequest } from "./request.js";
 
 export interface InformerEvent {
   readonly id: string;
+  // Preserve presence if a later DELETE evicts the cache before consumption.
+  readonly jobSeen?: true;
+  readonly jobObservation?: number;
   // Preserve deletion observations after native cache eviction, without spec/env.
   readonly deletedJob?: Pick<V1Job, "metadata" | "status">;
   readonly deletedPod?: Pick<V1Pod, "metadata" | "status">;
@@ -32,6 +35,8 @@ interface Source {
   readonly podEvents: Stream.Stream<InformerEvent>;
   /** Both LISTs have been applied to the native caches, including empty lists. */
   readonly ready: Effect.Effect<void>;
+  readonly hasPendingJob: (id: string) => boolean;
+  readonly acknowledgeJob: (event: InformerEvent) => void;
 }
 export class JobPodSource extends Context.Service<JobPodSource, Source>()(
   "krun/scheduler/JobPodSource",
@@ -70,6 +75,9 @@ export const makeJobPodSource = (namespace: string) =>
       );
       return promise;
     };
+    // D90: one latest unacknowledged ingress generation per run, not per event.
+    const pendingJobs = new Map<string, number>();
+    let jobObservation = 0;
     const jobEvents = yield* Queue.unbounded<InformerEvent>();
     const podEvents = yield* Queue.unbounded<InformerEvent>();
     const jobSync = yield* Deferred.make<void>();
@@ -81,6 +89,7 @@ export const makeJobPodSource = (namespace: string) =>
     yield* Effect.addFinalizer(() =>
       Effect.promise(async () => {
         root.abort();
+        pendingJobs.clear();
         for (const off of detach) off();
         await Promise.all(informers.map((informer) => informer.stop()));
         await Promise.allSettled([...pending]);
@@ -98,14 +107,21 @@ export const makeJobPodSource = (namespace: string) =>
       Effect.gen(function* () {
         const errors = yield* Queue.sliding<void>(1);
         let healthy = false;
+        const emit = (event: InformerEvent) => {
+          if (resource === "jobs") {
+            const generation = ++jobObservation;
+            pendingJobs.set(event.id, generation);
+            Queue.offerUnsafe(events, { ...event, jobObservation: generation });
+          } else Queue.offerUnsafe(events, event);
+        };
         const onChange = (object: T) => {
           const id = runIdOf(object);
-          if (!root.signal.aborted && id !== undefined) Queue.offerUnsafe(events, { id });
+          if (!root.signal.aborted && id !== undefined)
+            emit(resource === "jobs" ? { id, jobSeen: true } : { id });
         };
         const onDelete = (object: T) => {
           const id = runIdOf(object);
-          if (!root.signal.aborted && id !== undefined)
-            Queue.offerUnsafe(events, deleted(id, object));
+          if (!root.signal.aborted && id !== undefined) emit(deleted(id, object));
         };
         class ScopedWatch extends Watch {
           override async watch(
@@ -329,6 +345,14 @@ export const makeJobPodSource = (namespace: string) =>
     return {
       jobs,
       pods,
+      hasPendingJob: (id) => pendingJobs.has(id),
+      acknowledgeJob: (event) => {
+        if (
+          event.jobObservation !== undefined &&
+          pendingJobs.get(event.id) === event.jobObservation
+        )
+          pendingJobs.delete(event.id);
+      },
       jobEvents: Stream.fromQueue(jobEvents),
       podEvents: Stream.fromQueue(podEvents),
       ready: Effect.all([Deferred.await(jobSync), Deferred.await(podSync)], {

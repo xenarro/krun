@@ -2,7 +2,7 @@ import type { KubeApiError } from "@krun/shared/dist/k8s/errors.js";
 import type { DatabaseError, JobStatus, Run } from "@krun/shared/dist/store/index.js";
 import { Store } from "@krun/shared/dist/store/index.js";
 import type { V1Job, V1Pod } from "@kubernetes/client-node";
-import { Data, DateTime, Effect, Option, Schedule, Semaphore, Stream } from "effect";
+import { Clock, Data, DateTime, Effect, Option, Schedule, Semaphore, Stream } from "effect";
 import { type InformerEvent, JobPodSource, runIdOf } from "./k8s/informers.js";
 import { Kube } from "./k8s/kube.js";
 
@@ -119,6 +119,7 @@ const compactPod = (pod: V1Pod | undefined): V1Pod | undefined => {
 
 export const makeJobController = (options: {
   readonly namespace: string;
+  readonly maxRunning: number;
   readonly checkResult: (run: Run) => Effect.Effect<string | null, ResultCheckError>;
 }) =>
   Effect.gen(function* () {
@@ -131,19 +132,30 @@ export const makeJobController = (options: {
     // D88: one entry per unresolved terminal deletion. No timer/cap may silently
     // discard a completion; cleanup/disposition prunes it, scope close forgets it.
     const knownDeleted = new Map<string, { job: V1Job; pod: V1Pod | undefined }>();
+    const firstAbsent = new Map<string, number>();
+    const lostCleanup = new Map<string, Pick<Run, "id" | "job_name" | "function_name">>();
+    const lostGate = yield* Semaphore.make(1);
+    let lastLostId: string | undefined;
+    let startupReported = false;
     let closed = false;
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
         closed = true;
         knownDeleted.clear();
         tails.clear();
+        firstAbsent.clear();
+        lostCleanup.clear();
+        lastLostId = undefined;
       }),
     );
     const jobFor = (id: string) =>
       source.jobs.list(options.namespace).find((job) => runIdOf(job) === id);
+    const hasJob = (id: string) => source.jobs.get(`krun-${id}`, options.namespace) !== undefined;
+    const hasObservation = (id: string) =>
+      hasJob(id) || source.hasPendingJob(id) || knownDeleted.has(id);
     const podFor = (id: string) =>
       source.pods.list(options.namespace).find((pod) => runIdOf(pod) === id);
-    const target = (id: string, name: string, run?: Run) => ({
+    const target = (id: string, name: string, run?: Pick<Run, "function_name">) => ({
       namespace: options.namespace,
       name,
       runId: id,
@@ -155,6 +167,7 @@ export const makeJobController = (options: {
         yield* kube.deleteJob(target(id, name, run), "Background");
         tails.delete(id);
         knownDeleted.delete(id);
+        lostCleanup.delete(id);
       });
     const captureTail = (id: string, pod: V1Pod | undefined, finalFailure: boolean) =>
       Effect.gen(function* () {
@@ -176,6 +189,7 @@ export const makeJobController = (options: {
     const process = (id: string, event?: InformerEvent) =>
       Effect.gen(function* () {
         if (closed) return;
+        if (event?.jobSeen || hasJob(id)) firstAbsent.delete(id);
         const previous = knownDeleted.get(id);
         if (
           event?.deletedJob &&
@@ -188,6 +202,9 @@ export const makeJobController = (options: {
         } else if (previous !== undefined && event?.deletedPod !== undefined) {
           knownDeleted.set(id, { job: previous.job, pod: compactPod(event.deletedPod) });
         }
+        // Transfer ingress ownership only after presence/terminal knowledge is
+        // incorporated. No yield or fallible operation may precede this handoff.
+        if (event !== undefined) source.acknowledgeJob(event);
         const retained = knownDeleted.get(id);
         const job = retained?.job ?? jobFor(id) ?? event?.deletedJob;
         const run = yield* store
@@ -200,6 +217,7 @@ export const makeJobController = (options: {
         }
         yield* Effect.annotateCurrentSpan("function", run.function_name);
         if (terminal(run)) {
+          firstAbsent.delete(id);
           yield* cleanup(id, run.job_name ?? job?.metadata?.name ?? `krun-${id}`, run);
           return;
         }
@@ -210,6 +228,7 @@ export const makeJobController = (options: {
         const status = statusOf(job, pod, yield* DateTime.now);
         if (!sameStatus(run.job_status, status)) yield* store.setJobStatus(id, status);
         if (run.state === "cancelling") {
+          firstAbsent.delete(id);
           knownDeleted.delete(id);
           tails.delete(id);
           return;
@@ -265,26 +284,26 @@ export const makeJobController = (options: {
           tails.delete(id);
         }
       });
+    const serialized = <E>(id: string, work: Effect.Effect<void, E>) =>
+      Effect.acquireUseRelease(
+        Effect.sync(() => {
+          let gate = gates.get(id);
+          if (gate === undefined) {
+            gate = { semaphore: Semaphore.makeUnsafe(1), users: 0 };
+            gates.set(id, gate);
+          }
+          gate.users++;
+          return gate;
+        }),
+        (gate) => work.pipe(Semaphore.withPermit(gate.semaphore)),
+        (gate) =>
+          Effect.sync(() => {
+            if (--gate.users === 0) gates.delete(id);
+          }),
+      );
     const handle = (id: string, event?: InformerEvent): Effect.Effect<void, HandlerError> =>
       source.ready.pipe(
-        Effect.andThen(
-          Effect.acquireUseRelease(
-            Effect.sync(() => {
-              let gate = gates.get(id);
-              if (gate === undefined) {
-                gate = { semaphore: Semaphore.makeUnsafe(1), users: 0 };
-                gates.set(id, gate);
-              }
-              gate.users++;
-              return gate;
-            }),
-            (gate) => process(id, event).pipe(Semaphore.withPermit(gate.semaphore)),
-            (gate) =>
-              Effect.sync(() => {
-                if (--gate.users === 0) gates.delete(id);
-              }),
-          ),
-        ),
+        Effect.andThen(serialized(id, process(id, event))),
         Effect.withSpan("scheduler.observe_run", { attributes: { "krun.run_id": id } }),
       );
     const guarded = (id: string, event?: InformerEvent) =>
@@ -295,6 +314,125 @@ export const makeJobController = (options: {
           ),
         ),
       );
+    const deleteLostSecret = (
+      run: Pick<Run, "id" | "job_name" | "function_name">,
+      attempted: Set<string>,
+    ) =>
+      Effect.gen(function* () {
+        if (closed) return;
+        attempted.add(run.id);
+        // Advance before interruptible I/O, so a poisoned deletion cannot pin
+        // the front of known cleanup debt across iteration deadlines.
+        lostCleanup.delete(run.id);
+        lostCleanup.set(run.id, run);
+        yield* kube.deleteSecret(target(run.id, run.job_name ?? `krun-${run.id}`, run));
+        lostCleanup.delete(run.id);
+        firstAbsent.delete(run.id);
+      });
+    const lostOne = (id: string, attempted: Set<string>) =>
+      Effect.gen(function* () {
+        if (closed) return;
+        if (hasObservation(id)) {
+          firstAbsent.delete(id);
+          return;
+        }
+        const row = yield* store
+          .getRun(id)
+          .pipe(Effect.catchTag("NotFoundError", () => Effect.succeed(undefined)));
+        if (closed) return;
+        if (row === undefined || (row.state !== "scheduled" && row.state !== "running")) {
+          firstAbsent.delete(id);
+          return;
+        }
+        // Cache/event work may have progressed during the Store read.
+        if (hasObservation(id)) {
+          firstAbsent.delete(id);
+          return;
+        }
+        const now = yield* Clock.currentTimeMillis;
+        const since = firstAbsent.get(id);
+        if (since === undefined) {
+          firstAbsent.set(id, now);
+          return;
+        }
+        if (now - since < 120_000) return;
+        const debt = { id, job_name: row.job_name, function_name: row.function_name };
+        const changed = yield* Effect.gen(function* () {
+          if (closed || hasObservation(id)) {
+            firstAbsent.delete(id);
+            return false;
+          }
+          const changed = yield* store.transition(id, row.state, "failed", "job_lost", {
+            failure_reason: "job_lost",
+            error: {
+              source: "krun",
+              message: "Kubernetes Job absent from informer cache for 2 minutes",
+            },
+          });
+          // The Store write settles before cancellation. Publish only known cleanup
+          // ownership in the same mask, never perform Kubernetes I/O in it.
+          if (changed) {
+            lostCleanup.set(id, debt);
+            firstAbsent.delete(id);
+          }
+          return changed;
+        }).pipe(Effect.uninterruptible);
+        if (changed) return yield* deleteLostSecret(debt, attempted);
+        const winner = yield* store
+          .getRun(id)
+          .pipe(Effect.catchTag("NotFoundError", () => Effect.succeed(undefined)));
+        if (winner === undefined || (winner.state !== "scheduled" && winner.state !== "running"))
+          firstAbsent.delete(id);
+        if (winner?.state === "failed" && winner.failure_reason === "job_lost") {
+          lostCleanup.set(id, debt);
+          yield* deleteLostSecret(debt, attempted);
+        }
+      }).pipe(Effect.withSpan("scheduler.job_lost", { attributes: { "krun.run_id": id } }));
+    const isolatedLost = (id: string, work: Effect.Effect<void, DatabaseError | KubeApiError>) =>
+      work.pipe(
+        Effect.catch((error) =>
+          error._tag === "KubeApiError" && error.status === 429
+            ? Effect.fail(error)
+            : Effect.logWarning("Scheduler lost-Job check failed; retaining work for retry").pipe(
+                Effect.annotateLogs({ "krun.run_id": id, errorTag: error._tag }),
+              ),
+        ),
+      );
+    const lostPass = Effect.gen(function* () {
+      if (closed) return;
+      const attempted = new Set<string>();
+      const rows = yield* store.listByState(["scheduled", "running"], options.maxRunning);
+      if (closed) return;
+      const active = new Set(rows.map((row) => row.id));
+      for (const id of firstAbsent.keys()) if (!active.has(id)) firstAbsent.delete(id);
+      if (!startupReported) {
+        const missingJobs = rows.filter((row) => !hasJob(row.id)).length;
+        yield* Effect.logInfo("Scheduler initial active runs without cached Jobs").pipe(
+          Effect.annotateLogs({ missingJobs }),
+        );
+        startupReported = true;
+      }
+      const pivot = rows.findIndex((row) => row.id === lastLostId);
+      const ordered = [...rows.slice(pivot + 1), ...rows.slice(0, pivot + 1)];
+      for (const row of ordered) {
+        if (closed) return;
+        if (!gates.has(row.id)) {
+          lastLostId = row.id;
+          yield* isolatedLost(row.id, serialized(row.id, lostOne(row.id, attempted)));
+        }
+      }
+      // Fresh active work precedes terminal cleanup debt. A Secret delete that
+      // consumes the caller's deadline cannot prevent later runs being examined.
+      for (const [id, debt] of [...lostCleanup]) {
+        if (!attempted.has(id) && !gates.has(id))
+          yield* isolatedLost(id, serialized(id, deleteLostSecret(debt, attempted)));
+      }
+    }).pipe(Effect.withSpan("scheduler.check_lost_jobs"));
+    const checkLost: Effect.Effect<void, DatabaseError | KubeApiError> = Effect.suspend(() =>
+      closed
+        ? Effect.void
+        : source.ready.pipe(Effect.andThen(lostPass), Semaphore.withPermit(lostGate)),
+    );
     const reconcile = source.ready.pipe(
       Effect.andThen(
         Effect.suspend(() => {
@@ -311,6 +449,14 @@ export const makeJobController = (options: {
         }),
       ),
     );
+    const reconcileLost = reconcile.pipe(
+      Effect.andThen(checkLost),
+      Effect.catch((error) =>
+        Effect.logWarning("Scheduler lost-Job reconciliation failed; will retry").pipe(
+          Effect.annotateLogs({ errorTag: error._tag }),
+        ),
+      ),
+    );
     const replayCached = (run: Run): Effect.Effect<void, DatabaseError | KubeApiError> =>
       handle(run.id).pipe(
         // A result HEAD failure leaves cached/retained terminal work for retry, not
@@ -325,9 +471,9 @@ export const makeJobController = (options: {
       [
         Stream.runForEach(source.jobEvents, (event) => guarded(event.id, event)),
         Stream.runForEach(source.podEvents, (event) => guarded(event.id, event)),
-        reconcile.pipe(Effect.repeat(Schedule.spaced("5 minutes"))),
+        reconcileLost.pipe(Effect.repeat(Schedule.spaced("5 minutes"))),
       ],
       { concurrency: "unbounded", discard: true },
     );
-    return { handle, replayCached, reconcile, run };
+    return { handle, replayCached, checkLost, reconcile: reconcileLost, run };
   });
