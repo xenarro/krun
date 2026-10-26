@@ -125,9 +125,9 @@ it("defines plain Kysely tables for both driver representations with application
 
 it("keeps the complete SQL column set and BASIC projection types explicit", () => {
   expectTypeOf<keyof SqliteTables["runs"]>().toEqualTypeOf<keyof Run>();
-  expectTypeOf<keyof Omit<PostgresTables["runs"], "idempotency_key_nul">>().toEqualTypeOf<
-    keyof Run
-  >();
+  expectTypeOf<
+    keyof Omit<PostgresTables["runs"], "idempotency_key_nul" | "runtime_status_at">
+  >().toEqualTypeOf<keyof Run>();
   expectTypeOf<
     PostgresTables["runs"]["idempotency_key_nul"]["__select__"]
   >().toEqualTypeOf<Buffer | null>();

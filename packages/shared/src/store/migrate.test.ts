@@ -107,7 +107,7 @@ for (const dialect of ["sqlite", "postgres"] as const) {
           expect(before.map((row) => row.name)).toEqual(
             dialect === "sqlite"
               ? ["0001_init", "0002_event_rowid"]
-              : ["0001_init", "0002_opaque_unicode", "0003_opaque_results"],
+              : ["0001_init", "0002_opaque_unicode", "0003_opaque_results", "0004_opaque_reports"],
           );
           expect(cli().status).toBe(0);
           expect(yield* history).toEqual(before);
@@ -115,7 +115,7 @@ for (const dialect of ["sqlite", "postgres"] as const) {
           expect(
             Object.fromEntries(tables.map((table) => [table.name, table.columns.length])),
           ).toEqual({
-            runs: dialect === "sqlite" ? 25 : 26,
+            runs: dialect === "sqlite" ? 25 : 27,
             run_events: dialect === "sqlite" ? 7 : 6,
             deliveries: 9,
           });
@@ -214,6 +214,7 @@ for (const dialect of ["sqlite", "postgres"] as const) {
               "0001_init",
               "0002_opaque_unicode",
               "0003_opaque_results",
+              "0004_opaque_reports",
             ]);
           }),
         ),

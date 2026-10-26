@@ -6,7 +6,6 @@ import { Readiness, ReadinessLive } from "@krun/shared/dist/health/readiness.js"
 import { KubeConnectionLive } from "@krun/shared/dist/k8s/config.js";
 import { FunctionSourceLive } from "@krun/shared/dist/k8s/functions.js";
 import { DatabasePostgres, DatabaseSqlite } from "@krun/shared/dist/runtime/database.js";
-import { httpOptions } from "@krun/shared/dist/runtime/http.js";
 import {
   LogDestination,
   loggingOptions,
@@ -21,8 +20,8 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { makePublicApp } from "./app.js";
 import { cancelRunRoutes } from "./cancel-run-routes.js";
 import { createRunRoutes } from "./create-run-routes.js";
-import { ApiError, sendError } from "./errors.js";
 import { functionReadRoutes } from "./function-routes.js";
+import { makeInternalApp } from "./internal-app.js";
 import { runReadRoutes } from "./run-read-routes.js";
 import { runResultRoutes } from "./run-result-routes.js";
 import { GatewayShutdown, GatewayShutdownLive } from "./shutdown.js";
@@ -86,22 +85,7 @@ const gateway = Layer.unwrap(
     );
     const internalServer = Layer.effectDiscard(
       Effect.gen(function* () {
-        // P3.8 adds real internal methods; this transport is already isolated and
-        // never accidentally mounts the public or admin route plugins.
-        const options = yield* httpOptions(false);
-        const app = yield* Effect.acquireRelease(
-          Effect.sync(() =>
-            Fastify({
-              ...options,
-              frameworkErrors: (error, _request, reply) => sendError(reply, error),
-            }),
-          ),
-          (server) => Effect.promise(() => server.close()).pipe(Effect.orDie),
-        );
-        app.setNotFoundHandler((_request, reply) =>
-          sendError(reply, new ApiError({ reason: "ROUTE_NOT_FOUND" })),
-        );
-        app.setErrorHandler((error, _request, reply) => sendError(reply, error));
+        const app = yield* makeInternalApp({ maxResultBytes: config.KRUN_MAX_RESULT_BYTES });
         yield* listen(app, config.KRUN_INTERNAL_LISTEN_ADDR, "internal_listen");
       }),
     );

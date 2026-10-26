@@ -1,8 +1,13 @@
 import { Context, Effect, Layer, type Stream } from "effect";
-import { Kysely, PostgresDialect, sql } from "kysely";
+import { CompiledQuery, Kysely, sql } from "kysely";
 import { Pool } from "pg";
 import { DatabaseError } from "../store/errors.js";
 import { KrunSqliteDialect } from "../store/sqlite/dialect.js";
+import {
+  InternalDeadlinePostgresDialect,
+  internalStoreTimeout,
+  internalTimeoutPool,
+} from "./internal-store-call.js";
 import { makePostgresNotifications } from "./postgres-notifications.js";
 
 // Migration SQL is schema-independent. Typed Store implementations can narrow
@@ -53,7 +58,16 @@ export const DatabasePostgres = (dsn: string) =>
         "postgres",
         () =>
           new Kysely<unknown>({
-            dialect: new PostgresDialect({
+            dialect: new InternalDeadlinePostgresDialect({
+              onReserveConnection: async (connection) => {
+                await connection.executeQuery(
+                  CompiledQuery.raw(
+                    internalStoreTimeout()
+                      ? "set statement_timeout = 5000"
+                      : "reset statement_timeout",
+                  ),
+                );
+              },
               pool: async () => {
                 const pool = new Pool({
                   connectionString: dsn,
@@ -66,7 +80,7 @@ export const DatabasePostgres = (dsn: string) =>
                 pool.on("error", () =>
                   Effect.runSyncWith(context)(Effect.logWarning("Database idle connection failed")),
                 );
-                return pool;
+                return internalTimeoutPool(pool);
               },
             }),
           }),
