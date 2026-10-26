@@ -20,7 +20,7 @@ Health/telemetry acceptance covers real Prometheus collection through Fastify `i
 
 The `gateway` command now starts a real scoped serving process. `gateway --help` remains finite and configuration-free; the `scheduler` command still prints its name and exits. `validate` is a real offline Function validator and `migrate` is a real database command, as described below. Apply migrations explicitly before starting serving replicas. Gateway process implementation now passes local source, rebuilt-container and current gateway phase/supporting acceptance. Both independent review findings are resolved; the code is pushed and exact-head hosted CI passes. Protected-stack integration remains pending; no merged delivery is claimed. Scheduler wiring and execution remain later work. See [PLAN.md](PLAN.md) for acceptance criteria and progress.
 
-## Scheduler Kubernetes API plumbing (P4.3a, local implementation)
+## Scheduler Kubernetes API plumbing (P4.3a)
 
 `KubeLive` supplies real native Job/Secret create, Secret read, Job/Secret delete
 and bounded pod-log methods over the existing scheduler-wide `KubeConnection`.
@@ -64,8 +64,12 @@ preserving SIGTERM and loss behavior. Image CLI/gateway smoke, critical scan,
 Helm, frozen install and stable generators pass.
 
 Both material review findings are reproduced and repaired, with permanent
-regressions; independent post-repair approval and Git delivery are not claimed.
-This slice remains uncommitted for the delivery job. The finite
+regressions. Code `159efaa` is pushed in [PR #40](https://github.com/xenarro/krun/pull/40)
+to main after both prior parent PRs merged. Normal ancestry reconciliation
+`cbe00e1` preserves the accepted source tree, and its
+[exact-head CI](https://github.com/xenarro/krun/actions/runs/40323798272) passes all nine gates.
+This is pushed/green, not independently approved or merged; PLAN/README tracking
+receives its own full precommit check and exact-head hosted verification. The finite
 `scheduler` command remains unchanged. Store transitions, main-loop lease
 release/pause ordering and process composition remain later work; these policy
 and native-client checks do not establish Kubernetes admission or complete
