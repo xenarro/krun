@@ -78,9 +78,15 @@ an acknowledged failed read, and leader-scope pending cleanup. Container CLI/gat
 workflow syntax, production audit, frozen offline install, fixable-critical scan
 and stable double generation pass.
 
-This is uncommitted reviewed-and-repaired component work awaiting delivery; this
-job does not close PLAN or claim hosted CI. Production scheduler composition
-remains P4.11. `make e2e` still exits 2 at the explicit P4.12 placeholder, and kind
+Source `b14c9488e7fbf13fb2c9084e1b1d89156d633833` is delivered in [PR #46](https://github.com/xenarro/krun/pull/46)
+to main after normal reconciliation `955c08fa04b1574a5c1ae26188061f238d7a8fe2`.
+Its [exact-head CI](https://github.com/xenarro/krun/actions/runs/40410837737)
+passes all nine gates with 1397 TypeScript tests plus one Python test. Source
+PR46 was approved and merged externally as `b20a73ba3d9ed05955db5137b9f2376e688b2c21`;
+this job did not merge it. Only P4.5 closes in PLAN after accepted source CI.
+PLAN/README-only tracking receives its own fresh full check and exact-head hosted
+acceptance on a follow-up PR because the source PR is already merged. No automatic
+merge or protection bypass. Production scheduler composition remains P4.11. `make e2e` still exits 2 at the explicit P4.12 placeholder, and kind
 scenarios remain P4.13. Native loopback acceptance is not Kubernetes admission,
 Job execution or whole-phase acceptance; the object-store service remains P6.2.
 
