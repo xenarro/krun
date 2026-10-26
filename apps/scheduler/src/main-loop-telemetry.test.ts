@@ -169,6 +169,7 @@ it.live(
             owner: "krun-test-scheduler",
             config,
             replayCached: () => Effect.die("Unexpected replay on quota failure"),
+            checkLost: Effect.void,
           }).pipe(
             Effect.provideService(Kube, kube),
             Effect.provideService(Functions, {

@@ -48,6 +48,8 @@ interface Options {
   readonly config: Config;
   // P4.4 supplies its cache-backed handler; no default/no-op or API re-read.
   readonly replayCached: (run: Run) => Effect.Effect<void, DatabaseError | KubeApiError>;
+  // P4.5 supplies the same leader-scoped check used by controller reconciliation.
+  readonly checkLost: Effect.Effect<void, DatabaseError | KubeApiError>;
 }
 const isExisting = (error: KubeApiError) =>
   error.status === 409 && kubeApiStatus(error).reason === "AlreadyExists";
@@ -56,8 +58,8 @@ const encodedToken = z
   .refine((value) => Buffer.from(value, "base64").toString("base64") === value);
 
 /** Construct within one leader term; run owns its ticker/subscription fibers.
- * Only steps 1-5 live here. Informers/lost Jobs and process assembly
- * are separate PLAN tasks. Existing Store writes settle before cancellation.
+ * Steps 1-6 live here; cache-backed replay and loss checks are required
+ * capabilities. Production process assembly remains a separate PLAN task. Existing Store writes settle before cancellation.
  */
 export const makeMainLoop = (options: Options) =>
   Effect.gen(function* () {
@@ -415,6 +417,8 @@ export const makeMainLoop = (options: Options) =>
             }
           }
         }
+        yield* checkDeadline;
+        yield* options.checkLost;
         return undefined;
       });
       return yield* body.pipe(

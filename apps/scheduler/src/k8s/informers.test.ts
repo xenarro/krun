@@ -64,13 +64,25 @@ it("native LIST/cache and ADDED/MODIFIED/DELETED watch events retain selector, n
       Effect.gen(function* () {
         const source = yield* native(url);
         yield* source.ready;
-        return yield* Effect.all(
+        const batches = yield* Effect.all(
           [
             Stream.runCollect(source.jobEvents.pipe(Stream.take(3))),
             Stream.runCollect(source.podEvents.pipe(Stream.take(3))),
           ],
           { concurrency: "unbounded" },
         );
+        const first = batches[0]?.[0];
+        const last = batches[0]?.[2];
+        const pod = batches[1]?.[2];
+        if (first === undefined || last === undefined || pod === undefined)
+          throw new Error("Expected owned event batches");
+        expect(source.hasPendingJob(id)).toBe(true);
+        source.acknowledgeJob(first);
+        source.acknowledgeJob(pod);
+        expect(source.hasPendingJob(id)).toBe(true);
+        source.acknowledgeJob(last);
+        expect(source.hasPendingJob(id)).toBe(false);
+        return batches;
       }),
     ),
   );
@@ -78,6 +90,9 @@ it("native LIST/cache and ADDED/MODIFIED/DELETED watch events retain selector, n
     [id, id, id],
     [id, id, id],
   ]);
+  expect(events[0]?.slice(0, 2).map((event) => event.jobSeen)).toEqual([true, true]);
+  expect(events[0]?.[2]?.jobSeen).toBeUndefined();
+  expect(events[1]?.every((event) => event.jobSeen === undefined)).toBe(true);
   expect(events[0]?.[2]?.deletedJob?.metadata?.name).toBe(`krun-${id}`);
   expect(events[1]?.[2]?.deletedPod?.metadata?.name).toBe(`krun-${id}`);
   expect(new Set(requests.map((r) => r.pathname))).toEqual(
@@ -312,4 +327,32 @@ it("watch ERROR 410 relists and reconciles native cache from the new resourceVer
     ),
   );
   expect(requests.some((r) => r.searchParams.get("resourceVersion") === "99")).toBe(true);
+});
+
+it("P45-C1: leader scope clears pending ingress without acknowledgement or replay", async () => {
+  const url = await server((request, response) => {
+    response.setHeader("content-type", "application/json");
+    if (!request.url?.includes("watch=true")) {
+      response.end(JSON.stringify({ metadata: { resourceVersion: "42" }, items: [] }));
+      return;
+    }
+    response.flushHeaders();
+    if (request.url.includes("/jobs"))
+      response.write(`${JSON.stringify({ type: "ADDED", object: object() })}\n`);
+  });
+  const retained = await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const source = yield* native(url);
+        yield* source.ready;
+        const [event] = yield* Stream.runCollect(source.jobEvents.pipe(Stream.take(1)));
+        if (event === undefined) throw new Error("Expected owned ingress");
+        expect(source.hasPendingJob(id)).toBe(true);
+        return { source, event };
+      }),
+    ),
+  );
+  expect(retained.source.hasPendingJob(id)).toBe(false);
+  retained.source.acknowledgeJob(retained.event);
+  expect(retained.source.hasPendingJob(id)).toBe(false);
 });
