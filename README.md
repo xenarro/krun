@@ -95,10 +95,19 @@ reader without accumulating frames; shutdown interrupts that wait immediately.
 Errors before stream headers use the normal API envelope; errors after headers
 end the stream without appending an envelope or a new SSE error event.
 
-Local handler and actual process/image acceptance are recorded with this task.
-Independent P5.2 review and exact task-head hosted acceptance remain separate
-steps. The full Phase 5 kind wait/signed-webhook gate remains P5.4; this slice
-adds no webhook delivery or production-completion claim.
+Both independent P5.2 reviews and scoped repair are complete. Fresh corrected
+delivery checks pass 1,611 TypeScript tests plus one Python test, including
+24 WatchRun cases. [Exact source CI](https://github.com/xenarro/krun/actions/runs/40556676305)
+verifies `f359516` in [PR #62](https://github.com/xenarro/krun/pull/62),
+including current-source image/process/security checks and all five existing
+native kind regressions. The first hosted CLI aggregate-deadline failure is
+retained; its test-only correction separates independent scenarios without
+changing assertions or per-scenario deadlines. Source integrated externally
+through PR #62 and the independently approved parent PR #61; fresh main is
+content-equal to the accepted source. This documentation/tracking follow-up
+receives its own checks and protected-main approval separately. The full Phase 5
+kind wait/signed-webhook gate remains P5.4; this slice adds no webhook delivery
+or production-completion claim.
 
 ## Disposable kind foundation (P4.12)
 
