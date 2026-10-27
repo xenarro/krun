@@ -1,5 +1,5 @@
 import type { KubeApiError } from "@krun/shared/dist/k8s/errors.js";
-import { leaderRunStore } from "@krun/shared/dist/runtime/run-metrics.js";
+import { leaderRunStore, TerminalExitAt } from "@krun/shared/dist/runtime/run-metrics.js";
 import type { DatabaseError, JobStatus, Run } from "@krun/shared/dist/store/index.js";
 import { Store } from "@krun/shared/dist/store/index.js";
 import type { V1Job, V1Pod } from "@kubernetes/client-node";
@@ -131,6 +131,7 @@ export const makeJobController = (options: {
     // A gate lives only while a handler or its waiters own it; no per-history map.
     const gates = new Map<string, { semaphore: Semaphore.Semaphore; users: number }>();
     const tails = new Map<string, string | null>();
+    const exitTimes = new Map<string, DateTime.Utc>();
     // D88: one entry per unresolved terminal deletion. No timer/cap may silently
     // discard a completion; cleanup/disposition prunes it, scope close forgets it.
     const knownDeleted = new Map<string, { job: V1Job; pod: V1Pod | undefined }>();
@@ -145,6 +146,7 @@ export const makeJobController = (options: {
         closed = true;
         knownDeleted.clear();
         tails.clear();
+        exitTimes.clear();
         firstAbsent.clear();
         lostCleanup.clear();
         lastLostId = undefined;
@@ -168,10 +170,11 @@ export const makeJobController = (options: {
         yield* kube.deleteSecret(target(id, name, run));
         yield* kube.deleteJob(target(id, name, run), "Background");
         tails.delete(id);
+        exitTimes.delete(id);
         knownDeleted.delete(id);
         lostCleanup.delete(id);
       });
-    const captureTail = (id: string, pod: V1Pod | undefined, finalFailure: boolean) =>
+    const captureTail = (id: string, pod: V1Pod | undefined, finalFailure: boolean, run: Run) =>
       Effect.gen(function* () {
         const exited = container(pod)?.state?.terminated;
         if (!pod?.metadata?.name || tails.has(id) || exited?.exitCode === 0) return;
@@ -182,11 +185,28 @@ export const makeJobController = (options: {
         )
           return;
         tails.set(id, null);
-        const tail = yield* kube.readPodLog(target(id, pod.metadata.name)).pipe(
-          Effect.map((value) => Buffer.from(value).subarray(0, 16384).toString("utf8")),
+        const tail = yield* kube.readPodLog(target(id, pod.metadata.name, run)).pipe(
+          Effect.timeout("10 seconds"),
+          Effect.map((value) =>
+            new TextDecoder("utf-8", { ignoreBOM: true }).decode(
+              Buffer.from(value).subarray(0, 16384),
+              { stream: true },
+            ),
+          ),
           Effect.catch(() => Effect.succeed(null)),
         );
         tails.set(id, tail);
+      });
+    const captureDiagnostics = (
+      id: string,
+      pod: V1Pod | undefined,
+      finalFailure: boolean,
+      run: Run,
+    ) =>
+      Effect.gen(function* () {
+        const exitedAt = time(container(pod)?.state?.terminated?.finishedAt);
+        if (exitedAt !== undefined && !exitTimes.has(id)) exitTimes.set(id, exitedAt);
+        yield* captureTail(id, pod, finalFailure, run);
       });
     const process = (id: string, event?: InformerEvent) =>
       Effect.gen(function* () {
@@ -213,6 +233,8 @@ export const makeJobController = (options: {
           .getRun(id)
           .pipe(Effect.catchTag("NotFoundError", () => Effect.succeed(undefined)));
         if (run === undefined) {
+          tails.delete(id);
+          exitTimes.delete(id);
           if (job?.metadata?.name) yield* cleanup(id, job.metadata.name);
           else knownDeleted.delete(id);
           return;
@@ -223,21 +245,27 @@ export const makeJobController = (options: {
           yield* cleanup(id, run.job_name ?? job?.metadata?.name ?? `krun-${id}`, run);
           return;
         }
-        // Queued terminal observations survive for the main-loop replay. Cancelling
-        // runs remain eligible for status only; cancellation step 5 owns lifecycle.
-        if (run.state === "queued") return;
         const pod = podFor(id) ?? retained?.pod ?? event?.deletedPod;
+        // Provisioning may create a failing Pod before markScheduled. Retain only
+        // bounded diagnostics here; the main loop still owns queued publication.
+        if (run.state === "queued") {
+          if (run.job_token_hash !== null)
+            yield* captureDiagnostics(id, pod, trueCondition(job, "Failed") !== undefined, run);
+          return;
+        }
+        // Cancelling runs remain status-only; cancellation step 5 owns lifecycle.
         const status = statusOf(job, pod, yield* DateTime.now);
         if (!sameStatus(run.job_status, status)) yield* store.setJobStatus(id, status);
         if (run.state === "cancelling") {
           firstAbsent.delete(id);
           knownDeleted.delete(id);
           tails.delete(id);
+          exitTimes.delete(id);
           return;
         }
         const complete = trueCondition(job, "Complete") !== undefined;
         const failed = trueCondition(job, "Failed") !== undefined;
-        yield* captureTail(id, pod, failed);
+        yield* captureDiagnostics(id, pod, failed, run);
         if (!job || (!complete && !failed)) {
           if (run.state === "scheduled" && pod?.status?.phase === "Running")
             yield* lifecycle.transition(id, "scheduled", "running", null, {});
@@ -251,7 +279,7 @@ export const makeJobController = (options: {
           time(container(pod)?.state?.terminated?.startedAt) ?? time(job.status?.startTime);
         const patch: Partial<Run> = {
           job_status: status,
-          log_tail: tails.get(id) ?? null,
+          log_tail: complete ? null : (tails.get(id) ?? null),
           ...(resultRef === null ? {} : { result_ref: resultRef }),
           ...(run.started_at !== null || startedAt === undefined ? {} : { started_at: startedAt }),
           ...(complete
@@ -265,13 +293,9 @@ export const makeJobController = (options: {
                 },
               }),
         };
-        const changed = yield* lifecycle.transition(
-          id,
-          run.state,
-          complete ? "succeeded" : "failed",
-          reason,
-          patch,
-        );
+        const changed = yield* lifecycle
+          .transition(id, run.state, complete ? "succeeded" : "failed", reason, patch)
+          .pipe(Effect.provideService(TerminalExitAt, exitTimes.get(id)));
         if (changed) {
           yield* cleanup(id, run.job_name ?? job.metadata?.name ?? `krun-${id}`, run);
           return;
@@ -284,6 +308,7 @@ export const makeJobController = (options: {
         else if (winner?.state === "cancelling") {
           knownDeleted.delete(id);
           tails.delete(id);
+          exitTimes.delete(id);
         }
       });
     const serialized = <E>(id: string, work: Effect.Effect<void, E>) =>
@@ -330,6 +355,8 @@ export const makeJobController = (options: {
         yield* kube.deleteSecret(target(run.id, run.job_name ?? `krun-${run.id}`, run));
         lostCleanup.delete(run.id);
         firstAbsent.delete(run.id);
+        tails.delete(run.id);
+        exitTimes.delete(run.id);
       });
     const lostOne = (id: string, attempted: Set<string>) =>
       Effect.gen(function* () {
@@ -344,6 +371,8 @@ export const makeJobController = (options: {
         if (closed) return;
         if (row === undefined || (row.state !== "scheduled" && row.state !== "running")) {
           firstAbsent.delete(id);
+          tails.delete(id);
+          exitTimes.delete(id);
           return;
         }
         // Cache/event work may have progressed during the Store read.
@@ -364,13 +393,16 @@ export const makeJobController = (options: {
             firstAbsent.delete(id);
             return false;
           }
-          const changed = yield* lifecycle.transition(id, row.state, "failed", "job_lost", {
-            failure_reason: "job_lost",
-            error: {
-              source: "krun",
-              message: "Kubernetes Job absent from informer cache for 2 minutes",
-            },
-          });
+          const changed = yield* lifecycle
+            .transition(id, row.state, "failed", "job_lost", {
+              failure_reason: "job_lost",
+              log_tail: tails.get(id) ?? null,
+              error: {
+                source: "krun",
+                message: "Kubernetes Job absent from informer cache for 2 minutes",
+              },
+            })
+            .pipe(Effect.provideService(TerminalExitAt, exitTimes.get(id)));
           // The Store write settles before cancellation. Publish only known cleanup
           // ownership in the same mask, never perform Kubernetes I/O in it.
           if (changed) {

@@ -9,7 +9,7 @@ import { ConfigLive } from "../config/index.js";
 import { MetricsReader } from "../health/metrics.js";
 import { type NewRun, Store } from "../store/index.js";
 import { StorePostgres, StoreSqlite } from "../store/live.js";
-import { leaderRunStore, makeRunGauges } from "./run-metrics.js";
+import { leaderRunStore, makeRunGauges, TerminalExitAt } from "./run-metrics.js";
 import { TelemetryLive } from "./telemetry.js";
 
 let container: StartedPostgreSqlContainer;
@@ -105,6 +105,11 @@ for (const dialect of ["sqlite", "postgres"] as const) {
         expect(yield* count("running")).toBe(1);
         expect(yield* count("succeeded")).toBe(2);
         expect(yield* count("failed")).toBe(1);
+        expect(
+          yield* Metric.value(
+            metric("krun_runs_failed_total", { function: "echo", reason: "queue_timeout" }),
+          ),
+        ).toMatchObject({ count: 1 });
         const text = (yield* (yield* MetricsReader).scrape).body;
         expect(text).toContain('krun_queue_wait_seconds_sum{function="echo"} 1.5');
         expect(text).toContain('krun_cold_start_seconds_sum{function="echo"} 2.5');
@@ -116,6 +121,55 @@ for (const dialect of ["sqlite", "postgres"] as const) {
           'krun_run_duration_seconds_count{function="echo",state="succeeded"} 2',
         );
         expect(text).not.toMatch(/krun-test-metrics-private|_total_total|run_id/);
+      }).pipe(
+        Effect.provide(
+          dialect === "sqlite"
+            ? StoreSqlite(":memory:")
+            : StorePostgres(container.getConnectionUri()),
+        ),
+        Effect.provide(telemetry()),
+      ),
+  );
+  it.effect(
+    `${dialect}: failure labels and exit observations belong only to winning committed leader calls`,
+    () =>
+      Effect.gen(function* () {
+        const actual = yield* Store;
+        const leader = leaderRunStore(actual);
+        yield* actual.migrate();
+        for (const n of [30, 31, 32]) {
+          yield* seed(n);
+          yield* actual.markScheduled(id(n));
+        }
+        const outcome = yield* Effect.exit(
+          leader
+            .transition(id(30), "scheduled", "failed", null, {})
+            .pipe(Effect.provideService(TerminalExitAt, DateTime.makeUnsafe(0))),
+        );
+        expect(outcome._tag).toBe("Failure");
+        yield* TestClock.adjust("10 seconds");
+        yield* Effect.all(
+          [
+            leader
+              .transition(id(30), "scheduled", "failed", "exit_code", {})
+              .pipe(Effect.provideService(TerminalExitAt, DateTime.makeUnsafe(1000))),
+            leader
+              .transition(id(31), "scheduled", "succeeded", null, {})
+              .pipe(Effect.provideService(TerminalExitAt, DateTime.makeUnsafe(5000))),
+          ],
+          { concurrency: "unbounded" },
+        );
+        yield* actual.transition(id(32), "scheduled", "failed", "exit_code", {});
+        expect(
+          yield* leader
+            .transition(id(30), "scheduled", "failed", "exit_code", {})
+            .pipe(Effect.provideService(TerminalExitAt, DateTime.makeUnsafe(0))),
+        ).toBe(false);
+        const text = (yield* (yield* MetricsReader).scrape).body;
+        expect(text).toContain('krun_runs_failed_total{function="echo",reason="exit_code"} 1');
+        expect(text).toContain('krun_terminal_detect_seconds_sum{function="echo"} 14');
+        expect(text).toContain('krun_terminal_detect_seconds_count{function="echo"} 2');
+        expect(text).not.toMatch(/_total_total|run_id/);
       }).pipe(
         Effect.provide(
           dialect === "sqlite"
