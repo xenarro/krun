@@ -45,9 +45,10 @@ cleanup. Source `458a651` passed both `verify` and `kind` in
 [CI run 40502110628](https://github.com/xenarro/krun/actions/runs/40502110628):
 1,552 TypeScript tests, one Python test, five hardened-image process cases and
 the real disposable-cluster foundation. [PR57](https://github.com/xenarro/krun/pull/57)
-is pushed/green against main, but remains OPEN/REVIEW_REQUIRED, not merged.
-Tracking-only changes require their own fresh local and exact-head hosted gates;
-no auto-merge or protected-main review bypass is enabled.
+was approved and merged into main at `d565605` while tracking checks
+ran. Tracking-only changes on the preserved feature branch require their own
+fresh local and exact-head hosted gates. Delivery did not enable auto-merge or
+bypass protected-main review.
 
 The first real API run exposed and reproduced a Lease MicroTime write defect:
 ordinary Date JSON has three fractional digits, but Kubernetes requires six.
