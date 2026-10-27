@@ -61,9 +61,12 @@ failed-only tail persistence, pre-scheduling evidence and committed-only metrics
 Both independent review findings have permanent regressions. Eight compiled
 native-client/informer/real-Store groups pass on host SQLite and PostgreSQL;
 rebuilt-image integration and complete verification are recorded in the repair
-report. Component Git delivery is recorded separately in PLAN.md; this is not
-the assembled
-scheduler (P4.11) or real kind/admission acceptance (P4.12/P4.13). The whole-phase
+report. Source commit `50a66d1aba801a421d6c89b20101c8771a9766c9` passed all nine gates in
+[exact-head CI](https://github.com/xenarro/krun/actions/runs/40444940823) and was independently
+approved/merged in [PR #52](https://github.com/xenarro/krun/pull/52). PLAN records the
+source acceptance; its separate tracking update receives fresh local/hosted
+verification. This is not the assembled scheduler (P4.11) or real kind/admission
+acceptance (P4.12/P4.13). The whole-phase
 `make e2e` gate still exits 2 at its explicit P4.12 placeholder.
 
 ## Leader Function status writer (P4.7)
