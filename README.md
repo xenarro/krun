@@ -95,10 +95,19 @@ reader without accumulating frames; shutdown interrupts that wait immediately.
 Errors before stream headers use the normal API envelope; errors after headers
 end the stream without appending an envelope or a new SSE error event.
 
-Local handler and actual process/image acceptance are recorded with this task.
-Independent P5.2 review and exact task-head hosted acceptance remain separate
-steps. The full Phase 5 kind wait/signed-webhook gate remains P5.4; this slice
-adds no webhook delivery or production-completion claim.
+Both independent P5.2 reviews and scoped repair are complete. Fresh corrected
+delivery checks pass 1,611 TypeScript tests plus one Python test, including
+24 WatchRun cases. [Exact source CI](https://github.com/xenarro/krun/actions/runs/40556676305)
+verifies `f359516` in [PR #62](https://github.com/xenarro/krun/pull/62),
+including current-source image/process/security checks and all five existing
+native kind regressions. The first hosted CLI aggregate-deadline failure is
+retained; its test-only correction separates independent scenarios without
+changing assertions or per-scenario deadlines. Source integrated externally
+through PR #62 and the independently approved parent PR #61; fresh main is
+content-equal to the accepted source. This documentation/tracking follow-up
+receives its own checks and protected-main approval separately. The full Phase 5
+kind wait/signed-webhook gate remains P5.4; this slice adds no webhook delivery
+or production-completion claim.
 
 ## Local webhook deliveries (P5.3)
 
@@ -130,15 +139,28 @@ settle before dependency teardown, and only those committed outcomes increment
 HTTP statuses, never callback queries, request/response bodies, signatures or
 secrets.
 
-Acceptance covers actual local HTTP receivers and SQLite outbox rows, the
-full retry schedule under `TestClock`, the eight-send cap, a fifty-second
-worst-case network batch, DNS rechecks, cancellation and write failures, actual
-OTLP span propagation and Prometheus output. Native scheduler process controls
-prove terminal callback delivery, standby isolation, SIGTERM and leadership-loss
-cleanup using real SQLite and the existing controlled Kubernetes LIST/WATCH
-fixture. This is not the P5.4 in-cluster receiver gate. Independent P5.3 review,
-exact task-head hosted CI and the complete Phase 5 native wait/signed-webhook
-gate remain separate; no production or publication completion is claimed.
+Both independent P5.3 reviews and scoped repair are complete. D105 fixes the
+stale-owner regression and zero-row counter findings with atomic claim fencing.
+Acceptance passes 19 delivery controls, 59 SQLite/PostgreSQL maintenance
+contracts and 388 scheduler/webhook-area tests, including native HTTP, rotation,
+retry/dead states, DNS policy, cancellation, committed-only metrics and OTLP.
+Native scheduler process controls prove delivery, standby isolation, SIGTERM
+and leadership-loss cleanup using real SQLite and controlled Kubernetes
+LIST/WATCH. These are not the P5.4 in-cluster receiver gate.
+
+Source `8cab006` passed [exact-head CI](https://github.com/xenarro/krun/actions/runs/40574895994)
+in [PR #64](https://github.com/xenarro/krun/pull/64): 1,640 TypeScript tests plus
+one Python test, current-source image/process/security gates and all five
+existing native kind regressions. All 90 compiled module hashes plus the
+launcher match the rebuilt local image. The late-owner test controls a delayed
+Store edge; real PostgreSQL CAS contracts pass, but no actual OS-pause or late
+PostgreSQL transport reproduction is claimed. A historical unchanged claim-test
+deadline remains qualified by a complete passing rerun without relaxed budgets.
+Source PR #64 and prior tracking PR #63 integrated through independent approval
+outside this delivery job. Normal ancestry reconciliation preserves the accepted
+source; tracking documentation receives its own fresh checks. The complete
+Phase 5 native wait/signed-webhook gate remains P5.4. No production or
+publication completion is claimed.
 
 ## Disposable kind foundation (P4.12)
 
