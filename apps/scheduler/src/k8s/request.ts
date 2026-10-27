@@ -19,8 +19,8 @@ export const nativeRequest = <A>(
   connection: KubeConnection["Service"],
   request: (options: NativeOptions) => Promise<A>,
   target: KubeTarget,
-  verb: "get" | "create" | "update" | "delete" | "list",
-  resource: "leases" | "jobs" | "secrets" | "pods/log" | "pods",
+  verb: "get" | "create" | "update" | "delete" | "list" | "patch",
+  resource: "leases" | "jobs" | "secrets" | "pods/log" | "pods" | "functions/status",
 ) =>
   connection
     .call(async (signal) => {
