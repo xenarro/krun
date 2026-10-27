@@ -40,6 +40,13 @@ P9.3.
   every Function. Re-install under the same release name and namespace, or
   re-annotate the CRD as SPEC section 13 describes.
 
+The serving scheduler requires `KRUN_POD_NAME` from downward API
+`metadata.name` as its Lease identity (SPEC D98); do not substitute a shared
+constant or infer it from the host name. Run explicit migrations before serving.
+Its standby remains ready after database/Function synchronization and reports
+`leader: false`; Job/Pod watches and work are acquired only by the leader.
+Use a distinct admin address from the gateway when colocating the processes.
+
 ## Capacity
 
 - `config.maxRunning` must not exceed `jobsNamespace.quota.pods`; the chart

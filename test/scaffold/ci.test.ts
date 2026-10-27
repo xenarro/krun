@@ -33,6 +33,8 @@ it("wires read-only SHA-pinned CI without untrusted shell interpolation", () => 
   expect(workflow).toContain("process.getuid()");
   expect(workflow).toContain("node scripts/smoke-gateway.ts krun:local");
   expect(workflow).toContain("gateway --help");
+  expect(workflow).toContain("scheduler --help");
+  expect(workflow).toContain("node scripts/smoke-scheduler.ts krun:local");
 });
 
 it("runs Knip in make check and keeps dependency updates reviewable", () => {

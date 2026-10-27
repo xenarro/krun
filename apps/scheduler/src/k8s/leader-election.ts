@@ -44,6 +44,7 @@ const transient = (e: KubeApiError) =>
 export const runLeaderElection = <E, R>(
   options: Options,
   leaderWork: Effect.Effect<void, E, R | Scope.Scope>,
+  beforeRelease: Effect.Effect<void> = Effect.void,
 ): Effect.Effect<
   never,
   E | LeaderLost | LeaderConfigInvalid | KubeApiError,
@@ -101,7 +102,9 @@ export const runLeaderElection = <E, R>(
       );
       // This outer finalizer runs only after both racing child programs (including
       // leader resources and their in-flight calls) have settled cancellation.
-      yield* Effect.addFinalizer(() => setLeader(false).pipe(Effect.andThen(release)));
+      yield* Effect.addFinalizer(() =>
+        setLeader(false).pipe(Effect.andThen(beforeRelease), Effect.andThen(release)),
+      );
       const attempt = Effect.gen(function* () {
         const existing = yield* api
           .read(options.namespace)
