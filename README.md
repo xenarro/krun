@@ -61,6 +61,13 @@ assembled-process acceptance over a disposable loopback API and real SQL, not
 actual Kubernetes admission, garbage collection or Job execution. The complete
 kind/e2e phase gate remains P4.12/P4.13; no whole-phase pass is claimed.
 
+P4.11 source is pushed in [PR #56](https://github.com/xenarro/krun/pull/56) at
+`9d2dfe4797b15450c31450f1c9945a5b153abc98`. Its [exact-head CI](https://github.com/xenarro/krun/actions/runs/40482390594)
+passes all nine gates, including the real hardened-image scheduler process
+acceptance and 1,541 TypeScript tests plus one Python test. Required main review
+remains pending; this is a green pushed delivery, not a merged-main claim.
+Task-only PLAN/README tracking receives a separate fresh check and hosted run.
+
 The following component delivery sections retain their original pre-P4.11
 acceptance snapshots. Their historical finite-command/assembly-pending wording
 is superseded by this process section, not a statement of the current CLI.
