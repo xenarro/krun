@@ -297,6 +297,11 @@ it("watch ERROR 410 relists and reconciles native cache from the new resourceVer
   let lists = 0;
   let watches = 0;
   const requests: URL[] = [];
+  const resumed = new Set<string>();
+  let resolveResumed = () => {};
+  const replacementWatches = new Promise<void>((resolve) => {
+    resolveResumed = resolve;
+  });
   const url = await server((request, response) => {
     const location = new URL(request.url ?? "/", "http://krun-test.invalid");
     requests.push(location);
@@ -314,13 +319,20 @@ it("watch ERROR 410 relists and reconciles native cache from the new resourceVer
     response.flushHeaders();
     watches++;
     if (watches <= 2) response.end(`${JSON.stringify({ type: "ERROR", object: { code: 410 } })}\n`);
+    if (location.searchParams.get("resourceVersion") === "99") {
+      resumed.add(location.pathname);
+      if (resumed.size === 2) resolveResumed();
+    }
   });
   await Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
         const source = yield* native(url);
         yield* source.ready;
-        yield* Effect.promise(() => vi.waitFor(() => expect(lists).toBe(4), { timeout: 5000 }));
+        // Relisting/caching precedes network dispatch. Keep the source alive
+        // until both replacement WATCH requests reach the owned server.
+        yield* Effect.promise(() => replacementWatches);
+        expect(lists).toBe(4);
         expect(source.jobs.list(namespace)).toHaveLength(1);
         expect(source.pods.list(namespace)).toHaveLength(1);
       }),
