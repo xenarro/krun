@@ -4,7 +4,7 @@ HTTP-triggered functions, executed as one-off Kubernetes Jobs. Callers submit JS
 
 ## Development status
 
-Core function execution now works locally in disposable embedded-mode kind through the Phase 4 gate. Gateway wait handling is implemented locally as described below. This is not a complete or production-ready release: SDK runtime behaviour, SSE/webhooks, large-result object storage and production Helm acceptance remain later phases.
+Core function execution now works locally in disposable embedded-mode kind through the Phase 4 gate. Gateway waits and Run event streams are implemented locally as described below. This is not a complete or production-ready release: SDK runtime behaviour, webhook delivery, large-result object storage and production Helm acceptance remain later phases.
 
 - Strict TypeScript workspace on Node.js 26, with Effect 4 process entrypoints.
 - Zod configuration schemas and Effect services for gateway and scheduler settings.
@@ -75,6 +75,30 @@ was independently approved and merged; this task's PLAN/README tracking receives
 its own fresh check and exact-head hosted acceptance in a follow-up PR.
 The complete Phase 5 wait/SSE/signed-webhook gate remains P5.4; this slice does
 not implement SSE or webhook delivery.
+
+## Gateway Run event streams (P5.2)
+
+`GET /v1/functions/{function}/runs/{run}:watch` streams `text/event-stream`.
+The first `state` event contains the current BASIC Run; a terminal Run gets
+that single event and EOF. Later `state`, `status` and `job_status` events
+carry the authoritative BASIC snapshot and each changed group's own timestamp.
+`input`, inline `result`, `logTail` and `error.details` are never included.
+`Last-Event-ID` is ignored; reconnecting starts from the current snapshot.
+
+WatchRun shares the same notification fan-out as both wait methods, including
+the one-second authoritative fallback. It emits `: keepalive` comments every
+15 seconds, rechecks stored function/owner authorization on each read, and
+closes after terminal state, on graceful shutdown or client disconnect. Native
+backpressure pauses serialized writes until drain, so a legal large BASIC snapshot
+still reaches a normal reader. A two-second drain deadline disconnects a stalled
+reader without accumulating frames; shutdown interrupts that wait immediately.
+Errors before stream headers use the normal API envelope; errors after headers
+end the stream without appending an envelope or a new SSE error event.
+
+Local handler and actual process/image acceptance are recorded with this task.
+Independent P5.2 review and exact task-head hosted acceptance remain separate
+steps. The full Phase 5 kind wait/signed-webhook gate remains P5.4; this slice
+adds no webhook delivery or production-completion claim.
 
 ## Disposable kind foundation (P4.12)
 

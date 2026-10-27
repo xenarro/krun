@@ -292,14 +292,20 @@ it("paths and invalid names cannot inject extra physical output lines", () => {
   expect(result.stdout.includes("bad\nname")).toBe(false);
 });
 
-it("no arguments or unsupported flags fail usage; help is independent of config and files", () => {
-  for (const args of [[], ["--json"], ["--unknown=private-value"]]) {
+for (const { label, args } of [
+  { label: "no arguments", args: [] },
+  { label: "an unsupported boolean flag", args: ["--json"] },
+  { label: "an unsupported valued flag", args: ["--unknown=private-value"] },
+])
+  it(`usage rejects ${label} without echoing private arguments`, () => {
     const result = execute(args);
     expect(result.status).toBe(1);
     expect(result.stdout).toBe("");
     expect(result.stderr).toContain("Usage: krun validate");
     expect(result.stderr.includes("private-value")).toBe(false);
-  }
+  });
+
+it("help is independent of config and files", () => {
   const help = execute(["--help"], { KRUN_MAX_QUEUED: "invalid" });
   expect(help.status).toBe(0);
   expect(help.stdout).toContain("Usage: krun validate");

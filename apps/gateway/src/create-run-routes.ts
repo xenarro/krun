@@ -24,6 +24,7 @@ import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { ApiError, errorEnvelope } from "./errors.js";
 import { publicContracts, publicSchemas } from "./public-contracts.js";
 import { GatewayShutdown } from "./shutdown.js";
+import { watchRun } from "./watch-run.js";
 
 type Config = Pick<
   GatewayConfig,
@@ -331,6 +332,26 @@ export const createRunRoutes = (input: Config) =>
             ),
           ),
       });
+      const readRun = (request: FastifyRequest<{ Params: { function: string; run: string } }>) =>
+        Effect.gen(function* () {
+          const key = request.principal;
+          if (!key) return yield* new ApiError({ reason: "INTERNAL" });
+          const row = yield* store
+            .getRun(request.params.run)
+            .pipe(
+              Effect.mapError((error) =>
+                error instanceof NotFoundError ? new ApiError({ reason: "RUN_NOT_FOUND" }) : error,
+              ),
+            );
+          if (
+            (request.params.function !== "-" && request.params.function !== row.function_name) ||
+            !key.allowsFunction(row.function_name) ||
+            (!key.hasScope("admin") && row.created_by !== key.name)
+          )
+            return yield* new ApiError({ reason: "RUN_NOT_FOUND" });
+          Reflect.set(request, "audit", { run_id: row.id, function: row.function_name });
+          return row;
+        });
       // WaitRun shares the admission plugin's one Store consumer, not a second
       // LISTEN connection or a competing notification queue. History visibility
       // comes from the stored row, never current Function readiness.
@@ -353,32 +374,37 @@ export const createRunRoutes = (input: Config) =>
                 if (Option.isSome(shutdown) && !shutdown.value.track(reply.raw))
                   return yield* new ApiError({ reason: "NOT_READY" });
                 const queue = yield* register(request.params.run);
-                const read = Effect.gen(function* () {
-                  const row = yield* store
-                    .getRun(request.params.run)
-                    .pipe(
-                      Effect.mapError((error) =>
-                        error instanceof NotFoundError
-                          ? new ApiError({ reason: "RUN_NOT_FOUND" })
-                          : error,
-                      ),
-                    );
-                  if (
-                    (request.params.function !== "-" &&
-                      request.params.function !== row.function_name) ||
-                    !key.allowsFunction(row.function_name) ||
-                    (!key.hasScope("admin") && row.created_by !== key.name)
-                  )
-                    return yield* new ApiError({ reason: "RUN_NOT_FOUND" });
-                  Reflect.set(request, "audit", { run_id: row.id, function: row.function_name });
-                  return row;
-                });
+                const read = readRun(request);
                 return publicSchemas.Run.parse(
                   toRun(yield* wait(queue, read, Math.min(requested, config.maxWait))),
                 );
               }),
             ),
           ),
+      });
+      app.withTypeProvider<ZodTypeProvider>().route({
+        ...publicContracts.WatchRun,
+        handler: async (request, reply) => {
+          await app.runEffect(
+            request,
+            reply,
+            Effect.scoped(
+              Effect.gen(function* () {
+                if (Option.isSome(shutdown) && !shutdown.value.track(reply.raw))
+                  return yield* new ApiError({ reason: "NOT_READY" });
+                const queue = yield* register(request.params.run);
+                yield* watchRun(
+                  reply,
+                  request.id,
+                  queue,
+                  readRun(request),
+                  Option.isSome(shutdown) ? shutdown.value.closing : Effect.never,
+                );
+              }),
+            ),
+          );
+          return reply;
+        },
       });
     };
     return plugin;

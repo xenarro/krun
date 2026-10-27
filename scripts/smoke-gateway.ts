@@ -18,6 +18,7 @@ const kube = await startFakeKube(namespace, true);
 const groups: string[] = [];
 let logs = "";
 const partialClients: ReturnType<typeof httpRequest>[] = [];
+const watchReaders: ReadableStreamDefaultReader<Uint8Array>[] = [];
 let child: ReturnType<typeof spawn> | undefined;
 const docker = (args: string[]) => {
   const result = spawnSync("docker", args, { encoding: "utf8", timeout: 20000 });
@@ -147,6 +148,33 @@ try {
     });
     return { code: response.status, body: await response.json() };
   };
+  const openWatch = async (path: string) => {
+    const response = await fetch(`http://127.0.0.1:${ports[0]}${path}`, {
+      headers: { authorization: `Bearer ${token}`, "last-event-id": "ignored" },
+      signal: AbortSignal.timeout(20000),
+    });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("content-type"), "text/event-stream");
+    assert.ok(response.body);
+    const reader = response.body.getReader();
+    watchReaders.push(reader);
+    const decoder = new TextDecoder();
+    let buffered = "";
+    return async () => {
+      while (!buffered.includes("\n\n")) {
+        const chunk = await reader.read();
+        if (chunk.done) {
+          assert.equal(buffered, "", "Partial SSE frame at EOF");
+          return undefined;
+        }
+        buffered += decoder.decode(chunk.value, { stream: true });
+      }
+      const boundary = buffered.indexOf("\n\n");
+      const frame = buffered.slice(0, boundary);
+      buffered = buffered.slice(boundary + 2);
+      return frame;
+    };
+  };
   // Bounded tri-state probes of an actual external container, not application polling.
   const until = async (probe: () => Promise<boolean>) => {
     const deadline = performance.now() + 15000;
@@ -218,6 +246,12 @@ try {
       body: text ? JSON.parse(text) : undefined,
     };
   };
+  const nextWatch = await openWatch(`/v1/functions/echo/runs/${runId}:watch`);
+  const initialWatch = await nextWatch();
+  assert.ok(initialWatch);
+  assert.ok(initialWatch.startsWith("event: state\n"));
+  assert.equal(initialWatch.includes('"input"'), false);
+  groups.push("watchrun-real-store-initial-basic");
   const input = await internal("input");
   assert.equal(input.code, 200);
   assert.deepEqual(input.body, { internal: true });
@@ -228,6 +262,12 @@ try {
     204,
   );
   assert.equal((await internal("status", '{"message":"too fast"}')).code, 429);
+  const statusWatch = await nextWatch();
+  assert.ok(statusWatch);
+  assert.ok(statusWatch.startsWith("event: status\n"));
+  assert.equal(statusWatch.includes('"input"'), false);
+  assert.ok(statusWatch.includes('"reportTime"'));
+  groups.push("watchrun-real-sqlite-status-without-durable-event");
   assert.equal((await internal("result", "false")).code, 204);
   assert.equal(
     (await internal("error", '{"message":"reported","details":{"opaque":[null]}}')).code,
@@ -244,9 +284,58 @@ try {
   assert.equal(capped.body.error.details[0].reason, "RESULT_TOO_LARGE");
   assert.equal(capped.headers.get("connection"), "close");
   groups.push("internal-four-methods-token-state-rate-cap-and-public-projection");
+  // A controlled durable SQLite update without a terminal run_event proves the
+  // authoritative SSE fallback. This is not scheduler-driven Job completion.
+  const terminalRun = await request("/v1/functions/echo/runs", 0, { input: { watchOnly: true } });
+  assert.equal(terminalRun.code, 201);
+  const terminalNext = await openWatch(`/v1/${terminalRun.body.name}:watch`);
+  assert.ok((await terminalNext())?.startsWith("event: state\n"));
+  const terminalId = terminalRun.body.name.split("/").at(-1);
+  docker([
+    "exec",
+    name,
+    "/nodejs/bin/node",
+    "-e",
+    `const {DatabaseSync}=require('node:sqlite');const db=new DatabaseSync('/data/krun.db');try{db.prepare("update runs set state='succeeded',finished_at=?,result=? where id=?").run('2026-10-27T00:00:00.000Z','{"controlled":true}',${JSON.stringify(terminalId)});}finally{db.close();}`,
+  ]);
+  const terminalFrame = await terminalNext();
+  assert.ok(terminalFrame);
+  assert.ok(terminalFrame.includes('"state":"SUCCEEDED"'));
+  assert.equal(terminalFrame.includes('"input"'), false);
+  assert.equal(terminalFrame.includes('"result"'), false);
+  assert.equal(await terminalNext(), undefined);
+  const replay = await openWatch(`/v1/${terminalRun.body.name}:watch`);
+  assert.ok((await replay())?.includes('"state":"SUCCEEDED"'));
+  assert.equal(await replay(), undefined);
+  groups.push("watchrun-controlled-terminal-fallback-and-terminal-connect-eof");
+  // A legal BASIC snapshot larger than Node's native high-water mark still
+  // reaches a normal client and reconnect. The physical Store row is real;
+  // this is controlled fixture data, not a Kubernetes-produced large message.
+  docker([
+    "exec",
+    name,
+    "/nodejs/bin/node",
+    "-e",
+    `const {DatabaseSync}=require('node:sqlite');const db=new DatabaseSync('/data/krun.db');try{db.prepare("update runs set job_status=? where id=?").run(JSON.stringify({phase:'Succeeded',message:'x'.repeat(131072),observedAt:'2026-10-27T00:00:00.000Z'}),${JSON.stringify(terminalId)});}finally{db.close();}`,
+  ]);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const next = await openWatch(`/v1/${terminalRun.body.name}:watch`);
+    const large = await next();
+    assert.ok(large);
+    assert.ok(large.startsWith("event: state\n"));
+    assert.ok(Buffer.byteLength(large) > 65536);
+    const data = /^data: (.+)$/m.exec(large);
+    assert.ok(data?.[1]);
+    const basic = JSON.parse(data[1]);
+    assert.equal(basic.jobStatus.message.length, 131072);
+    assert.equal("input" in basic, false);
+    assert.equal("result" in basic, false);
+    assert.equal(await next(), undefined);
+  }
+  groups.push("watchrun-large-terminal-basic-snapshot-and-reconnect");
   const waiting = request("/v1/functions/echo/runs?wait=60s", 0, { input: { wait: true } });
   waiting.catch(() => {});
-  await until(async () => (await request("/v1/functions/echo/runs")).body.runs.length === 3);
+  await until(async () => (await request("/v1/functions/echo/runs")).body.runs.length === 4);
   const existingWait = request(waitPath, 0, { timeout: "60s" });
   existingWait.catch(() => {});
   // Authenticated, under-cap bodies never complete. Closing the listener must
@@ -289,6 +378,8 @@ try {
   assert.equal(waited.code, 200);
   assert.deepEqual(waited.body, created.body);
   groups.push("inflight-waitrun-settles-current-run-on-sigterm");
+  assert.equal(await nextWatch(), undefined);
+  groups.push("inflight-watchrun-ends-on-sigterm");
   assert.equal(await done, 0);
   await Promise.all(partialClosed);
   groups.push("internal-unfinished-bodies-closed-at-drain-end");
@@ -324,6 +415,7 @@ try {
     }),
   );
 } finally {
+  for (const reader of watchReaders) await reader.cancel().catch(() => {});
   for (const client of partialClients) client.destroy();
   spawnSync("docker", ["rm", "--force", name], { stdio: "ignore", timeout: 10000 });
   await kube.close();
