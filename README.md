@@ -58,6 +58,14 @@ on the host and freshly rebuilt image; all 85 runtime module hashes match.
 No runtime repair was necessary, and no review setup/oracle failure was treated
 as a product defect.
 
+Source commit `1947b20a05913bed370934e92e05314e199c3002` is pushed in
+[PR51](https://github.com/xenarro/krun/pull/51); its
+[exact-head CI](https://github.com/xenarro/krun/actions/runs/40433248388)
+passes all nine gates and 1,420 TypeScript tests plus one Python test. At source
+acceptance the PR targets the recorded unmerged `feat/scheduler-run-metrics`
+parent (PR50), not a claimed main merge. P4.7 tracking follows that accepted
+source; protected-main review still applies.
+
 These are component-level checks; Git delivery is recorded separately in
 PLAN.md. Production scheduler assembly remains P4.11. The whole-phase
 `make e2e` gate still exits 2 at its explicit P4.12 placeholder; real kind
