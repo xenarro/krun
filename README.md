@@ -18,7 +18,7 @@ Readiness's HTTP deadline does not wait for database cancellation cleanup. Overl
 
 Health/telemetry acceptance covers real Prometheus collection through Fastify `inject`, stalled-database timing through `TestClock` (including slow finalizers and uninterruptible work), real socket disconnects, handler/dependency teardown ordering, reader/provider cleanup, and actual OTLP JSON sent to a disposable local collector. Run `pnpm exec vitest run packages/shared/src/health packages/shared/src/runtime` for this slice. P0.7 module acceptance and hosted CI passed for [PR #3](https://github.com/xenarro/krun/pull/3), including the reviewed lifecycle repairs, container rebuild, smoke, audit and fixable-critical scan. [Code CI](https://github.com/xenarro/krun/actions/runs/40019565091) verified reconciled head `9f870d4`, containing implementation commit `afc0375`. The PR remains unmerged pending required independent approval. PLAN records this bounded task; Phase 0 and the application are not complete.
 
-The `gateway` and `scheduler` commands start real scoped serving processes. Both `--help` commands remain finite and configuration-free. `validate` is a real offline Function validator and `migrate` is a real database command. Apply migrations explicitly before starting serving replicas. The merged P4.12 foundation deploys both processes; the local P4.13 gate below now exercises actual Jobs and the public/internal APIs. P4.13 task-head hosted CI and independent review remain delivery work, not a claim from this local implementation. Production chart/admission acceptance remains Phase 7. See [PLAN.md](PLAN.md) for task tracking.
+The `gateway` and `scheduler` commands start real scoped serving processes. Both `--help` commands remain finite and configuration-free. `validate` is a real offline Function validator and `migrate` is a real database command. Apply migrations explicitly before starting serving replicas. The merged P4.12 foundation deploys both processes; the local P4.13 gate below now exercises actual Jobs and the public/internal APIs. P4.13 independent correctness/contracts review and scoped repair are complete; exact source-head hosted `verify` and `kind` pass in [PR #59](https://github.com/xenarro/krun/pull/59). Required repository approval/integration remains separate from pushed, tested delivery. Production chart/admission acceptance remains Phase 7. See [PLAN.md](PLAN.md) for task tracking.
 
 ## Local scheduler end-to-end gate (P4.13)
 
@@ -41,8 +41,15 @@ Each file owns a unique Function and cleans its resources. Anchored native Pod
 WATCHes retain fast exits without inventing timestamps for containers that
 never started. Generated credentials/input markers must be absent from Pod
 manifests and process logs. The runner rejects an empty suite. This local phase
-gate is separate from `make check`; exact task-head hosted verification and
-independent review remain pending. See [test/e2e/README.md](test/e2e/README.md).
+gate is separate from `make check`. Fresh delivery checks pass 1,567 TypeScript
+tests plus one Python test, and [exact source CI](https://github.com/xenarro/krun/actions/runs/40523418351)
+verifies commit `2f8f5e2` with all five native scenarios, actual Run-credential
+privacy witnesses and owned cleanup. The privacy oracle includes the independently
+reviewed actual-credential repair. Task tracking receives a separately checked
+commit; PR #59 was open with required review pending at source acceptance.
+Earlier component sections below retain their historical acceptance boundaries;
+this gate is the current Phase 4 execution result. Later phases are not complete.
+See [test/e2e/README.md](test/e2e/README.md).
 
 ## Disposable kind foundation (P4.12)
 

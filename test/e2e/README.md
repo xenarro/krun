@@ -42,7 +42,12 @@ generated API credential without printing it.
 The separate Vitest runner now requires all five `*.e2e.ts` files; an empty
 suite fails. File execution is sequential, with a unique generated Function
 per file, the existing bounded test/hook budgets and one visible runner retry.
-The phase gate passes locally; no P4.13 hosted result is claimed before delivery.
+The phase gate passes locally and in [exact source-head hosted CI](https://github.com/xenarro/krun/actions/runs/40523418351)
+for `2f8f5e2` ([PR #59](https://github.com/xenarro/krun/pull/59));
+both `verify` and `kind`, including owned cleanup, pass. Independent correctness/
+contracts review and the actual Run-credential privacy repair are complete.
+Required repository approval/merge remains separate; tracking receives its own
+checked commit. This is Phase 4 acceptance, not production or later-phase acceptance.
 
 - `success`: input fetched through the internal API, one accepted status and an
   inline result PUT. The public FULL Run succeeds with the exact opaque result.

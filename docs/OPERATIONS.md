@@ -58,8 +58,11 @@ state during recovery, never publish it or generated credentials, and use the
 same checkout/TMPDIR for cleanup. E2E verifies real default-deny enforcement
 before its five Phase 4 scenarios: result/status round-trip, exit 1, image-pull
 deadline, two statuses then exit 3, and heartbeat expiry with Job removal. The
-local P4.13 gate now passes; exact task-head hosted verification remains delivery
-work. This raw embedded setup is disposable, not a durable production deployment.
+P4.13 gate passes locally and in exact source-head hosted `verify`/`kind`
+([CI](https://github.com/xenarro/krun/actions/runs/40523418351),
+[PR #59](https://github.com/xenarro/krun/pull/59)). Required repository review
+and merge remain distinct from this verified delivery. This raw embedded setup
+is disposable, not a durable production deployment.
 Each scenario cleans and reads back its own Function-labelled resources. The
 curl-based fixtures are built locally from a pinned base and pushed only to the
 owned loopback registry; generated credentials and raw private state stay local.
