@@ -66,10 +66,15 @@ the stored owner and function on each read, including `functions/-` and history
 whose Function has been deleted. Graceful shutdown uses the existing response
 tracker so accepted waits settle before their Store and listeners close.
 
-Focused handler controls and native SIGTERM acceptance pass locally. Independent
-P5.1 review and exact task-head hosted verification remain pending. The complete
-Phase 5 wait/SSE/signed-webhook gate remains P5.4; this slice does not implement
-SSE or webhook delivery.
+Both independent P5.1 reviews and scoped integration verification are complete.
+Fresh `make check` passes 1,584 TypeScript tests plus one Python test; 17 new
+handler controls, actual process/image timeout and SIGTERM checks, and all five
+existing native kind regression scenarios pass. [Exact source CI](https://github.com/xenarro/krun/actions/runs/40537869519)
+verifies `f211ba0` with hosted `verify` and `kind`. [PR #60](https://github.com/xenarro/krun/pull/60)
+was independently approved and merged; this task's PLAN/README tracking receives
+its own fresh check and exact-head hosted acceptance in a follow-up PR.
+The complete Phase 5 wait/SSE/signed-webhook gate remains P5.4; this slice does
+not implement SSE or webhook delivery.
 
 ## Disposable kind foundation (P4.12)
 
