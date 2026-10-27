@@ -20,6 +20,38 @@ Health/telemetry acceptance covers real Prometheus collection through Fastify `i
 
 The `gateway` and `scheduler` commands now start real scoped serving processes. Both `--help` commands remain finite and configuration-free. `validate` is a real offline Function validator and `migrate` is a real database command, as described below. Apply migrations explicitly before starting serving replicas. Gateway process implementation now passes local source, rebuilt-container and current gateway phase/supporting acceptance. Both independent review findings are resolved; the code is pushed and exact-head hosted CI passes. Protected-stack integration remains pending; no merged delivery is claimed. Scheduler process composition now passes the P4.11 host/image process acceptance below; actual kind/admission/Job execution remains P4.12/P4.13. See [PLAN.md](PLAN.md) for acceptance criteria and progress.
 
+## Disposable kind foundation (P4.12)
+
+`make kind-up` now builds and deploys the current hardened image into the owned
+`krun-test-e2e` cluster. `.kind-version` pins kind 0.33.0, and `test/e2e/images.json`
+pins its Kubernetes 1.37 node and registry:2 manifests by digest. The local
+registry follows kind's localhost:5001 recipe, including per-node containerd
+mirrors and the discovery ConfigMap. Both real processes share embedded SQLite,
+with explicit init-container migrations, restricted security contexts, separate
+admin ports and the scheduler's downward-API Lease identity. The generated CRD
+and raw jobs namespace isolation/RBAC/limits/quota are applied before a
+kubectl-applied Function reaches current `Ready=True`.
+
+Local `make e2e` now passes with zero behavioural scenarios. Before the empty
+Vitest runner, it proves a real pod-to-pod connection opens, default-deny blocks
+it, and policy removal restores it; it also checks the authenticated Function
+projection and generated-key log privacy. Kubernetes/API/exec errors cannot
+stand in for an observed blocked connection. The harness uses a private
+kubeconfig and explicit test context, leaving even an unusable ambient context
+unchanged. `make kind-down` removes owned resources; CI has a separate SHA-pinned
+kind job using the same version and an always-run cleanup step. Hosted task-head
+CI awaits independent review/delivery; no new hosted run is claimed here.
+
+The first real API run exposed and reproduced a Lease MicroTime write defect:
+ordinary Date JSON has three fractional digits, but Kubernetes requires six.
+The native Lease adapter now normalizes both timestamp fields without mutating
+its caller or losing precision in read strings. Failing-first create/update
+wire tests and the rebuilt real-cluster serving acceptance pass.
+
+See [test/e2e/README.md](test/e2e/README.md) for prerequisites, ownership and
+recovery. P4.13 still owns the actual Run/lifecycle/failure scenarios and the
+complete Phase 4 gate; a passing foundation is not completion of that phase.
+
 ## Scheduler process (P4.11)
 
 `krun scheduler` now serves the admin listener and assembles real Config,

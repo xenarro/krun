@@ -6,13 +6,15 @@
     ".": {
       "entry": [
         "bin/krun.js",
+        "test/e2e/cluster.ts",
         "test/**/*.test.ts",
         "scripts/gen-crd.ts",
         "scripts/gen-openapi.ts",
         "scripts/smoke-validate.ts",
         "scripts/smoke-gateway.ts"
       ],
-      "project": ["bin/**/*.js", "test/**/*.ts", "scripts/**/*.ts"]
+      "project": ["bin/**/*.js", "test/**/*.ts", "scripts/**/*.ts"],
+      "vitest": { "config": ["vitest.config.ts", "test/e2e/vitest.config.ts"] }
     },
     "packages/shared": {
       "ignoreBinaries": ["openssl"],
