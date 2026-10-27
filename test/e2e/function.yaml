@@ -1,0 +1,9 @@
+apiVersion: krun.io/v1alpha1
+kind: Function
+metadata:
+  name: foundation
+  namespace: krun
+spec:
+  image: __KRUN_E2E_IMAGE__
+  inputSchema:
+    type: object

@@ -1,6 +1,6 @@
 import { KubeConnection } from "@krun/shared/dist/k8s/config.js";
 import { KubeApiError } from "@krun/shared/dist/k8s/errors.js";
-import { CoordinationV1Api, type V1Lease } from "@kubernetes/client-node";
+import { CoordinationV1Api, type V1Lease, V1MicroTime } from "@kubernetes/client-node";
 import { Context, Effect, Layer } from "effect";
 import { z } from "zod";
 import { type NativeOptions, nativeRequest } from "./request.js";
@@ -35,6 +35,26 @@ const response = z.looseObject({
     })
     .optional(),
 });
+// Go metav1.MicroTime rejects ordinary Date JSON's three fractional digits.
+// Normalize both write fields at this native boundary; preserve read strings
+// (including sub-millisecond precision) and do not mutate caller-owned bodies.
+const wireBody = (body: V1Lease): V1Lease => {
+  const spec = body.spec;
+  if (!spec || (!(spec.acquireTime instanceof Date) && !(spec.renewTime instanceof Date)))
+    return body;
+  return {
+    ...body,
+    spec: {
+      ...spec,
+      ...(spec.acquireTime instanceof Date
+        ? { acquireTime: new V1MicroTime(spec.acquireTime.getTime()) }
+        : {}),
+      ...(spec.renewTime instanceof Date
+        ? { renewTime: new V1MicroTime(spec.renewTime.getTime()) }
+        : {}),
+    },
+  };
+};
 // The optional native client is a narrow constructor seam for stubbed API tests.
 // Authentication/limiting/timeouts still belong to the shared connection.
 export const makeLeaseApi = (client?: Client) =>
@@ -68,14 +88,17 @@ export const makeLeaseApi = (client?: Client) =>
         ),
       create: (namespace, body) =>
         call(
-          (options) => api.createNamespacedLease({ namespace, body }, options),
+          (options) => api.createNamespacedLease({ namespace, body: wireBody(body) }, options),
           namespace,
           "create",
         ),
       replace: (namespace, body) =>
         call(
           (options) =>
-            api.replaceNamespacedLease({ namespace, name: "krun-scheduler", body }, options),
+            api.replaceNamespacedLease(
+              { namespace, name: "krun-scheduler", body: wireBody(body) },
+              options,
+            ),
           namespace,
           "update",
         ),

@@ -107,7 +107,7 @@ it.effect("the actual client reaches the exact Lease REST routes and round-trips
         res.end(
           JSON.stringify({
             ...returned,
-            spec: { holderIdentity: "test-pod", renewTime: "2026-01-01T00:00:00.000Z" },
+            spec: { holderIdentity: "test-pod", renewTime: "2026-01-01T00:00:00.123456Z" },
           }),
         );
       })().catch(() => {
@@ -117,7 +117,7 @@ it.effect("the actual client reaches the exact Lease REST routes and round-trips
     });
     const api = yield* liveApi(fixture.url);
     const value = yield* api.read("krun-test-lease");
-    expect(value.spec?.renewTime).toBe("2026-01-01T00:00:00.000Z");
+    expect(value.spec?.renewTime).toBe("2026-01-01T00:00:00.123456Z");
     const body = {
       ...value,
       spec: {
@@ -134,7 +134,7 @@ it.effect("the actual client reaches the exact Lease REST routes and round-trips
     ]);
     expect(requests[2]?.body).toMatchObject({
       metadata: { resourceVersion: "42" },
-      spec: { renewTime: "2026-01-01T00:00:00.000Z" },
+      spec: { renewTime: "2026-01-01T00:00:00.000000Z" },
     });
   }),
 );
@@ -165,6 +165,55 @@ it.effect(
       expect(fixture.server.listening).toBe(true);
     }),
 );
+
+for (const operation of ["create", "replace"] as const)
+  it.effect(
+    `serializes native Lease ${operation} timestamps as six-digit MicroTime without mutating its caller`,
+    () =>
+      Effect.gen(function* () {
+        const timestamp = DateTime.toDateUtc(DateTime.makeUnsafe("2026-01-01T00:00:00.123Z"));
+        const body: V1Lease = {
+          ...returned,
+          spec: { holderIdentity: "test-pod", acquireTime: timestamp, renewTime: timestamp },
+        };
+        const received: unknown[] = [];
+        const fixture = yield* serverFixture((req, res) => {
+          void (async () => {
+            const chunks: Buffer[] = [];
+            for await (const chunk of req) chunks.push(Buffer.from(chunk));
+            const wire = JSON.parse(Buffer.concat(chunks).toString());
+            received.push(wire);
+            const valid = [wire.spec.acquireTime, wire.spec.renewTime].every(
+              (time) => typeof time === "string" && /\.\d{6}Z$/.test(time),
+            );
+            res.setHeader("content-type", "application/json");
+            res.statusCode = valid ? 200 : 400;
+            res.end(
+              JSON.stringify(
+                valid
+                  ? { ...wire, metadata: { ...wire.metadata, resourceVersion: "43" } }
+                  : { reason: "BadRequest" },
+              ),
+            );
+          })().catch(() => {
+            res.statusCode = 500;
+            res.end("{}");
+          });
+        });
+        const api = yield* liveApi(fixture.url);
+        const value = yield* api[operation]("krun-test-lease", body);
+        expect(value.spec?.renewTime).toBe("2026-01-01T00:00:00.123000Z");
+        expect(received).toHaveLength(1);
+        expect(received[0]).toMatchObject({
+          spec: {
+            acquireTime: "2026-01-01T00:00:00.123000Z",
+            renewTime: "2026-01-01T00:00:00.123000Z",
+          },
+        });
+        expect(body.spec?.renewTime).toBe(timestamp);
+        expect(timestamp.toISOString()).toBe("2026-01-01T00:00:00.123Z");
+      }),
+  );
 
 for (const kind of ["403", "missing-version", "invalid-microtime"])
   it.effect(`sanitizes ${kind} without retaining response data`, () =>

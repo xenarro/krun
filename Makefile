@@ -28,16 +28,14 @@ docker:
 	docker build --tag "$(IMAGE)" .
 
 kind-up:
-	@printf '%s\n' 'The kind harness is pending P4.12.' >&2
-	@exit 1
+	node test/e2e/cluster.ts up
 
 kind-down:
-	@printf '%s\n' 'The kind harness is pending P4.12.' >&2
-	@exit 1
+	node test/e2e/cluster.ts down
 
-e2e:
-	@printf '%s\n' 'End-to-end tests are pending P4.12.' >&2
-	@exit 1
+e2e: kind-up
+	node test/e2e/cluster.ts verify
+	pnpm exec vitest run --config test/e2e/vitest.config.ts
 
 helm-lint:
 	helm lint deploy/helm/krun

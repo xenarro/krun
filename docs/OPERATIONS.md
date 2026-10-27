@@ -47,6 +47,18 @@ Its standby remains ready after database/Function synchronization and reports
 `leader: false`; Job/Pod watches and work are acquired only by the leader.
 Use a distinct admin address from the gateway when colocating the processes.
 
+## Disposable development cluster
+
+The P4.12 local foundation is separate from the production Helm workflow.
+Use the pinned prerequisites and Make targets in `test/e2e/README.md`:
+`make kind-up`, `make e2e`, then `make kind-down`. The harness owns only the
+`krun-test-e2e` cluster and its labelled loopback `kind-registry`; all Kubernetes
+commands use a private kubeconfig and explicit test context. Keep its private
+state during recovery, never publish it or generated credentials, and use the
+same checkout/TMPDIR for cleanup. E2E verifies real default-deny enforcement
+before its currently empty behavioural scenario runner. The raw embedded setup
+is disposable, not a durable deployment or acceptance of the P4.13 phase gate.
+
 ## Capacity
 
 - `config.maxRunning` must not exceed `jobsNamespace.quota.pods`; the chart
