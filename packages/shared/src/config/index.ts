@@ -129,7 +129,27 @@ export const SchedulerEnv = all
     KRUN_RATE_LIMIT_RPS: true,
     KRUN_RATE_LIMIT_BURST: true,
   })
-  .extend({ OTEL_SERVICE_NAME: field(z.string().default("krun-scheduler")) })
+  .extend({
+    KRUN_POD_NAME: field(
+      z
+        .string()
+        .min(1)
+        .max(253)
+        .regex(/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/)
+        .refine((value) =>
+          value
+            .split(".")
+            .every(
+              (part) =>
+                part.length > 0 &&
+                part.length <= 63 &&
+                /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(part),
+            ),
+        )
+        .optional(),
+    ),
+    OTEL_SERVICE_NAME: field(z.string().default("krun-scheduler")),
+  })
   .superRefine((config, ctx) => {
     validateDatabase(config, ctx);
     if (config.KRUN_WEBHOOK_ALLOWED_HOSTS.length > 0 && config.KRUN_WEBHOOK_SECRET.length === 0) {

@@ -252,6 +252,9 @@ importers:
       effect:
         specifier: ~4.0.6
         version: 4.0.6
+      fastify:
+        specifier: ^5.12.7
+        version: 5.12.7
       undici:
         specifier: ^8.12.3
         version: 8.12.3

@@ -28,12 +28,10 @@ describe("scaffold acceptance", () => {
   it.each(["gateway", "scheduler"])(
     "dispatches resource-free %s help/scaffold without production configuration",
     (command) => {
-      const result = run(command === "gateway" ? [command, "--help"] : [command], tmpdir());
+      const result = run([command, "--help"], tmpdir());
       expect(result.error).toBeUndefined();
       expect(result.status).toBe(0);
-      expect(result.stdout.trim()).toBe(
-        command === "gateway" ? "Usage: krun gateway [--help]" : command,
-      );
+      expect(result.stdout.trim()).toBe(`Usage: krun ${command} [--help]`);
       expect(result.stderr).toBe("");
     },
   );

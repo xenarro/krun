@@ -12,13 +12,65 @@ The scaffold, configuration, admin health/telemetry and complete dual-backend St
 - Digest-pinned, non-root distroless container packaging.
 - CI checks for types, formatting, tests, unused code, generated files, container packaging, chart lint and critical vulnerabilities.
 
-Admin health and telemetry are reusable scoped layers and are now wired into the gateway process; scheduler process wiring remains pending. The separate admin app serves `/healthz`, Ref-backed `/readyz` with a two-second database timeout, initial Function-LIST and shutdown gates, and non-gating leader status. `TelemetryLive` bridges Effect metrics to the OpenTelemetry Prometheus exporter on `/metrics` without an exporter-owned port or global registry. When a parsed OTLP endpoint is set it installs the real HTTP batch trace exporter, using the parsed service name and explicit sampler; otherwise traces are not exported. Scope exit closes the reader and flushes/shuts down tracing. Invalid sampler values fall back nonfatally with variable-name-only warnings; an invalid endpoint disables tracing without disabling metrics.
+Admin health and telemetry are reusable scoped layers wired into both gateway and scheduler processes (P4.11). The separate admin app serves `/healthz`, Ref-backed `/readyz` with a two-second database timeout, initial Function-LIST and shutdown gates, and non-gating leader status. `TelemetryLive` bridges Effect metrics to the OpenTelemetry Prometheus exporter on `/metrics` without an exporter-owned port or global registry. When a parsed OTLP endpoint is set it installs the real HTTP batch trace exporter, using the parsed service name and explicit sampler; otherwise traces are not exported. Scope exit closes the reader and flushes/shuts down tracing. Invalid sampler values fall back nonfatally with variable-name-only warnings; an invalid endpoint disables tracing without disabling metrics.
 
 Readiness's HTTP deadline does not wait for database cancellation cleanup. Overlapping probes share at most one DB worker; the readiness layer owns that worker until its cleanup completes, so repeated timeouts cannot accumulate abandoned checks. Client disconnects cancel both Effect-backed admin routes. Admin scope release cancels and settles active handlers before dependent layers close. Cleanup remains cooperative: uninterruptible cleanup is awaited by its owner, not detached or forcibly discarded.
 
 Health/telemetry acceptance covers real Prometheus collection through Fastify `inject`, stalled-database timing through `TestClock` (including slow finalizers and uninterruptible work), real socket disconnects, handler/dependency teardown ordering, reader/provider cleanup, and actual OTLP JSON sent to a disposable local collector. Run `pnpm exec vitest run packages/shared/src/health packages/shared/src/runtime` for this slice. P0.7 module acceptance and hosted CI passed for [PR #3](https://github.com/xenarro/krun/pull/3), including the reviewed lifecycle repairs, container rebuild, smoke, audit and fixable-critical scan. [Code CI](https://github.com/xenarro/krun/actions/runs/40019565091) verified reconciled head `9f870d4`, containing implementation commit `afc0375`. The PR remains unmerged pending required independent approval. PLAN records this bounded task; Phase 0 and the application are not complete.
 
-The `gateway` command now starts a real scoped serving process. `gateway --help` remains finite and configuration-free; the `scheduler` command still prints its name and exits. `validate` is a real offline Function validator and `migrate` is a real database command, as described below. Apply migrations explicitly before starting serving replicas. Gateway process implementation now passes local source, rebuilt-container and current gateway phase/supporting acceptance. Both independent review findings are resolved; the code is pushed and exact-head hosted CI passes. Protected-stack integration remains pending; no merged delivery is claimed. Scheduler wiring and execution remain later work. See [PLAN.md](PLAN.md) for acceptance criteria and progress.
+The `gateway` and `scheduler` commands now start real scoped serving processes. Both `--help` commands remain finite and configuration-free. `validate` is a real offline Function validator and `migrate` is a real database command, as described below. Apply migrations explicitly before starting serving replicas. Gateway process implementation now passes local source, rebuilt-container and current gateway phase/supporting acceptance. Both independent review findings are resolved; the code is pushed and exact-head hosted CI passes. Protected-stack integration remains pending; no merged delivery is claimed. Scheduler process composition now passes the P4.11 host/image process acceptance below; actual kind/admission/Job execution remains P4.12/P4.13. See [PLAN.md](PLAN.md) for acceptance criteria and progress.
+
+## Scheduler process (P4.11)
+
+`krun scheduler` now serves the admin listener and assembles real Config,
+Telemetry, Database/Store, a single shared bounded Kubernetes connection,
+Function LIST/WATCH cache, Lease election and the existing scheduler components.
+Migrations remain an explicit `krun migrate` operation before serving startup.
+Set `KRUN_POD_NAME` from downward API `metadata.name`; it is required by the
+serving process and never inferred from a hostname. Embedded mode also needs a
+writable `KRUN_DB_PATH`; use a distinct admin address from the gateway (the
+chart's scheduler convention is `:9091`).
+
+Every replica maintains its Function cache. `/readyz` stays unavailable until
+Function synchronization and a bounded database check succeed, while `/healthz`
+remains independent. A standby returns ready with `leader: false`, exports a
+zero leader gauge and starts no Job/Pod watches, scheduler loops or status writes.
+The leader acquires Job/Pod informers and wires the shared controller, main loop,
+lost-Job reconciliation, heartbeat, retention sweep and Function status writer.
+Claiming waits for Function synchronization and both initial Job/Pod LISTs.
+
+SIGTERM marks draining before stopping work; leader calls and Job/Pod watches
+settle, the Function informer stops, the owned Lease is released, then admin and
+Store resources close before telemetry. Real host and hardened-image tests exit
+zero within five seconds with an empty holder and no live watches. A stolen
+Lease instead exits nonzero, closes watches and never clears its successor.
+Tests also drive an actual SQL row through native Secret/Job creation and a
+cached completion to `succeeded`, verify cleanup and lifecycle metrics, inject
+a real database failure (readiness503/liveness200), and preserve terminal work
+rather than invent success when configured result storage lacks its P6.2 adapter.
+A deterministic interruption regression also fences process Function cleanup
+before Lease release when elected work never enters. Additional real PostgreSQL18
+standby and leader process probes pass on host and image,including native
+completion and zero remaining pool/LISTEN connections after shutdown.
+The same five embedded process controls run against source and the rebuilt nonroot,
+read-only image via `scripts/smoke-scheduler.ts`; CI now exercises this real
+process boundary as well as finite scheduler help.
+
+Object-store transport/wiring remains P6.2 and webhook delivery P5.3. This is
+assembled-process acceptance over a disposable loopback API and real SQL, not
+actual Kubernetes admission, garbage collection or Job execution. The complete
+kind/e2e phase gate remains P4.12/P4.13; no whole-phase pass is claimed.
+
+P4.11 source is pushed in [PR #56](https://github.com/xenarro/krun/pull/56) at
+`9d2dfe4797b15450c31450f1c9945a5b153abc98`. Its [exact-head CI](https://github.com/xenarro/krun/actions/runs/40482390594)
+passes all nine gates, including the real hardened-image scheduler process
+acceptance and 1,541 TypeScript tests plus one Python test. Required main review
+remains pending; this is a green pushed delivery, not a merged-main claim.
+Task-only PLAN/README tracking receives a separate fresh check and hosted run.
+
+The following component delivery sections retain their original pre-P4.11
+acceptance snapshots. Their historical finite-command/assembly-pending wording
+is superseded by this process section, not a statement of the current CLI.
 
 ## Sweep component (P4.10)
 
@@ -1008,15 +1060,15 @@ actionlint
 make docker
 ```
 
-Run a finite scaffold command from source build output or the container:
+Run resource-free help from source build output or the container:
 
 ```sh
 make build
-node bin/krun.js gateway
-docker run --rm --read-only --network none krun:local gateway
+node bin/krun.js gateway --help
+docker run --rm --read-only --network none krun:local scheduler --help
 ```
 
-Both commands print `gateway` and exit 0. The `scheduler` scaffold command behaves the same way. `validate` instead requires manifest paths (or `--help`) and performs real offline validation; `migrate` requires database settings and performs real migrations. The kind/e2e Make targets fail explicitly until their planned harness is implemented; the Helm chart is currently a minimal lintable skeleton.
+Both examples print usage and exit 0. Without `--help`, gateway and scheduler require configuration and remain serving until shutdown. `validate` instead requires manifest paths (or `--help`) and performs real offline validation; `migrate` requires database settings and performs real migrations. The kind/e2e Make targets fail explicitly until their planned harness is implemented; the Helm chart is currently a minimal lintable skeleton.
 
 Tests include configuration defaults and boundaries, process-specific validation, namespace resolution, typed/redacted failures, Effect layers, command dispatch and build/CI contracts. `make check` also runs Python lint/type checks and Knip.
 
