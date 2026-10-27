@@ -4,7 +4,7 @@ HTTP-triggered functions, executed as one-off Kubernetes Jobs. Callers submit JS
 
 ## Development status
 
-Core function execution now works locally in disposable embedded-mode kind through the Phase 4 gate. This is not a complete or production-ready release: SDK runtime behaviour, wait/SSE/webhooks, large-result object storage and production Helm acceptance remain later phases.
+Core function execution now works locally in disposable embedded-mode kind through the Phase 4 gate. Gateway wait handling is implemented locally as described below. This is not a complete or production-ready release: SDK runtime behaviour, SSE/webhooks, large-result object storage and production Helm acceptance remain later phases.
 
 - Strict TypeScript workspace on Node.js 26, with Effect 4 process entrypoints.
 - Zod configuration schemas and Effect services for gateway and scheduler settings.
@@ -50,6 +50,26 @@ commit; PR #59 was open with required review pending at source acceptance.
 Earlier component sections below retain their historical acceptance boundaries;
 this gate is the current Phase 4 execution result. Later phases are not complete.
 See [test/e2e/README.md](test/e2e/README.md).
+
+## Gateway waits (P5.1)
+
+`CreateRun?wait=<duration>` retains status 201. `POST /v1/functions/{function}/runs/{run}:wait`
+returns status 200 with the current FULL Run when it reaches a terminal state,
+the timeout expires, or graceful shutdown ends the wait early. An omitted body
+or timeout uses `KRUN_MAX_WAIT`; explicit durations are capped at the same value.
+A timeout is not an error and a disconnect never cancels the Run.
+
+Both methods share one scoped Store notification consumer. A wait registers
+before insert/read, coalesces hints by Run id, and re-reads authoritative rows;
+the required one-second fallback covers lost notifications. WaitRun authorizes
+the stored owner and function on each read, including `functions/-` and history
+whose Function has been deleted. Graceful shutdown uses the existing response
+tracker so accepted waits settle before their Store and listeners close.
+
+Focused handler controls and native SIGTERM acceptance pass locally. Independent
+P5.1 review and exact task-head hosted verification remain pending. The complete
+Phase 5 wait/SSE/signed-webhook gate remains P5.4; this slice does not implement
+SSE or webhook delivery.
 
 ## Disposable kind foundation (P4.12)
 

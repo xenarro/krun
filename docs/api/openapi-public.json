@@ -3154,6 +3154,7 @@
             "application/json": {
               "schema": {
                 "additionalProperties": false,
+                "default": {},
                 "properties": {
                   "timeout": {
                     "description": "Duration; installation/Function cap applies.",
