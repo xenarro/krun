@@ -39,6 +39,7 @@ export const startSchedulerProcess = async (
     seed?: boolean;
     image?: string | undefined;
     configuredStorage?: boolean;
+    webhook?: { url: string; secret: string; terminal?: boolean };
   } = {},
 ) => {
   const namespace = "krun-test-scheduler-process";
@@ -62,6 +63,11 @@ export const startSchedulerProcess = async (
     KUBECONFIG: kubePath,
   };
   if (options.configuredStorage) env.KRUN_S3_BUCKET = "krun-test-results";
+  if (options.webhook) {
+    env.KRUN_WEBHOOK_ALLOWED_HOSTS = new URL(options.webhook.url).hostname;
+    env.KRUN_WEBHOOK_ALLOWED_CIDRS = "127.0.0.0/8";
+    env.KRUN_WEBHOOK_SECRET = options.webhook.secret;
+  }
   const config = {
     apiVersion: "v1",
     kind: "Config",
@@ -71,7 +77,7 @@ export const startSchedulerProcess = async (
     "current-context": name,
   };
   await writeFile(kubePath, JSON.stringify(config), { mode: 0o444 });
-  const seed = `const d=new (require('node:sqlite').DatabaseSync)(process.env.KRUN_DB_PATH);d.prepare('insert into runs(id,request_hash,function_name,input,state,priority,attempt,created_by,created_at) values(?,?,?,?,?,?,?,?,?)').run('${schedulerRunId}','a'.repeat(64),'echo','{}','queued',0,0,'krun-test',new Date().toISOString());d.close();`;
+  const seed = `const d=new (require('node:sqlite').DatabaseSync)(process.env.KRUN_DB_PATH);const at=new Date().toISOString();d.prepare('insert into runs(id,request_hash,function_name,input,state,priority,attempt,created_by,created_at,callback_url) values(?,?,?,?,?,?,?,?,?,?)').run('${schedulerRunId}','a'.repeat(64),'echo','{}','queued',0,0,'krun-test',at,${JSON.stringify(options.webhook?.url ?? null)});${options.webhook?.terminal ? `d.prepare("update runs set state='failed',finished_at=? where id=?").run(at,'${schedulerRunId}');d.prepare("insert into deliveries(id,run_id,url,payload,attempt,next_at,state,last_error,created_at) values(?,?,?,?,0,?,'pending',null,?)").run('${schedulerRunId}','${schedulerRunId}',${JSON.stringify(options.webhook.url)},JSON.stringify({name:'functions/echo/runs/${schedulerRunId}',state:'FAILED',attempt:0,priority:0,createdBy:'krun-test',createTime:at,endTime:at}),at,at);` : ""}d.close();`;
   let child: ReturnType<typeof spawn>;
   try {
     if (options.image) {
@@ -101,7 +107,8 @@ export const startSchedulerProcess = async (
         `type=bind,source=${launcher},target=/krun-test-launcher.cjs,readonly`,
       ];
       for (const [key, value] of Object.entries(env))
-        if (key.startsWith("KRUN_") && value !== undefined) args.push("--env", `${key}=${value}`);
+        if (key.startsWith("KRUN_") && value !== undefined)
+          args.push("--env", key === "KRUN_WEBHOOK_SECRET" ? key : `${key}=${value}`);
       args.push(
         "--env",
         "KUBECONFIG=/krun-test-kube",
@@ -110,7 +117,10 @@ export const startSchedulerProcess = async (
         options.image,
         "/krun-test-launcher.cjs",
       );
-      child = spawn("docker", args, { stdio: ["ignore", "pipe", "pipe"] });
+      child = spawn("docker", args, {
+        env: { ...process.env, KRUN_WEBHOOK_SECRET: env.KRUN_WEBHOOK_SECRET },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
     } else {
       const migrated = spawnSync(process.execPath, [join(root, "bin/krun.js"), "migrate"], {
         env,
@@ -179,6 +189,35 @@ export const startSchedulerProcess = async (
             | { state: string }
             | undefined
         )?.state;
+      } finally {
+        db.close();
+      }
+    },
+    delivery: async () => {
+      if (options.image) {
+        const script =
+          "const d=new(require('node:sqlite').DatabaseSync)(process.env.KRUN_DB_PATH,{readOnly:true});console.log(JSON.stringify(d.prepare('select state,attempt,last_error,next_at from deliveries limit 1').get()??null));d.close();";
+        const result = await execute("docker", ["exec", name, "/nodejs/bin/node", "-e", script], {
+          encoding: "utf8",
+          timeout: 10000,
+        });
+        return JSON.parse(result.stdout) as {
+          state: string;
+          attempt: number;
+          last_error: string | null;
+          next_at: string;
+        } | null;
+      }
+      const db = new DatabaseSync(dbPath, { readOnly: true });
+      try {
+        return (db
+          .prepare("select state,attempt,last_error,next_at from deliveries limit 1")
+          .get() ?? null) as {
+          state: string;
+          attempt: number;
+          last_error: string | null;
+          next_at: string;
+        } | null;
       } finally {
         db.close();
       }

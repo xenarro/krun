@@ -4,7 +4,7 @@ HTTP-triggered functions, executed as one-off Kubernetes Jobs. Callers submit JS
 
 ## Development status
 
-Core function execution now works locally in disposable embedded-mode kind through the Phase 4 gate. Gateway waits and Run event streams are implemented locally as described below. This is not a complete or production-ready release: SDK runtime behaviour, webhook delivery, large-result object storage and production Helm acceptance remain later phases.
+Core function execution now works locally in disposable embedded-mode kind through the Phase 4 gate. Gateway waits, Run event streams and scheduler webhook delivery are implemented locally as described below. This is not a complete or production-ready release: the full Phase 5 native wait/signed-webhook gate, SDK runtime behaviour, large-result object storage and production Helm acceptance remain later work.
 
 - Strict TypeScript workspace on Node.js 26, with Effect 4 process entrypoints.
 - Zod configuration schemas and Effect services for gateway and scheduler settings.
@@ -99,6 +99,46 @@ Local handler and actual process/image acceptance are recorded with this task.
 Independent P5.2 review and exact task-head hosted acceptance remain separate
 steps. The full Phase 5 kind wait/signed-webhook gate remains P5.4; this slice
 adds no webhook delivery or production-completion claim.
+
+## Local webhook deliveries (P5.3)
+
+The elected scheduler now drains the existing durable terminal-run outbox.
+It claims up to 40 due rows with the Store's 60-second lease, awaits the whole
+batch with at most eight concurrent sends, and immediately reclaims after a
+full batch. Short passes repeat every five seconds without overlapping.
+An empty configured host allowlist disables claims, including older pending
+callbacks.
+
+Every attempt uses the existing pinned-address dispatcher: host and all resolved
+addresses are checked again, redirects are not followed, and the request is
+bounded to ten seconds. Only 2xx acknowledges delivery. The stored BASIC
+snapshot is encoded once for that attempt's timestamped HMAC and POST; no input,
+inline result, log tail or error details are reconstructed from the current Run.
+Delivery IDs remain stable across retries, signatures are fresh, rotation emits
+one signature per configured secret, and each attempt sends its own span's
+`traceparent`.
+
+Failures persist the fixed 1-minute, 5-minute, 30-minute, 2-hour and 12-hour retry
+delays; the sixth failure marks the row dead. There is no in-memory retry queue.
+SIGTERM or leadership loss aborts active HTTP work without consuming a failed
+attempt; the pending claim lease permits later replay. Store outcome writes
+atomically compare the claimed pending state, attempt and lease timestamp, so
+an obsolete owner cannot regress a newer acknowledgement or retry. Missing or
+reclaimed rows return unapplied and publish no outcome counter. Applied writes
+settle before dependency teardown, and only those committed outcomes increment
+`krun_deliveries_total{state}`. Errors and telemetry contain bounded reasons or
+HTTP statuses, never callback queries, request/response bodies, signatures or
+secrets.
+
+Acceptance covers actual local HTTP receivers and SQLite outbox rows, the
+full retry schedule under `TestClock`, the eight-send cap, a fifty-second
+worst-case network batch, DNS rechecks, cancellation and write failures, actual
+OTLP span propagation and Prometheus output. Native scheduler process controls
+prove terminal callback delivery, standby isolation, SIGTERM and leadership-loss
+cleanup using real SQLite and the existing controlled Kubernetes LIST/WATCH
+fixture. This is not the P5.4 in-cluster receiver gate. Independent P5.3 review,
+exact task-head hosted CI and the complete Phase 5 native wait/signed-webhook
+gate remain separate; no production or publication completion is claimed.
 
 ## Disposable kind foundation (P4.12)
 

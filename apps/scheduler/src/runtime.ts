@@ -18,8 +18,10 @@ import {
 import { TelemetryLive } from "@krun/shared/dist/runtime/telemetry.js";
 import { Store } from "@krun/shared/dist/store/index.js";
 import { StoreLive } from "@krun/shared/dist/store/live.js";
+import { DnsLookupLive } from "@krun/shared/dist/webhook/index.js";
 import { Data, Effect, Exit, Fiber, Layer, Ref, Schedule, Scope } from "effect";
 import Fastify from "fastify";
+import { makeDeliveriesLoop } from "./deliveries-loop.js";
 import { makeFunctionStatusWriter } from "./function-status.js";
 import { makeHeartbeatLoop } from "./heartbeat-loop.js";
 import { makeJobController, ResultCheckError } from "./job-controller.js";
@@ -59,6 +61,7 @@ const leader = (
         checkLost: controller.checkLost,
       });
       const heartbeat = yield* makeHeartbeatLoop({ controller });
+      const deliveries = yield* makeDeliveriesLoop(config);
       const sweep = yield* makeSweepLoop({
         namespace: config.KRUN_JOBS_NAMESPACE,
         retention: config.KRUN_RETENTION,
@@ -72,6 +75,7 @@ const leader = (
           source.ready.pipe(Effect.andThen(cache.synced), Effect.andThen(main.run)),
           controller.run,
           heartbeat.run,
+          deliveries.run,
           sweep.run,
           status.run,
           status.reconcile.pipe(Effect.repeat(Schedule.spaced("5 minutes"))),
@@ -96,7 +100,7 @@ const scheduler = Effect.gen(function* () {
   const readiness = Layer.unwrap(
     Effect.map(Store, (store) => ReadinessLive(store.countByState().pipe(Effect.asVoid))),
   );
-  const services = Layer.mergeAll(KubeLive, LeaseApiLive, FunctionSourceLive).pipe(
+  const services = Layer.mergeAll(KubeLive, LeaseApiLive, FunctionSourceLive, DnsLookupLive).pipe(
     Layer.provideMerge(KubeConnectionLive),
     Layer.provideMerge(readiness),
     Layer.provideMerge(store),

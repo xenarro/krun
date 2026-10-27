@@ -518,6 +518,90 @@ for (const dialect of ["sqlite", "postgres"] as const) {
           }),
         ),
     );
+    it.effect("guarded outcomes require the exact attempt and lease and apply only once", () =>
+      run(
+        Effect.gen(function* () {
+          const now = yield* DateTime.now;
+          yield* seedDelivery(1, now);
+          const m = yield* makeRunMaintenance;
+          const claim = (yield* m.claimDeliveries(now, 1))[0];
+          if (!claim) return yield* Effect.die("Missing owned claim");
+          const before = yield* deliveries();
+          expect(
+            yield* m.updateDelivery(claim.id, "delivered", 0, null, null, {
+              ...claim,
+              attempt: claim.attempt + 1,
+            }),
+          ).toBe(false);
+          expect(
+            yield* m.updateDelivery(claim.id, "delivered", 0, null, null, {
+              ...claim,
+              next_at: DateTime.addDuration(claim.next_at, "1 millis"),
+            }),
+          ).toBe(false);
+          expect(yield* deliveries()).toEqual(before);
+          expect(yield* m.updateDelivery(claim.id, "delivered", 0, null, null, claim)).toBe(true);
+          const done = yield* deliveries();
+          expect(
+            yield* m.updateDelivery(
+              claim.id,
+              "pending",
+              1,
+              DateTime.addDuration(now, "1 minute"),
+              "obsolete",
+              claim,
+            ),
+          ).toBe(false);
+          expect(yield* deliveries()).toEqual(done);
+        }),
+      ),
+    );
+    it.effect(
+      "reclaim fences an old owner even before the new owner changes the pending outcome",
+      () =>
+        run(
+          Effect.gen(function* () {
+            const now = yield* DateTime.now;
+            yield* seedDelivery(1, now);
+            const m = yield* makeRunMaintenance;
+            const old = (yield* m.claimDeliveries(now, 1))[0];
+            if (!old) return yield* Effect.die("Missing old claim");
+            const next = DateTime.addDuration(now, "60 seconds");
+            const fresh = (yield* m.claimDeliveries(next, 1))[0];
+            if (!fresh) return yield* Effect.die("Missing fresh claim");
+            expect(fresh.attempt).toBe(old.attempt);
+            expect(stamp(fresh.next_at)).not.toBe(stamp(old.next_at));
+            const before = yield* deliveries();
+            expect(yield* m.updateDelivery(old.id, "delivered", 0, null, null, old)).toBe(false);
+            expect(yield* deliveries()).toEqual(before);
+            // The first retry delay equals the sixty-second lease: attempt must also
+            // fence an already applied retry even when next_at is unchanged.
+            expect(
+              yield* m.updateDelivery(fresh.id, "pending", 1, fresh.next_at, "retry", fresh),
+            ).toBe(true);
+            const pending = yield* deliveries();
+            expect(yield* m.updateDelivery(fresh.id, "delivered", 0, null, null, fresh)).toBe(
+              false,
+            );
+            expect(yield* deliveries()).toEqual(pending);
+          }),
+        ),
+    );
+    it.effect("a swept claimed delivery returns unapplied for guarded and legacy writes", () =>
+      run(
+        Effect.gen(function* () {
+          const now = yield* DateTime.now;
+          yield* seedDelivery(1, now);
+          const m = yield* makeRunMaintenance;
+          const claim = (yield* m.claimDeliveries(now, 1))[0];
+          if (!claim) return yield* Effect.die("Missing owned claim");
+          expect(yield* m.sweep(DateTime.addDuration(now, "1 millis"), 100)).toBe(1);
+          expect(yield* m.updateDelivery(claim.id, "delivered", 0, null, null, claim)).toBe(false);
+          expect(yield* m.updateDelivery(claim.id, "delivered", 0, null, null)).toBe(false);
+          expect(yield* deliveries()).toEqual([]);
+        }),
+      ),
+    );
     it.effect("invalid limits/states/attempts fail without changing rows", () =>
       run(
         Effect.gen(function* () {
