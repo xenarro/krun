@@ -4,7 +4,7 @@ HTTP-triggered functions, executed as one-off Kubernetes Jobs. Callers submit JS
 
 ## Development status
 
-Core function execution and the Phase 5 native wait/signed-webhook gate now pass locally in disposable embedded-mode kind. Gateway waits, Run event streams and scheduler webhook delivery are implemented as described below. Both P5.4 independent source reviews are complete without a confirmed material defect; post-review integration passes the full local native gate. Exact-head hosted acceptance remains a delivery prerequisite. This is not a complete or production-ready release: SDK runtime behaviour, large-result object storage and production Helm acceptance remain later work.
+Core function execution and the Phase 5 native wait/signed-webhook gate now pass locally in disposable embedded-mode kind. Gateway waits, Run event streams and scheduler webhook delivery are implemented as described below. Both P5.4 independent source reviews are complete without a confirmed material defect; post-review integration passes the full local native gate. Exact source-head hosted `verify` and `kind` acceptance now pass; delivery evidence is recorded below. This is not a complete or production-ready release: SDK runtime behaviour, large-result object storage and production Helm acceptance remain later work.
 
 - Strict TypeScript workspace on Node.js 26, with Effect 4 process entrypoints.
 - Zod configuration schemas and Effect services for gateway and scheduler settings.
@@ -90,8 +90,17 @@ to passes. Exclusive integration replays all fourteen independent receiver
 controls and reruns the canonical seven-scenario gate with every actual
 wait/signature/privacy witness. The original native cleanup/export failures and
 outer-budget stops remain qualified separately from this passing integration.
-This is not hosted-CI, production/chart, SDK or object-storage acceptance.
-P5.4 remains unchecked until the separate reviewed delivery job accepts it.
+Exact source `94317d6a0e4b0f637a8ea549d4c43644d22bbda3` passes
+[hosted CI](https://github.com/xenarro/krun/actions/runs/40593392023): `verify` runs
+1,654 TypeScript tests and one Python test, generators, the actual runtime
+container smokes/identity, Helm lint, production audit and fixable-critical scan;
+`kind` passes all seven scenarios, NetworkPolicy enforcement and all seven
+actual Run-credential/privacy witnesses, followed by owned cleanup.
+[PR #66](https://github.com/xenarro/krun/pull/66) targets `main` and awaits the required
+independent repository approval; no auto-merge or protection bypass is enabled.
+This PLAN/README tracking update receives its own fresh `make check` and
+exact-head hosted acceptance. Production/chart, SDK and object-storage
+acceptance remain later work.
 
 ## Gateway waits (P5.1)
 
