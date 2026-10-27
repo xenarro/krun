@@ -56,8 +56,13 @@ Use the pinned prerequisites and Make targets in `test/e2e/README.md`:
 commands use a private kubeconfig and explicit test context. Keep its private
 state during recovery, never publish it or generated credentials, and use the
 same checkout/TMPDIR for cleanup. E2E verifies real default-deny enforcement
-before its currently empty behavioural scenario runner. The raw embedded setup
-is disposable, not a durable deployment or acceptance of the P4.13 phase gate.
+before its five Phase 4 scenarios: result/status round-trip, exit 1, image-pull
+deadline, two statuses then exit 3, and heartbeat expiry with Job removal. The
+local P4.13 gate now passes; exact task-head hosted verification remains delivery
+work. This raw embedded setup is disposable, not a durable production deployment.
+Each scenario cleans and reads back its own Function-labelled resources. The
+curl-based fixtures are built locally from a pinned base and pushed only to the
+owned loopback registry; generated credentials and raw private state stay local.
 
 ## Capacity
 

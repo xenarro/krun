@@ -4,7 +4,7 @@ HTTP-triggered functions, executed as one-off Kubernetes Jobs. Callers submit JS
 
 ## Development status
 
-The scaffold, configuration, admin health/telemetry and complete dual-backend Store layers are implemented locally. This is not a runnable function platform yet:
+Core function execution now works locally in disposable embedded-mode kind through the Phase 4 gate. This is not a complete or production-ready release: SDK runtime behaviour, wait/SSE/webhooks, large-result object storage and production Helm acceptance remain later phases.
 
 - Strict TypeScript workspace on Node.js 26, with Effect 4 process entrypoints.
 - Zod configuration schemas and Effect services for gateway and scheduler settings.
@@ -18,7 +18,31 @@ Readiness's HTTP deadline does not wait for database cancellation cleanup. Overl
 
 Health/telemetry acceptance covers real Prometheus collection through Fastify `inject`, stalled-database timing through `TestClock` (including slow finalizers and uninterruptible work), real socket disconnects, handler/dependency teardown ordering, reader/provider cleanup, and actual OTLP JSON sent to a disposable local collector. Run `pnpm exec vitest run packages/shared/src/health packages/shared/src/runtime` for this slice. P0.7 module acceptance and hosted CI passed for [PR #3](https://github.com/xenarro/krun/pull/3), including the reviewed lifecycle repairs, container rebuild, smoke, audit and fixable-critical scan. [Code CI](https://github.com/xenarro/krun/actions/runs/40019565091) verified reconciled head `9f870d4`, containing implementation commit `afc0375`. The PR remains unmerged pending required independent approval. PLAN records this bounded task; Phase 0 and the application are not complete.
 
-The `gateway` and `scheduler` commands now start real scoped serving processes. Both `--help` commands remain finite and configuration-free. `validate` is a real offline Function validator and `migrate` is a real database command, as described below. Apply migrations explicitly before starting serving replicas. Gateway process implementation now passes local source, rebuilt-container and current gateway phase/supporting acceptance. Both independent review findings are resolved; the code is pushed and exact-head hosted CI passes. Protected-stack integration remains pending; no merged delivery is claimed. Scheduler process composition now passes the P4.11 host/image process acceptance below; actual kind/admission/Job execution remains P4.12/P4.13. See [PLAN.md](PLAN.md) for acceptance criteria and progress.
+The `gateway` and `scheduler` commands start real scoped serving processes. Both `--help` commands remain finite and configuration-free. `validate` is a real offline Function validator and `migrate` is a real database command. Apply migrations explicitly before starting serving replicas. The merged P4.12 foundation deploys both processes; the local P4.13 gate below now exercises actual Jobs and the public/internal APIs. P4.13 task-head hosted CI and independent review remain delivery work, not a claim from this local implementation. Production chart/admission acceptance remains Phase 7. See [PLAN.md](PLAN.md) for task tracking.
+
+## Local scheduler end-to-end gate (P4.13)
+
+`make e2e` now passes the five Phase 4 scenarios against actual Kubernetes,
+after the mandatory open/deny/reopen NetworkPolicy probe:
+
+- A digest-pinned curl-based function fetches its input, reports status and
+  PUTs the same document as its result; the FULL Run becomes `SUCCEEDED`.
+- Exit 1 becomes `FAILED` with `EXIT_CODE` and a captured `logTail` within
+  ten seconds of the native container finish timestamp.
+- An absent local image digest exposes `ImagePullBackOff` while `SCHEDULED`,
+  then the native 60-second Job deadline becomes `DEADLINE_EXCEEDED`.
+- Two accepted statuses followed by exit 3 retain the second status, exit code
+  and log tail, with the same ten-second terminal-detection bound.
+- One accepted status followed by silence under `heartbeatTimeout: 30s`
+  becomes `HEARTBEAT_TIMEOUT` with a log tail and the positively observed Job
+  deleted within sixty seconds of that report.
+
+Each file owns a unique Function and cleans its resources. Anchored native Pod
+WATCHes retain fast exits without inventing timestamps for containers that
+never started. Generated credentials/input markers must be absent from Pod
+manifests and process logs. The runner rejects an empty suite. This local phase
+gate is separate from `make check`; exact task-head hosted verification and
+independent review remain pending. See [test/e2e/README.md](test/e2e/README.md).
 
 ## Disposable kind foundation (P4.12)
 
@@ -32,8 +56,8 @@ admin ports and the scheduler's downward-API Lease identity. The generated CRD
 and raw jobs namespace isolation/RBAC/limits/quota are applied before a
 kubectl-applied Function reaches current `Ready=True`.
 
-Local `make e2e` now passes with zero behavioural scenarios. Before the empty
-Vitest runner, it proves a real pod-to-pod connection opens, default-deny blocks
+P4.12 established the locally and hosted-verified zero-scenario foundation.
+Before the behavioural Vitest runner, infrastructure verification proves a real pod-to-pod connection opens, default-deny blocks
 it, and policy removal restores it; it also checks the authenticated Function
 projection and generated-key log privacy. Kubernetes/API/exec errors cannot
 stand in for an observed blocked connection. The harness uses a private
@@ -57,8 +81,8 @@ its caller or losing precision in read strings. Failing-first create/update
 wire tests and the rebuilt real-cluster serving acceptance pass.
 
 See [test/e2e/README.md](test/e2e/README.md) for prerequisites, ownership and
-recovery. P4.13 still owns the actual Run/lifecycle/failure scenarios and the
-complete Phase 4 gate; a passing foundation is not completion of that phase.
+recovery. The P4.13 gate above adds actual Run/lifecycle/failure scenarios;
+a passing foundation alone is not completion of Phase 4.
 
 ## Scheduler process (P4.11)
 

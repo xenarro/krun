@@ -122,5 +122,5 @@ it("keeps mandatory infrastructure verification outside the zero-scenario runner
   expect(make).toContain("node test/e2e/cluster.ts up");
   expect(make).toContain("node test/e2e/cluster.ts verify");
   expect(make).toContain("vitest run --config test/e2e/vitest.config.ts");
-  expect(read("test/e2e/vitest.config.ts")).toContain("passWithNoTests: true");
+  expect(read("test/e2e/vitest.config.ts")).toContain("passWithNoTests: false");
 });
