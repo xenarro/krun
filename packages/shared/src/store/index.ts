@@ -83,7 +83,8 @@ export interface StoreShape {
     attempt: number,
     nextAt: DateTime.Utc | null,
     lastError: string | null,
-  ) => Effect.Effect<void, DatabaseError>;
+    expectedClaim?: Readonly<Pick<Delivery, "attempt" | "next_at">>,
+  ) => Effect.Effect<boolean, DatabaseError>;
   readonly sweep: (
     finishedBefore: DateTime.Utc,
     batch: number,

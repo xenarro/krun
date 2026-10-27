@@ -100,16 +100,20 @@ export const makeRunMaintenance = Effect.map(
           return { value: rows.map((row) => decodeDelivery(row, dialect)), rowCount: rows.length };
         }),
       ),
-    updateDelivery: (id, state, attempt, nextAt, lastError) =>
+    updateDelivery: (id, state, attempt, nextAt, lastError, expectedClaim) =>
       adapter("updateDelivery", async () => {
         // next_at is NOT NULL in the normative DDL. null means no replacement time
         // (terminal updates do not reschedule); retain the last claim/retry value.
         const rows = (
           await sql`update deliveries set state=${z.enum(["pending", "delivered", "dead"]).parse(state)},
       attempt=${nonnegative.parse(attempt)},next_at=coalesce(${nextAt === null ? null : DateTime.formatIso(nextAt)},next_at),
-      last_error=${lastError} where id=${id} returning id`.execute(db)
+      last_error=${lastError} where id=${id} ${expectedClaim === undefined ? sql`` : sql`and state='pending' and attempt=${nonnegative.parse(expectedClaim.attempt)} and next_at=${DateTime.formatIso(expectedClaim.next_at)}`} returning id`.execute(
+            db,
+          )
         ).rows;
-        return { value: undefined, rowCount: rows.length };
+        // A successful zero-row statement is stale/missing, not a persisted
+        // outcome. The scheduler uses the claim's pair as an atomic CAS token.
+        return { value: rows.length > 0, rowCount: rows.length };
       }),
   }),
 );
