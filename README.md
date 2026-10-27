@@ -20,6 +20,52 @@ Health/telemetry acceptance covers real Prometheus collection through Fastify `i
 
 The `gateway` command now starts a real scoped serving process. `gateway --help` remains finite and configuration-free; the `scheduler` command still prints its name and exits. `validate` is a real offline Function validator and `migrate` is a real database command, as described below. Apply migrations explicitly before starting serving replicas. Gateway process implementation now passes local source, rebuilt-container and current gateway phase/supporting acceptance. Both independent review findings are resolved; the code is pushed and exact-head hosted CI passes. Protected-stack integration remains pending; no merged delivery is claimed. Scheduler wiring and execution remain later work. See [PLAN.md](PLAN.md) for acceptance criteria and progress.
 
+## Failure detection component (P4.8)
+
+The leader Job controller captures the `function` container's log tail on the
+first nonzero exit, `OOMKilled` or Pod deletion observation, before a later
+Job failure and before any cleanup. Exit zero never fetches logs. Terminal-first
+observations fetch once as a fallback; missing Pods and failed/timed-out log
+requests leave a null tail without preventing the terminal CAS. Native requests
+ask for the last 100 lines and 16 KiB, retain the shared request limiter and
+AbortSignal, and the capture itself also has a ten-second interruptible bound.
+UTF-8-safe truncation cannot create replacement bytes above the stored byte cap.
+
+Existing classification remains `oom_killed` before `deadline_exceeded`,
+`evicted`, `disrupted` and `exit_code`. The Store's atomic coalescing preserves a
+function-reported error; `logTail` stays separate and outside BASIC callbacks.
+An early captured tail also survives `job_lost`, but successful completion
+explicitly persists a null tail, including after an earlier deletion-triggered
+capture; FULL resources therefore expose tails only on failed runs. A queued
+run whose token is already stored can retain bounded Pod diagnostics before
+`markScheduled`, without publishing queued `jobStatus`, running or terminal state.
+This preserves a first observed failure and exit time even if the Pod is evicted
+before scheduling finishes. Leader-local tail/exit-time observations are released
+on cleanup, cancellation, Store-row absence or scope closure; no Pod bodies or
+history are retained for this feature.
+
+D95 extends the existing committed-row observer with the actual winning
+`failure_reason` for `krun_runs_failed_total{function,reason}` across leader
+failure paths, including expiry, provisioning and lost Jobs. A call-local
+`TerminalExitAt` reference supplies an observed container exit time for
+`krun_terminal_detect_seconds{function}` after a successful terminal commit,
+measured in seconds with Effect Clock. Stale CAS, rollback, status-only and plain
+gateway Store calls emit neither sample; unknown exits invent no latency sample.
+No extra Store read or public schema, dependency or security-policy change is
+needed. Metrics, spans and logs do not contain the captured tail or error details.
+
+Twenty-three targeted controls, six native HTTP controls, both-backend metric
+controls and the full scheduler suite cover early/fallback capture, precedence,
+function-error preservation, native timeout/abort, scope closure, UTF-8 boundaries,
+failed-only tail persistence, pre-scheduling evidence and committed-only metrics.
+Both independent review findings have permanent regressions. Eight compiled
+native-client/informer/real-Store groups pass on host SQLite and PostgreSQL;
+rebuilt-image integration and complete verification are recorded in the repair
+report. Component Git delivery is recorded separately in PLAN.md; this is not
+the assembled
+scheduler (P4.11) or real kind/admission acceptance (P4.12/P4.13). The whole-phase
+`make e2e` gate still exits 2 at its explicit P4.12 placeholder.
+
 ## Leader Function status writer (P4.7)
 
 `makeFunctionStatusWriter` publishes the existing validation result as the
