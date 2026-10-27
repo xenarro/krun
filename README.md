@@ -51,6 +51,13 @@ cursor enters metrics or spans. These are component boundaries, not actual
 Kubernetes admission/garbage collection or the P4.12/P4.13 kind/e2e phase gate;
 the `scheduler` command remains finite until P4.11.
 
+Source delivery: [`e9e5091`](https://github.com/xenarro/krun/commit/e9e5091249cff2344a7288afd753c27156b5599b) in [PR#55](https://github.com/xenarro/krun/pull/55) passes [all nine exact-head hosted gates](https://github.com/xenarro/krun/actions/runs/40465434121),
+including 1,522 TypeScript tests and one Python test. Both independent reviews
+and the supplementary contracts controls are reconciled without product edits.
+PR54 is merged; PR55 remains open pending required independent main review at
+source acceptance. PLAN/README tracking receives separate full local and hosted
+acceptance. No automatic merge or whole-phase scheduler execution is claimed.
+
 ## Heartbeat component (P4.9)
 
 `makeHeartbeatLoop` is a leader-scoped component with an immediate first pass
