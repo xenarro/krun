@@ -193,7 +193,11 @@ const fixture = (holdList = false, overrides: Record<string, string> = {}) =>
           }),
         ),
       );
-    return { dir, child, exited, until, request, kube, bearer, logs: () => stdout + stderr };
+    const watch = (path: string) =>
+      fetch(`http://127.0.0.1:${ports[0]}${path}`, {
+        headers: { authorization: `Bearer ${bearer}` },
+      });
+    return { dir, child, exited, until, request, watch, kube, bearer, logs: () => stdout + stderr };
   });
 
 it.live(
@@ -268,7 +272,7 @@ it.live(
 );
 
 it.live(
-  "SIGTERM answers in-flight CreateRun and WaitRun with their current201/200 Run, not INTERNAL",
+  "SIGTERM answers in-flight CreateRun/WaitRun and closes WatchRun SSE",
   () =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -299,6 +303,19 @@ it.live(
           return response;
         });
         waitRun.catch(() => {});
+        const watching = yield* Effect.promise(() => f.watch(`/v1/${admitted}:watch`));
+        expect(watching.status).toBe(200);
+        expect(watching.headers.get("content-type")).toBe("text/event-stream");
+        const body = watching.body;
+        if (!body) return yield* Effect.die("Missing SSE response body");
+        const reader = yield* Effect.acquireRelease(
+          Effect.sync(() => body.getReader()),
+          (reader) => Effect.promise(() => reader.cancel()).pipe(Effect.ignoreCause),
+        );
+        const snapshot = yield* Effect.promise(() => reader.read());
+        expect(new TextDecoder().decode(snapshot.value)).toContain("event: state");
+        expect(new TextDecoder().decode(snapshot.value)).not.toContain('"input"');
+        const eof = reader.read();
         yield* f.until("/healthz", 2, 200);
         expect(answered).toBe(false);
         f.child.kill("SIGTERM");
@@ -310,6 +327,9 @@ it.live(
         const waited = yield* Effect.promise(() => waitRun).pipe(Effect.timeout("5 seconds"));
         expect(waited.code).toBe(200);
         expect(waited.body).toEqual(response.body);
+        expect((yield* Effect.promise(() => eof).pipe(Effect.timeout("5 seconds"))).done).toBe(
+          true,
+        );
         expect(yield* Effect.promise(() => f.exited).pipe(Effect.timeout("5 seconds"))).toEqual({
           code: 0,
           signal: null,
