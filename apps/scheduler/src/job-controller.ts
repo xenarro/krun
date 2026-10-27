@@ -14,6 +14,11 @@ export class ResultCheckError extends Data.TaggedError("ResultCheckError")<{
   readonly reason: "request_failed";
 }> {}
 type HandlerError = DatabaseError | KubeApiError | ResultCheckError;
+interface HeartbeatPolicy {
+  readonly functionName: string;
+  readonly before: DateTime.Utc;
+  readonly timeout: string;
+}
 const terminal = (run: Run) =>
   run.state === "succeeded" || run.state === "failed" || run.state === "cancelled";
 const container = (pod: V1Pod | undefined) =>
@@ -137,6 +142,15 @@ export const makeJobController = (options: {
     const knownDeleted = new Map<string, { job: V1Job; pod: V1Pod | undefined }>();
     const firstAbsent = new Map<string, number>();
     const lostCleanup = new Map<string, Pick<Run, "id" | "job_name" | "function_name">>();
+    const heartbeatDebt = new Map<
+      string,
+      {
+        run: Pick<Run, "id" | "job_name" | "function_name">;
+        tail: string | null;
+        message: string;
+        committed: boolean;
+      }
+    >();
     const lostGate = yield* Semaphore.make(1);
     let lastLostId: string | undefined;
     let startupReported = false;
@@ -149,6 +163,7 @@ export const makeJobController = (options: {
         exitTimes.clear();
         firstAbsent.clear();
         lostCleanup.clear();
+        heartbeatDebt.clear();
         lastLostId = undefined;
       }),
     );
@@ -156,7 +171,7 @@ export const makeJobController = (options: {
       source.jobs.list(options.namespace).find((job) => runIdOf(job) === id);
     const hasJob = (id: string) => source.jobs.get(`krun-${id}`, options.namespace) !== undefined;
     const hasObservation = (id: string) =>
-      hasJob(id) || source.hasPendingJob(id) || knownDeleted.has(id);
+      hasJob(id) || source.hasPendingJob(id) || knownDeleted.has(id) || heartbeatDebt.has(id);
     const podFor = (id: string) =>
       source.pods.list(options.namespace).find((pod) => runIdOf(pod) === id);
     const target = (id: string, name: string, run?: Pick<Run, "function_name">) => ({
@@ -174,6 +189,17 @@ export const makeJobController = (options: {
         knownDeleted.delete(id);
         lostCleanup.delete(id);
       });
+    const readLogTail = (id: string, name: string, run: Run) =>
+      kube.readPodLog(target(id, name, run)).pipe(
+        Effect.timeout("10 seconds"),
+        Effect.map((value) =>
+          new TextDecoder("utf-8", { ignoreBOM: true }).decode(
+            Buffer.from(value).subarray(0, 16384),
+            { stream: true },
+          ),
+        ),
+        Effect.catch(() => Effect.succeed(null)),
+      );
     const captureTail = (id: string, pod: V1Pod | undefined, finalFailure: boolean, run: Run) =>
       Effect.gen(function* () {
         const exited = container(pod)?.state?.terminated;
@@ -185,16 +211,7 @@ export const makeJobController = (options: {
         )
           return;
         tails.set(id, null);
-        const tail = yield* kube.readPodLog(target(id, pod.metadata.name, run)).pipe(
-          Effect.timeout("10 seconds"),
-          Effect.map((value) =>
-            new TextDecoder("utf-8", { ignoreBOM: true }).decode(
-              Buffer.from(value).subarray(0, 16384),
-              { stream: true },
-            ),
-          ),
-          Effect.catch(() => Effect.succeed(null)),
-        );
+        const tail = yield* readLogTail(id, pod.metadata.name, run);
         tails.set(id, tail);
       });
     const captureDiagnostics = (
@@ -227,6 +244,9 @@ export const makeJobController = (options: {
         // Transfer ingress ownership only after presence/terminal knowledge is
         // incorporated. No yield or fallible operation may precede this handoff.
         if (event !== undefined) source.acknowledgeJob(event);
+        // A successful foreground heartbeat deletion owns its pending CAS/Secret
+        // stage. Watch events must not reclassify that deletion as exit_code/lost.
+        if (heartbeatDebt.has(id)) return;
         const retained = knownDeleted.get(id);
         const job = retained?.job ?? jobFor(id) ?? event?.deletedJob;
         const run = yield* store
@@ -328,6 +348,163 @@ export const makeJobController = (options: {
             if (--gate.users === 0) gates.delete(id);
           }),
       );
+    const clearHeartbeat = (id: string) => {
+      heartbeatDebt.delete(id);
+      tails.delete(id);
+      exitTimes.delete(id);
+      firstAbsent.delete(id);
+      knownDeleted.delete(id);
+    };
+    const resumeHeartbeat = (id: string): Effect.Effect<void, DatabaseError | KubeApiError> =>
+      Effect.gen(function* () {
+        const debt = heartbeatDebt.get(id);
+        if (closed || debt === undefined) return;
+        if (!debt.committed) {
+          const row = yield* store
+            .getRun(id)
+            .pipe(Effect.catchTag("NotFoundError", () => Effect.succeed(undefined)));
+          if (row?.state === "running") {
+            // Settle SQL and publish only in-memory debt in the same mask. No
+            // Kubernetes request is made uninterruptible.
+            const changed = yield* Effect.gen(function* () {
+              const changed = yield* lifecycle
+                .transition(id, "running", "failed", "heartbeat_timeout", {
+                  failure_reason: "heartbeat_timeout",
+                  log_tail: debt.tail,
+                  error: { source: "krun", message: debt.message },
+                })
+                .pipe(Effect.provideService(TerminalExitAt, exitTimes.get(id)));
+              if (changed) debt.committed = true;
+              return changed;
+            }).pipe(Effect.uninterruptible);
+            if (!changed) {
+              const winner = yield* store
+                .getRun(id)
+                .pipe(Effect.catchTag("NotFoundError", () => Effect.succeed(undefined)));
+              if (winner?.state === "failed" && winner.failure_reason === "heartbeat_timeout")
+                debt.committed = true;
+              else {
+                clearHeartbeat(id);
+                return;
+              }
+            }
+          } else if (row?.state === "failed" && row.failure_reason === "heartbeat_timeout")
+            debt.committed = true;
+          else {
+            clearHeartbeat(id);
+            return;
+          }
+        }
+        yield* kube.deleteSecret(target(id, debt.run.job_name ?? `krun-${id}`, debt.run));
+        clearHeartbeat(id);
+      });
+    const heartbeatCandidate = (id: string, policy: Effect.Effect<HeartbeatPolicy | undefined>) =>
+      Effect.gen(function* () {
+        if (closed || source.hasPendingJob(id) || knownDeleted.has(id)) return undefined;
+        const job = jobFor(id);
+        if (trueCondition(job, "Complete") || trueCondition(job, "Failed")) return undefined;
+        const pod = podFor(id);
+        if (pod?.status?.phase !== "Running") return undefined;
+        const row = yield* store
+          .getRun(id)
+          .pipe(Effect.catchTag("NotFoundError", () => Effect.succeed(undefined)));
+        if (closed || row?.state !== "running" || row.started_at === null) return undefined;
+        // Refresh Function policy after the Store I/O, inside the same per-run
+        // gate and again after log capture. Old batch cutoffs never authorize a
+        // first DELETE; acknowledged post-DELETE debt does not rejudge policy.
+        const currentPolicy = yield* policy;
+        if (
+          closed ||
+          currentPolicy === undefined ||
+          currentPolicy.functionName !== row.function_name
+        )
+          return undefined;
+        // The Store/policy reads yield; terminal native ingress may have arrived meanwhile.
+        const latestJob = jobFor(id);
+        if (
+          source.hasPendingJob(id) ||
+          knownDeleted.has(id) ||
+          trueCondition(latestJob, "Complete") ||
+          trueCondition(latestJob, "Failed")
+        )
+          return undefined;
+        const latestPod = podFor(id);
+        if (latestPod?.status?.phase !== "Running") return undefined;
+        const lastAt =
+          row.runtime_status !== null &&
+          DateTime.toEpochMillis(row.runtime_status.at) > DateTime.toEpochMillis(row.started_at)
+            ? row.runtime_status.at
+            : row.started_at;
+        return DateTime.toEpochMillis(lastAt) < DateTime.toEpochMillis(currentPolicy.before)
+          ? { row, pod: latestPod, lastAt, timeout: currentPolicy.timeout }
+          : undefined;
+      });
+    const heartbeat = (id: string, policy: Effect.Effect<HeartbeatPolicy | undefined>) =>
+      source.ready.pipe(
+        Effect.andThen(
+          serialized(
+            id,
+            Effect.gen(function* () {
+              if (closed) return;
+              if (heartbeatDebt.has(id)) return yield* resumeHeartbeat(id);
+              const candidate = yield* heartbeatCandidate(id, policy);
+              if (candidate === undefined) return;
+              const tail = tails.has(id)
+                ? (tails.get(id) ?? null)
+                : candidate.pod.metadata?.name === undefined
+                  ? null
+                  : yield* readLogTail(id, candidate.pod.metadata.name, candidate.row);
+              // Logs may take ten seconds. Re-read both caches and current Store
+              // freshness immediately before the destructive request.
+              const current = yield* heartbeatCandidate(id, policy);
+              if (current === undefined) return;
+              const run = {
+                id,
+                job_name: current.row.job_name,
+                function_name: current.row.function_name,
+              };
+              const debt = {
+                run,
+                tail,
+                message: `no status for ${current.timeout}, last at ${DateTime.formatIso(current.lastAt)}`,
+                committed: false,
+              };
+              yield* Effect.uninterruptibleMask((restore) =>
+                restore(
+                  kube.deleteJob(target(id, run.job_name ?? `krun-${id}`, run), "Foreground"),
+                ).pipe(
+                  Effect.andThen(
+                    Effect.sync(() => {
+                      heartbeatDebt.set(id, debt);
+                    }),
+                  ),
+                ),
+              );
+              yield* resumeHeartbeat(id);
+            }),
+          ),
+        ),
+        Effect.withSpan("scheduler.heartbeat", { attributes: { "krun.run_id": id } }),
+      );
+    const retryHeartbeats = Effect.gen(function* () {
+      const attempted = new Set<string>();
+      for (const id of [...heartbeatDebt.keys()]) {
+        if (closed) break;
+        if (gates.has(id)) continue;
+        attempted.add(id);
+        yield* serialized(id, resumeHeartbeat(id)).pipe(
+          Effect.withSpan("scheduler.heartbeat", { attributes: { "krun.run_id": id } }),
+          Effect.catch((error) =>
+            error._tag === "KubeApiError" && error.status === 429
+              ? Effect.fail(error)
+              : Effect.logWarning(
+                  "Scheduler heartbeat cleanup failed; retaining work for retry",
+                ).pipe(Effect.annotateLogs({ "krun.run_id": id, errorTag: error._tag })),
+          ),
+        );
+      }
+      return attempted;
+    });
     const handle = (id: string, event?: InformerEvent): Effect.Effect<void, HandlerError> =>
       source.ready.pipe(
         Effect.andThen(serialized(id, process(id, event))),
@@ -509,5 +686,13 @@ export const makeJobController = (options: {
       ],
       { concurrency: "unbounded", discard: true },
     );
-    return { handle, replayCached, checkLost, reconcile: reconcileLost, run };
+    return {
+      handle,
+      replayCached,
+      checkLost,
+      heartbeat,
+      retryHeartbeats,
+      reconcile: reconcileLost,
+      run,
+    };
   });

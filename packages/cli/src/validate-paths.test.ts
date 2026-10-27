@@ -186,54 +186,76 @@ it("missing files do not stop later Function validation and retain no native dia
   expect(result.stderr).toContain("cannot read input path");
 });
 
-it("malformed YAML, warning tags, duplicate map fields and invalid UTF8 never echo private source", () => {
-  const dir = scratch();
-  const marker = randomBytes(32).toString("hex");
-  const samples = [
-    `kind: Function\nspec: [${marker}`,
-    `!private ${marker}`,
-    `kind: Function\nkind: Function\nprivate: ${marker}\n`,
-  ];
-  for (const sample of samples) {
-    const result = execute([save(dir, "bad.yaml", sample)]);
+// As with ceilingCases, each cold CLI process owns the unchanged test deadline;
+// concurrent CI load must not make several correct launches share one budget.
+it.each(["malformed YAML", "warning tags", "duplicate map fields", "invalid UTF8"] as const)(
+  "%s never echoes private source",
+  (kind) => {
+    const marker = randomBytes(32).toString("hex");
+    const samples = {
+      "malformed YAML": `kind: Function\nspec: [${marker}`,
+      "warning tags": `!private ${marker}`,
+      "duplicate map fields": `kind: Function\nkind: Function\nprivate: ${marker}\n`,
+      "invalid UTF8": Buffer.from([0xff]),
+    };
+    const path = join(scratch(), "bad.yaml");
+    writeFileSync(path, samples[kind]);
+    const result = execute([path]);
     expect(result.status).toBe(1);
     expect(`${result.stdout}${result.stderr}`.includes(marker)).toBe(false);
-  }
-  const path = join(dir, "binary.yaml");
-  writeFileSync(path, Buffer.from([0xff]));
-  const result = execute([path]);
-  expect(result.status).toBe(1);
-  expect(result.stderr).toContain("invalid YAML");
-});
+    if (kind === "invalid UTF8") expect(result.stderr).toContain("invalid YAML");
+  },
+);
 
-it("reports schema errors without printing env values, callback URLs or unknown field names", () => {
-  const marker = randomBytes(32).toString("hex");
-  const dir = scratch();
-  for (const spec of [
-    { env: [{ name: "PRIVATE", value: marker }], [marker]: true },
-    { callback: { url: `not a URL ${marker}` } },
-    { inputSchema: { type: marker } },
-  ]) {
-    const result = execute([save(dir, "private.yaml", resource("safe-name", spec))]);
+it.each(["env values and unknown field names", "callback URLs", "schema types"] as const)(
+  "reports schema errors without printing private %s",
+  (kind) => {
+    const marker = randomBytes(32).toString("hex");
+    const specs = {
+      "env values and unknown field names": {
+        env: [{ name: "PRIVATE", value: marker }],
+        [marker]: true,
+      },
+      "callback URLs": { callback: { url: `not a URL ${marker}` } },
+      "schema types": { inputSchema: { type: marker } },
+    };
+    const result = execute([save(scratch(), "private.yaml", resource("safe-name", specs[kind]))]);
     expect(result.status).toBe(1);
     expect(lines(result.stdout).length).toBe(1);
     expect(`${result.stdout}${result.stderr}`.includes(marker)).toBe(false);
-  }
-});
+  },
+);
 
-it("uses the shared pure validator for remote refs, schema size, schema compilation and reserved Secret names", () => {
-  const dir = scratch();
-  const cases: ReadonlyArray<readonly [Record<string, unknown>, string]> = [
-    [{ inputSchema: { $ref: "https://never-resolve.example.invalid/schema" } }, "SchemaInvalid"],
-    [{ inputSchema: { description: "x".repeat(65536) } }, "SchemaTooLarge"],
-    [{ inputSchema: { type: "not-a-json-type" } }, "SchemaInvalid"],
-    [{ secretRefs: ["krun-private"] }, "SecretRefNotAllowed"],
-  ];
-  for (const [spec, reason] of cases) {
-    const result = execute([save(dir, "rule.yaml", resource("rule", spec))]);
-    expect(result.status).toBe(1);
-    expect(result.stdout.includes(reason)).toBe(true);
-  }
+const validationCases: ReadonlyArray<{
+  label: string;
+  spec: Record<string, unknown>;
+  reason: string;
+}> = [
+  {
+    label: "remote refs",
+    spec: { inputSchema: { $ref: "https://never-resolve.example.invalid/schema" } },
+    reason: "SchemaInvalid",
+  },
+  {
+    label: "schema size",
+    spec: { inputSchema: { description: "x".repeat(65536) } },
+    reason: "SchemaTooLarge",
+  },
+  {
+    label: "schema compilation",
+    spec: { inputSchema: { type: "not-a-json-type" } },
+    reason: "SchemaInvalid",
+  },
+  {
+    label: "reserved Secret names",
+    spec: { secretRefs: ["krun-private"] },
+    reason: "SecretRefNotAllowed",
+  },
+];
+it.each(validationCases)("uses the shared pure validator for $label", ({ spec, reason }) => {
+  const result = execute([save(scratch(), "rule.yaml", resource("rule", spec))]);
+  expect(result.status).toBe(1);
+  expect(result.stdout.includes(reason)).toBe(true);
 });
 
 it("placeholder image is clearly actionable and unsupported Function versions fail instead of vanishing", () => {

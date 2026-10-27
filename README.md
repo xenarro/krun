@@ -20,6 +20,53 @@ Health/telemetry acceptance covers real Prometheus collection through Fastify `i
 
 The `gateway` command now starts a real scoped serving process. `gateway --help` remains finite and configuration-free; the `scheduler` command still prints its name and exits. `validate` is a real offline Function validator and `migrate` is a real database command, as described below. Apply migrations explicitly before starting serving replicas. Gateway process implementation now passes local source, rebuilt-container and current gateway phase/supporting acceptance. Both independent review findings are resolved; the code is pushed and exact-head hosted CI passes. Protected-stack integration remains pending; no merged delivery is claimed. Scheduler wiring and execution remain later work. See [PLAN.md](PLAN.md) for acceptance criteria and progress.
 
+## Heartbeat component (P4.9)
+
+`makeHeartbeatLoop` is a leader-scoped component with an immediate first pass
+behind both Job/Pod initial LISTs and Function-cache synchronization, followed by
+non-overlapping ten-second passes. Only valid Functions with `heartbeatTimeout`
+are queried through the existing `Store.listStale`; freshness uses the later of
+`startTime` and `runtimeStatus.reportTime`. Complete/Failed cached Jobs, pending
+native Job ingress and missing/non-Running Pods are left to the informer path.
+
+A stale candidate fetches bounded `function` logs, awaits foreground Job DELETE,
+commits `running` to `failed` with `heartbeat_timeout`, then deletes its Secret.
+The controller's per-run gate coordinates this path with informer/lost-Job work;
+current same-UID Function validity/timeout, cache state and Store freshness are
+refreshed before each new candidate and again after log capture, before the
+destructive request. Disabled, deleted, invalid or replaced Functions defer new
+judgements; changed durations recompute the cutoff and error message. Already
+acknowledged post-DELETE debt still settles independently of later policy changes. The Store preserves a function-reported error and
+atomically inserts the BASIC delivery without the separate `logTail`. The existing
+committed-row observer counts only a winning heartbeat failure, and invents no
+exit-latency sample when the container exit time is unknown.
+
+A failed post-DELETE CAS or Secret deletion retains only leader-local stage
+information and a bounded tail. Retry works after cached objects disappear or
+the Function's timeout is removed; it neither repeats a successful DELETE nor
+recounts a committed failure. Cancellation winning the CAS retains its own
+cleanup responsibility. Logs have the same ten-second abort/16-KiB UTF-8-safe
+bound as P4.8; Kubernetes I/O remains interruptible when the leader scope closes.
+
+Twenty-six unit and twelve native HTTP controls cover operation order, readiness,
+strict timeout boundaries, recent status, terminal observations, error/tail
+separation, callback/metric privacy, interruption, overlapping passes and retry
+ownership. Eight native repair controls use the actual Function validation/cache
+stream to cover changes during a candidate's logs and before later rows start.
+Five real in-memory exporter controls verify one `scheduler.heartbeat_loop` span
+for empty, fresh, stale, query-error and retry-debt passes, with per-run child
+spans and no misleading aggregate run ID. Sixteen compiled
+native-client/informer/real-Store groups, including P4.8 regressions and real-cache
+later-row policy controls, pass on both host and the rebuilt hardened image with
+SQLite and PostgreSQL; all 86 runtime module hashes match. Source
+`353462feaa844f5a3c5b03722eb308009b295f2c` in [PR#54](https://github.com/xenarro/krun/pull/54) passes
+[all nine hosted acceptance gates](https://github.com/xenarro/krun/actions/runs/40454569909) with
+1,494 TypeScript tests plus one Python test, including 265 scheduler tests.
+Native loopback HTTP proves requests, parsing and abort, not Kubernetes
+garbage-collector completion or actual Job execution.
+Production leader wiring remains P4.11 and whole-phase e2e/kind remains
+P4.12/P4.13; this component does not make the finite `scheduler` command serve.
+
 ## Failure detection component (P4.8)
 
 The leader Job controller captures the `function` container's log tail on the
