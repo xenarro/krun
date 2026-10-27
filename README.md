@@ -20,6 +20,49 @@ Health/telemetry acceptance covers real Prometheus collection through Fastify `i
 
 The `gateway` command now starts a real scoped serving process. `gateway --help` remains finite and configuration-free; the `scheduler` command still prints its name and exits. `validate` is a real offline Function validator and `migrate` is a real database command, as described below. Apply migrations explicitly before starting serving replicas. Gateway process implementation now passes local source, rebuilt-container and current gateway phase/supporting acceptance. Both independent review findings are resolved; the code is pushed and exact-head hosted CI passes. Protected-stack integration remains pending; no merged delivery is claimed. Scheduler wiring and execution remain later work. See [PLAN.md](PLAN.md) for acceptance criteria and progress.
 
+## Leader Function status writer (P4.7)
+
+`makeFunctionStatusWriter` publishes the existing validation result as the
+Function's `Ready` condition and `observedGeneration`. It is an explicitly
+leader-scoped component: the shared Function cache remains active on every
+replica, while writer acquisition/run belongs inside the elected leader term.
+A bounded, replay-one cache invalidation stream supplies a complete promotion
+pass, including invalid Functions, and coalesces later changes without retaining
+old Function bodies or running another informer.
+
+D94 compares the actual cached generation and condition fields. A native
+`CustomObjectsApi` JSON Merge Patch changes only status, with UID and
+resourceVersion preconditions to reject stale validation after an update or
+replacement. Successful writes acknowledge only their exact pre-echo input;
+repeated inputs cause no second patch. A newer observation always rechecks real
+status, so erasure/drift is repaired. Failed writes acknowledge nothing and do
+not prevent other Functions from progressing; the next event or explicit leader
+reconcile retries them. Calls use the shared limiter, ten-second Effect Clock
+budget and native AbortSignal transport. Scope closure stops the subscription
+and clears its compact acknowledgement state.
+
+Fifteen permanent acceptance tests cover invalid/valid conditions, condition-only
+changes, repeated input, status echo without recompilation, status erasure,
+generation/UID races, error isolation/retry, native timeout/abort and real Lease
+standby/acquisition/loss. Compiled native-client/cache acceptance passes six
+groups on both the host and rebuilt read-only/nonroot image, checking all 85
+runtime module hashes. The loopback fixture enforces Merge Patch and optimistic
+preconditions; it is not Kubernetes admission.
+
+Both independent reviews report no confirmed scoped defect. Repair/integration
+reruns the original acceptance plus four reviewer-authored race/lifecycle
+controls: deletion/replacement during a blocked earlier patch, coalesced updates
+and actual leader loss with a native PATCH pending. The reviewer-derived
+seven-group native probe and four-group validation/coalescing probe also pass
+on the host and freshly rebuilt image; all 85 runtime module hashes match.
+No runtime repair was necessary, and no review setup/oracle failure was treated
+as a product defect.
+
+These are component-level checks; Git delivery is recorded separately in
+PLAN.md. Production scheduler assembly remains P4.11. The whole-phase
+`make e2e` gate still exits 2 at its explicit P4.12 placeholder; real kind
+execution remains P4.12/P4.13.
+
 ## Scheduler run metrics and request tracing (P4.6)
 
 Leader main-loop and Job-controller writes now publish

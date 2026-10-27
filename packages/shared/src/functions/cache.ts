@@ -1,4 +1,15 @@
-import { Context, Deferred, Duration, Effect, Layer, Metric, Ref, Schedule, Stream } from "effect";
+import {
+  Context,
+  Deferred,
+  Duration,
+  Effect,
+  Layer,
+  Metric,
+  PubSub,
+  Ref,
+  Schedule,
+  Stream,
+} from "effect";
 import { z } from "zod";
 import { durationToMilliseconds } from "../config/duration.js";
 import { KrunConfig } from "../config/index.js";
@@ -21,6 +32,12 @@ export interface FunctionEntry {
   readonly spec: FunctionSpec | undefined;
   readonly status: z.infer<typeof functionStatusSchema> | undefined;
   readonly result: FunctionValidation;
+}
+// Explicit scheduler-only port; gateway consumers keep the read-only service.
+interface FunctionStatusCache {
+  readonly all: Effect.Effect<readonly FunctionEntry[]>;
+  readonly changes: Stream.Stream<void>;
+  readonly getAny: (name: string) => Effect.Effect<FunctionEntry | undefined>;
 }
 interface Cache {
   readonly get: (name: string) => Effect.Effect<FunctionEntry | undefined>;
@@ -69,6 +86,8 @@ export const makeFunctions = (options: {
     const synced = yield* Deferred.make<void>();
     const isSynced = yield* Ref.make(false);
     const entries = yield* Ref.make<ReadonlyMap<string, FunctionEntry>>(new Map());
+    const changes = yield* PubSub.sliding<void>({ capacity: 1, replay: 1 });
+    yield* Effect.addFinalizer(() => PubSub.shutdown(changes));
     // Own the installation policy as well as event documents; caller mutation cannot change validation.
     const ceilings = freezeJson({
       ...options.ceilings,
@@ -83,6 +102,7 @@ export const makeFunctions = (options: {
         for (const entry of map.values()) if (entry.result.ok) valid++;
         yield* Metric.update(functionGauge(true), valid);
         yield* Metric.update(functionGauge(false), map.size - valid);
+        yield* PubSub.publish(changes, undefined);
       });
     const reset = Effect.gen(function* () {
       yield* publish(new Map());
@@ -200,7 +220,17 @@ export const makeFunctions = (options: {
       ),
       synced: Deferred.await(synced),
       isSynced: Ref.get(isSynced),
-    } satisfies Cache;
+      status: {
+        all: Deferred.await(synced).pipe(
+          Effect.andThen(Ref.get(entries)),
+          Effect.map((map) =>
+            Object.freeze([...map.values()].sort((a, b) => a.name.localeCompare(b.name))),
+          ),
+        ),
+        changes: Stream.fromPubSub(changes),
+        getAny,
+      },
+    } satisfies Cache & { readonly status: FunctionStatusCache };
   });
 
 export const FunctionsLive = Layer.effect(
