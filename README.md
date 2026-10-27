@@ -20,6 +20,37 @@ Health/telemetry acceptance covers real Prometheus collection through Fastify `i
 
 The `gateway` command now starts a real scoped serving process. `gateway --help` remains finite and configuration-free; the `scheduler` command still prints its name and exits. `validate` is a real offline Function validator and `migrate` is a real database command, as described below. Apply migrations explicitly before starting serving replicas. Gateway process implementation now passes local source, rebuilt-container and current gateway phase/supporting acceptance. Both independent review findings are resolved; the code is pushed and exact-head hosted CI passes. Protected-stack integration remains pending; no merged delivery is claimed. Scheduler wiring and execution remain later work. See [PLAN.md](PLAN.md) for acceptance criteria and progress.
 
+## Sweep component (P4.10)
+
+`makeSweepLoop` is a leader-scoped component behind both Job/Pod initial LISTs.
+It runs immediately and then ten minutes after each completed pass, serializing
+explicit overlapping iterations too. One Effect-clock retention cutoff is frozen
+per pass; the existing `Store.sweep(cutoff, 1000)` repeats until a batch is short.
+The caller supplies the parsed retention duration; production configuration and
+leader wiring remain P4.11. Each settled SQL batch publishes its exact committed
+run count to `krun_sweep_deleted_total` before interruption can stop the pass.
+Failed batches and Secret deletions do not inflate that counter.
+
+After SQL retention, the component pages native `krun.io/run-id`-selected Secrets
+in the jobs namespace through the shared bounded Kubernetes connection. Only
+valid metadata strictly older than one hour, with no current or pending cached
+Job, qualifies. Native deletes carry UID/resourceVersion preconditions, and the
+Job cache is checked again after permit wait. Exact-age, newer, malformed,
+replaced and live-Job Secrets are preserved. Per-Secret failures do not starve
+later candidates; 404 is harmless, 409 defers a changed object, and 429 stops
+further acquisitions for that pass. Failed work retries on the next pass.
+
+Thirteen fake-clock/stubbed-client controls, four real native HTTP/informer/SQLite
+controls and three real span/Prometheus controls pass. Eight compiled native
+client/informer/real-Store groups pass on both host and rebuilt hardened image,
+each with SQLite and PostgreSQL; all 87 runtime module hashes match. They include
+1,001-row retention, strict cutoff and delivery cascades, consistent Secret
+pagination, pending ingress, replacement fencing, retry, native request timeout
+and leader-scope abort. No Secret data, private API Status text or continuation
+cursor enters metrics or spans. These are component boundaries, not actual
+Kubernetes admission/garbage collection or the P4.12/P4.13 kind/e2e phase gate;
+the `scheduler` command remains finite until P4.11.
+
 ## Heartbeat component (P4.9)
 
 `makeHeartbeatLoop` is a leader-scoped component with an immediate first pass
