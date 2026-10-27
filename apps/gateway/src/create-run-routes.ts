@@ -2,7 +2,7 @@ import { Transform } from "node:stream";
 import { durationToMilliseconds } from "@krun/shared/dist/config/duration.js";
 import type { GatewayConfig } from "@krun/shared/dist/config/index.js";
 import type { FunctionEntry } from "@krun/shared/dist/functions/cache.js";
-import { Store, toRun } from "@krun/shared/dist/store/index.js";
+import { NotFoundError, type Run, Store, toRun } from "@krun/shared/dist/store/index.js";
 import { requestHash } from "@krun/shared/dist/store/request-hash.js";
 import { newRunId } from "@krun/shared/dist/store/run-id.js";
 import { DnsLookup, makeWebhookPolicy, resolveAndCheck } from "@krun/shared/dist/webhook/index.js";
@@ -91,17 +91,17 @@ export const createRunRoutes = (input: Config) =>
         waiters.clear();
       }),
     );
-    const wait = (id: string, queue: Queue.Queue<void>, millis: number) =>
+    const wait = <E>(queue: Queue.Queue<void>, read: Effect.Effect<Run, E>, millis: number) =>
       Effect.gen(function* () {
         const watch = Effect.gen(function* () {
-          while (!terminal((yield* store.getRun(id)).state))
+          while (!terminal((yield* read).state))
             yield* Effect.raceFirst(Queue.take(queue), Effect.sleep("1 second"));
         });
         yield* Effect.raceFirst(
           Effect.raceFirst(watch, Effect.sleep(Duration.millis(millis))),
           Option.isSome(shutdown) ? shutdown.value.closing : Effect.never,
         );
-        return yield* store.getRun(id);
+        return yield* read;
       });
     const consume = (name: string) =>
       Effect.gen(function* () {
@@ -312,7 +312,7 @@ export const createRunRoutes = (input: Config) =>
                     : { idempotency_key: request.query.requestId }),
                 });
                 const row = admitted.queue
-                  ? yield* wait(admitted.run.id, admitted.queue, millis)
+                  ? yield* wait(admitted.queue, store.getRun(admitted.run.id), millis)
                   : admitted.run;
                 const resource = toRun(row);
                 reply.code(201).header("Location", `/v1/${resource.name}`);
@@ -328,6 +328,55 @@ export const createRunRoutes = (input: Config) =>
                       }),
                 ),
               ),
+            ),
+          ),
+      });
+      // WaitRun shares the admission plugin's one Store consumer, not a second
+      // LISTEN connection or a competing notification queue. History visibility
+      // comes from the stored row, never current Function readiness.
+      app.withTypeProvider<ZodTypeProvider>().route({
+        ...publicContracts.WaitRun,
+        handler: async (request, reply) =>
+          app.runEffect(
+            request,
+            reply,
+            Effect.scoped(
+              Effect.gen(function* () {
+                const key = request.principal;
+                if (!key) return yield* new ApiError({ reason: "INTERNAL" });
+                const requested =
+                  request.body.timeout === undefined
+                    ? config.maxWait
+                    : durationToMilliseconds(request.body.timeout);
+                if (requested === undefined)
+                  return yield* new ApiError({ reason: "REQUEST_INVALID" });
+                if (Option.isSome(shutdown) && !shutdown.value.track(reply.raw))
+                  return yield* new ApiError({ reason: "NOT_READY" });
+                const queue = yield* register(request.params.run);
+                const read = Effect.gen(function* () {
+                  const row = yield* store
+                    .getRun(request.params.run)
+                    .pipe(
+                      Effect.mapError((error) =>
+                        error instanceof NotFoundError
+                          ? new ApiError({ reason: "RUN_NOT_FOUND" })
+                          : error,
+                      ),
+                    );
+                  if (
+                    (request.params.function !== "-" &&
+                      request.params.function !== row.function_name) ||
+                    !key.allowsFunction(row.function_name) ||
+                    (!key.hasScope("admin") && row.created_by !== key.name)
+                  )
+                    return yield* new ApiError({ reason: "RUN_NOT_FOUND" });
+                  Reflect.set(request, "audit", { run_id: row.id, function: row.function_name });
+                  return row;
+                });
+                return publicSchemas.Run.parse(
+                  toRun(yield* wait(queue, read, Math.min(requested, config.maxWait))),
+                );
+              }),
             ),
           ),
       });

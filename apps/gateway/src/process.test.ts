@@ -268,7 +268,7 @@ it.live(
 );
 
 it.live(
-  "SIGTERM answers an in-flight CreateRun wait with its current201 Run, not INTERNAL",
+  "SIGTERM answers in-flight CreateRun and WaitRun with their current201/200 Run, not INTERNAL",
   () =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -277,24 +277,39 @@ it.live(
         const waiting = f.request("/v1/functions/echo/runs?wait=60s", 0, {
           input: { pending: true },
         });
-        yield* Effect.tryPromise({
+        const admitted = yield* Effect.tryPromise({
           try: () => f.request("/v1/functions/echo/runs"),
           catch: () => new Error("Owned admission pending"),
         }).pipe(
           Effect.flatMap((response) =>
             response.code === 200 && response.body.runs.length === 1
-              ? Effect.void
+              ? Effect.succeed(response.body.runs[0].name as string)
               : Effect.fail(new Error("Owned admission pending")),
           ),
           Effect.retry(Schedule.spaced("20 millis")),
           Effect.timeout("5 seconds"),
         );
+        const waitPath = `/v1/${admitted}:wait`;
+        expect((yield* Effect.promise(() => f.request(waitPath, 0, { timeout: "0ms" }))).code).toBe(
+          200,
+        );
+        let answered = false;
+        const waitRun = f.request(waitPath, 0, { timeout: "60s" }).then((response) => {
+          answered = true;
+          return response;
+        });
+        waitRun.catch(() => {});
+        yield* f.until("/healthz", 2, 200);
+        expect(answered).toBe(false);
         f.child.kill("SIGTERM");
         yield* f.until("/readyz", 2, 503);
         const response = yield* Effect.promise(() => waiting).pipe(Effect.timeout("5 seconds"));
         expect(response.code).toBe(201);
         expect(response.body.state).toBe("QUEUED");
         expect(response.body.input).toEqual({ pending: true });
+        const waited = yield* Effect.promise(() => waitRun).pipe(Effect.timeout("5 seconds"));
+        expect(waited.code).toBe(200);
+        expect(waited.body).toEqual(response.body);
         expect(yield* Effect.promise(() => f.exited).pipe(Effect.timeout("5 seconds"))).toEqual({
           code: 0,
           signal: null,

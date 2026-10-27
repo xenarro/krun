@@ -364,7 +364,7 @@ export const publicContracts = {
         "FULL Run at terminal state,timeout or earlier shutdown. Missing timeout defaults to Function.maxWait; values capped to the same limit;timeout is not an error.",
       params: runParams,
       querystring: empty,
-      body: z.strictObject({ timeout: duration.optional() }),
+      body: z.strictObject({ timeout: duration.optional() }).default({}),
       response: { ...errors, 200: run },
     },
   },

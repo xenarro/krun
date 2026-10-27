@@ -188,6 +188,14 @@ try {
   assert.equal(created.code, 201);
   assert.equal((await request(`/v1/${created.body.name}`)).body.state, "QUEUED");
   groups.push("migrated-real-store-create-read");
+  const waitPath = `/v1/${created.body.name}:wait`;
+  const immediate = await request(waitPath, 0, { timeout: "0ms" });
+  assert.equal(immediate.code, 200);
+  assert.deepEqual(immediate.body, created.body);
+  const timed = await request(waitPath, 0, { timeout: "100ms" });
+  assert.equal(timed.code, 200);
+  assert.equal(timed.body.state, "QUEUED");
+  groups.push("waitrun-real-store-timeout-keeps200");
   const internal = async (operation: string, body?: string, bearer = runToken) => {
     const response = await fetch(
       `http://127.0.0.1:${ports[1]}/internal/v1/runs/${runId}/${operation}`,
@@ -239,6 +247,8 @@ try {
   const waiting = request("/v1/functions/echo/runs?wait=60s", 0, { input: { wait: true } });
   waiting.catch(() => {});
   await until(async () => (await request("/v1/functions/echo/runs")).body.runs.length === 3);
+  const existingWait = request(waitPath, 0, { timeout: "60s" });
+  existingWait.catch(() => {});
   // Authenticated, under-cap bodies never complete. Closing the listener must
   // own these transports; no client timeout/abort may make this proof pass.
   const partialClosed: Promise<void>[] = [];
@@ -275,6 +285,10 @@ try {
   assert.equal(response.code, 201);
   assert.deepEqual(response.body.input, { wait: true });
   groups.push("inflight-create-wait-settles-current-run");
+  const waited = await existingWait;
+  assert.equal(waited.code, 200);
+  assert.deepEqual(waited.body, created.body);
+  groups.push("inflight-waitrun-settles-current-run-on-sigterm");
   assert.equal(await done, 0);
   await Promise.all(partialClosed);
   groups.push("internal-unfinished-bodies-closed-at-drain-end");
