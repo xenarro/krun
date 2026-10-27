@@ -69,9 +69,16 @@ invalid prefixes/suffixes, valid identities and exact case preservation. Native
 HTTP 401 controls on both backends pass on host and rebuilt image while valid
 CreateRun correlation, metric values and traceparent behavior stay intact.
 
-This acceptance establishes reviewed-and-repaired components, not whole-phase
-scheduler execution. PLAN records task delivery and exact-head hosted CI;
-production scheduler assembly remains P4.11. `make e2e` still exits 2 at its explicit P4.12 placeholder;
+Source commit `4ee85c97d9193e86fbca6b0493608a4e00526332` passed all nine
+hosted CI gates in [run 40423366076](https://github.com/xenarro/krun/actions/runs/40423366076).
+[PR #48](https://github.com/xenarro/krun/pull/48) was independently approved and
+merged externally; the delivery job did not merge it. Only P4.6 is recorded
+complete after that accepted source CI. This PLAN/README tracking update
+receives its own fresh full check and exact-head hosted acceptance.
+
+This proves reviewed-and-repaired components, not whole-phase scheduler
+execution. Production scheduler assembly remains P4.11. `make e2e` still exits 2
+at its explicit P4.12 placeholder;
 Kubernetes admission/Job execution, kind scenarios and actual S3 are not proved
 by the loopback fixture. Those gates remain P4.12/P4.13/P6.2.
 
