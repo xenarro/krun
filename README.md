@@ -55,11 +55,15 @@ ownership. Eight native repair controls use the actual Function validation/cache
 stream to cover changes during a candidate's logs and before later rows start.
 Five real in-memory exporter controls verify one `scheduler.heartbeat_loop` span
 for empty, fresh, stale, query-error and retry-debt passes, with per-run child
-spans and no misleading aggregate run ID. Compiled native-client/informer/real-Store
-verification also exercises the P4.8 regressions and real-cache later-row policy
-controls; exact host/image and SQLite/PostgreSQL results are recorded in the
-P4.9 repair report. Native loopback HTTP proves requests, parsing
-and abort, not Kubernetes garbage-collector completion or actual Job execution.
+spans and no misleading aggregate run ID. Sixteen compiled
+native-client/informer/real-Store groups, including P4.8 regressions and real-cache
+later-row policy controls, pass on both host and the rebuilt hardened image with
+SQLite and PostgreSQL; all 86 runtime module hashes match. Source
+`353462feaa844f5a3c5b03722eb308009b295f2c` in [PR#54](https://github.com/xenarro/krun/pull/54) passes
+[all nine hosted acceptance gates](https://github.com/xenarro/krun/actions/runs/40454569909) with
+1,494 TypeScript tests plus one Python test, including 265 scheduler tests.
+Native loopback HTTP proves requests, parsing and abort, not Kubernetes
+garbage-collector completion or actual Job execution.
 Production leader wiring remains P4.11 and whole-phase e2e/kind remains
 P4.12/P4.13; this component does not make the finite `scheduler` command serve.
 
