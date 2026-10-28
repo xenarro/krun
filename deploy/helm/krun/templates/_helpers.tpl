@@ -16,6 +16,12 @@
 {{- end -}}
 {{- end }}
 
+{{- define "krun.headlessServiceName" -}}
+{{- $public := include "krun.publicServiceName" . -}}
+{{- $headless := printf "%s-headless" ($public | trunc 54 | trimSuffix "-") -}}
+{{- $headless -}}
+{{- end }}
+
 {{- define "krun.labels" -}}
 app.kubernetes.io/name: krun
 app.kubernetes.io/instance: {{ .Release.Name | quote }}
@@ -86,7 +92,12 @@ livenessProbe:
     secretKeyRef:
       name: {{ .root.Values.db.postgres.existingSecret | quote }}
       key: dsn
+{{- else }}
+- name: KRUN_DB_PATH
+  value: /data/krun.db
 {{- end }}
+- name: KRUN_NAMESPACE
+  value: {{ .root.Release.Namespace | quote }}
 - name: KRUN_JOBS_NAMESPACE
   value: {{ .root.Values.jobsNamespace.name | quote }}
 - name: KRUN_GATEWAY_INTERNAL_URL
@@ -104,6 +115,24 @@ livenessProbe:
 priorityClassName: {{ . | quote }}
 {{- end }}
 terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+{{- end }}
+
+{{- define "krun.litestreamContainer" -}}
+resources:
+  {{- toYaml .Values.scheduler.resources | nindent 2 }}
+securityContext:
+  {{- include "krun.containerSecurityContext" . | nindent 2 }}
+env:
+  {{- range $key := list "LITESTREAM_ACCESS_KEY_ID" "LITESTREAM_SECRET_ACCESS_KEY" }}
+  - name: {{ $key }}
+    valueFrom:
+      secretKeyRef:
+        name: {{ $.Values.db.embedded.litestream.existingSecret | quote }}
+        key: {{ $key }}
+  {{- end }}
+volumeMounts:
+  - {name: data, mountPath: /data}
+  - {name: tmp, mountPath: /tmp}
 {{- end }}
 
 {{- define "krun.schedulerStrategy" -}}

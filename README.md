@@ -290,9 +290,89 @@ open/unmerged pending required independent approval, with no auto-merge or
 protection bypass. Only P7.2 is checked after accepted source CI; this PLAN/README
 tracking update receives fresh local and exact-final hosted checks.
 
-Embedded lifecycle (P7.3), RBAC/isolation/optional features, generated chart docs,
-serving-Pod upgrade/rollback, native data-plane acceptance and monitoring remain
-later tasks. No publication or production change is claimed.
+The embedded lifecycle (P7.3) follows below. RBAC/isolation/optional features,
+generated chart docs, serving-Pod upgrade/rollback, native data-plane acceptance
+and monitoring remain later tasks. No publication or production change is claimed.
+
+## Embedded chart lifecycle (P7.3)
+
+Embedded mode renders one single-replica StatefulSet with real gateway and
+scheduler containers sharing a local ReadWriteOnce PVC at `/data/krun.db`.
+`fsGroup: 65532` and `OnRootMismatch` make it writable without a privileged
+ownership init container. An empty storage class is omitted so the platform's
+default provisioner can be used. Network filesystems are unsupported. The
+headless Service has no ports and a bounded DNS-label-safe name distinct from
+both serving Services; it is the StatefulSet's `serviceName`.
+
+Gateway exposes 8080, 8081 and admin 9090; scheduler exposes `admin-sched` 9091
+and sets `KRUN_ADMIN_LISTEN_ADDR=:9091`. Both use their own exact section13
+readiness/liveness probes, resources and quoted config. All krun processes share
+the same embedded DB path. Serving processes use the actual release namespace
+for Functions and Leases in both modes, not the runtime's default namespace.
+The pod runs as `krun-scheduler`; no gateway ServiceAccount or RoleBinding is
+added in embedded mode.
+
+Without Litestream, the real `migrate` command is the sole init container. With
+it enabled, init order is `litestream-restore`, native `litestream` sidecar
+(`restartPolicy: Always`), then `migrate`. Restore removes only orphan WAL/SHM
+when the DB is absent and uses `-if-replica-exists -if-db-not-exists`; its URL is
+passed as a positional argument, never interpolated as shell source. The
+sidecar uses the same supplied image and replica URL and remains until both
+serving processes terminate. The supplied digest-pinned image must support the
+documented Litestream restore/replicate URL CLI and `/bin/sh`; the compatible
+official 0.3.13 image is used for disposable integration verification.
+
+Only restore and replication receive the two named Litestream Secret keys via
+explicit key references. All containers are nonroot 65532, drop all capabilities,
+have a read-only root and writable `/tmp`. Automatic pod API-token injection is
+disabled; the standard rotating token/CA/namespace projection is mounted only
+into the two serving containers, not migrate, restore or Litestream. API keys
+are mounted as a read-only directory only into gateway. The chart creates no
+Secret, ConfigMap or Function (D115).
+
+Real-Helm controls cover the above contracts, both replica-limit failures,
+missing/whitespace Litestream image/Secret failures even with CRD disabled,
+local storage classes and naming edge cases. Existing public/internal Service
+controls are retained and distinguish the additional embedded headless Service.
+Both independent source reviews report no material product defect; integration
+preserves all eight implementation paths. The 24 embedded and 99 combined
+chart/generator controls, 12 independent rendered/ConfigLive controls, six
+explicit mock shell-boundary controls, two namespace-fallback counterfactuals,
+strict replay types, both lint modes and generators twice pass. Earlier
+namespace-defect wording is qualified: ConfigLive already reads the mounted
+ServiceAccount namespace when explicit env is absent. Current explicit release
+env is valid, but its earlier absence alone does not prove a Postgres defect.
+
+Fresh genuine PSA-restricted Helm verification starts both actual serving
+processes Ready with scheduler leadership, shared PVC and two SQLite migrations.
+A committed witness survives real Litestream file-replica restore after DB
+removal and orphan WAL/SHM creation, followed by real serving upgrades disabling
+and re-enabling Litestream against preserved data. Actual init/sidecar lack API
+tokens; both apps use projected API access. Uninstall retains the PVC; the owned
+fixture then removes it, the cluster, aliases and private inputs. The unchanged
+runtime matches 93 modules plus launcher. Fixture-only existing e2e RBAC is
+explicit: chart-owned permissions are later work, not assumed complete here.
+
+Exact source `c6ede61f7e227feb408fcb759d9ccc1adc251aab` passes [hosted verify and kind](https://github.com/xenarro/krun/actions/runs/40733378478):
+1,806 TypeScript tests plus one Python test, generators, actual image
+smokes/identity/security, Helm/audit and all eight existing raw-manifest native
+scenarios and privacy oracles over 9 actual Run credential contexts. The
+existing retry policy is unchanged; this is not a no-retry claim.
+[PR #73](https://github.com/xenarro/krun/pull/73) targets its immediate unmerged parent
+`feat/helm-postgres-hooks` / PR #72, which remains OPEN/REVIEW_REQUIRED. No
+auto-merge or protection bypass is enabled. Only P7.3 is checked after accepted
+source CI; this PLAN/README tracking update receives fresh local and exact-final
+hosted checks.
+
+This is not full Phase7 chart-installed security/data-plane or S3 backup
+acceptance. The genuine native replica is a file URL on the disposable local
+PVC; signed-request credential checks use an explicitly simulated empty-bucket
+protocol server, not a real object store. Original fixture/import/host-UID and
+contrary credential-hypothesis failures are retained with their qualifications.
+P7.4 and later tasks still supply RBAC, namespace resources, policy and
+monitoring. A single replica means brief upgrade downtime; keep scheduler
+outages below `config.ttlAfterFinished`. No publication or production write is
+claimed.
 
 ## Gateway waits (P5.1)
 

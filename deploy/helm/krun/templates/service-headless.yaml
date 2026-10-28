@@ -1,0 +1,14 @@
+{{- if eq .Values.db.mode "embedded" }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "krun.headlessServiceName" . | quote }}
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "krun.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: krun
+    app.kubernetes.io/instance: {{ .Release.Name | quote }}
+{{- end }}
