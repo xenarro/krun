@@ -4,7 +4,7 @@ HTTP-triggered functions, executed as one-off Kubernetes Jobs. Callers submit JS
 
 ## Development status
 
-Core function execution, the Phase 5 native wait/signed-webhook gate and the Phase 6 MinIO large-result gate pass locally in disposable embedded-mode kind. Gateway waits, Run event streams, scheduler webhooks and object-storage runtime wiring are implemented as described below. P6.3 implementation-local acceptance now covers the real one-MiB upload, persisted result reference and public redirect/raw-object path; independent source reviews are complete, with the identified privacy-oracle gap repaired by failing-first integration controls. Exact-head hosted delivery for that slice remains pending. Earlier delivered slices retain their recorded hosted evidence below. This is not a complete or production-ready release: SDK runtime behaviour, production Helm and release acceptance remain later work.
+Core function execution,the Phase5 wait/signed-webhook gate and Phase6 MinIO large-result acceptance pass locally and in exact source-head hosted CI. P6.3 source `55df490` is delivered in [PR #69](https://github.com/xenarro/krun/pull/69) against its immediate unmerged P6.2 parent. Independent source reviews and reproduced privacy-oracle/bucket-initializer repairs are complete;hosted `verify` and `kind` pass for that exact source head. The PLAN/README-only tracking update receives its own fresh local check and exact-head hosted verification. This is pushed/green,not merged or a complete production-ready release:SDK runtime behaviour,production Helm and release acceptance remain later work.
 
 - Strict TypeScript workspace on Node.js 26, with Effect 4 process entrypoints.
 - Zod configuration schemas and Effect services for gateway and scheduler settings.
@@ -108,7 +108,7 @@ The complete local `make e2e` gate passes all eight real Kubernetes scenarios,
 including the unchanged Phase 4/5 regressions, with S3 enabled in both serving
 processes and the mandatory open/deny/reopen NetworkPolicy enforcement probe.
 This is local Phase 6 evidence; independent source reviews are complete, while
-exact-head hosted delivery remains separate. P6.3 is not closed in PLAN by implementation.
+exact source-head hosted delivery now passes as recorded below. Implementation did not close P6.3;only the checked delivery tracking update does so after source acceptance.
 
 - A real Node26 Function fetches its opaque input and uploads exactly 1,048,576
   UTF-8 JSON bytes with `Content-Type: application/json` through its per-Run
@@ -162,6 +162,25 @@ initialization without changing the 90-second Job or ten-second request bounds.
 The earlier initializer deadline and generic cleanup-hook failure remain retained
 and qualified, not attributed to invented causes. Cleanup errors now identify
 only fixed safe stage names, never private exception details.
+
+## P6.3 delivery
+
+Source `55df49060ba20a683ec0d71eff77f80170a2a608` is pushed in [PR #69](https://github.com/xenarro/krun/pull/69)
+against the immediate unmerged parent `feat/object-store-runtime` / PR #68.
+[Exact source-head hosted verify and kind](https://github.com/xenarro/krun/actions/runs/40634100991) pass,
+including 1,733 TypeScript tests plus one Python test,generators,current-source
+image/process/security gates and all eight real native scenarios. The hosted
+privacy oracles cover eight actual Run credential contexts;these are distinct
+from the original implementation gate's historical nine-context retry evidence.
+The real one-MiB/resultUri/bodyless307/GET/raw-byte/hash path passes on hosted kind.
+No retry/deadline policy was changed and no prior failed receipt is erased.
+
+Only P6.3 is newly checked in PLAN after that acceptance. This PLAN/README-only
+tracking update receives a separate fresh precommit `make check` and exact-head
+hosted CI. Pushed/green is not merged;PRs #68,#67 and #66 remain pending-main
+dependencies,with no auto-merge or protection bypass. P7.1 starts from the
+current committed verified lineage after refreshing parent/main state,not an
+obsolete main checkout. Production chart,SDK and release acceptance remain later.
 
 ## Gateway waits (P5.1)
 
