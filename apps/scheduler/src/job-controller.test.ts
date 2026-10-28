@@ -1,5 +1,6 @@
 import { expect, it } from "@effect/vitest";
 import { KubeApiError } from "@krun/shared/dist/k8s/errors.js";
+import { ObjectStore, ObjectStoreError } from "@krun/shared/dist/objstore/index.js";
 import { DatabaseError, type NewRun, Store } from "@krun/shared/dist/store/index.js";
 import { StoreSqlite } from "@krun/shared/dist/store/live.js";
 import type { V1Job, V1Pod } from "@kubernetes/client-node";
@@ -9,6 +10,7 @@ import {
   Effect,
   Exit,
   Fiber,
+  Layer,
   Logger,
   Queue,
   References,
@@ -19,6 +21,7 @@ import { TestClock } from "effect/testing";
 import { makeJobController, ResultCheckError } from "./job-controller.js";
 import { type InformerEvent, JobPodSource } from "./k8s/informers.js";
 import { Kube } from "./k8s/kube.js";
+import { checkObjectResult } from "./object-storage.js";
 
 const id = "0192f000-0000-7000-8000-000000000001";
 const namespace = "krun-test-p44-jobs";
@@ -32,6 +35,7 @@ const fixture = Effect.gen(function* () {
   const synced = yield* Deferred.make<void>();
   const calls: string[] = [];
   let resultError = false;
+  let objectStore: ObjectStore["Service"] | undefined;
   let reference: string | null = null;
   let cleanupError = false;
   let beforeCleanup: (id: string) => Effect.Effect<void> = () => Effect.void;
@@ -126,17 +130,19 @@ const fixture = Effect.gen(function* () {
   const buildController = makeJobController({
     namespace,
     maxRunning: 3,
-    checkResult: () =>
-      Effect.gen(function* () {
-        calls.push("result");
-        activeChecks++;
-        maxChecks = Math.max(maxChecks, activeChecks);
-        yield* beforeResult;
-        activeChecks--;
-        if (resultError)
-          return yield* Effect.fail(new ResultCheckError({ reason: "request_failed" }));
-        return reference;
-      }),
+    checkResult: (run) =>
+      objectStore === undefined
+        ? Effect.gen(function* () {
+            calls.push("result");
+            activeChecks++;
+            maxChecks = Math.max(maxChecks, activeChecks);
+            yield* beforeResult;
+            activeChecks--;
+            if (resultError)
+              return yield* Effect.fail(new ResultCheckError({ reason: "request_failed" }));
+            return reference;
+          })
+        : checkObjectResult(objectStore)(run),
   }).pipe(
     Effect.provideService(Store, controlled),
     Effect.provideService(Kube, kube),
@@ -194,6 +200,9 @@ const fixture = Effect.gen(function* () {
     putJob,
     putPod,
     sync: Deferred.succeed(synced, undefined),
+    setObjectStore: (value: ObjectStore["Service"]) => {
+      objectStore = value;
+    },
     setResultError: (v: boolean) => {
       resultError = v;
     },
@@ -1341,6 +1350,30 @@ for (const complete of [false, true]) {
           yield* f.store.setJobToken(other, `krun-${other}`, "owned-p45-backlog");
           yield* f.store.markScheduled(other);
           yield* f.store.transition(other, "scheduled", "running", null, {});
+          // Occupy all three workers; the target remains inside the lost-pass
+          // query bound, so this still tests ingress fencing, not query omission.
+          const blocked = [3, 4].map(
+            (n) => `0192f000-0000-7000-8000-${n.toString(16).padStart(12, "0")}`,
+          );
+          for (const runId of blocked) {
+            yield* f.store.createRun({
+              id: runId,
+              function_name: "echo",
+              input: {},
+              idempotency_key: null,
+              request_hash: "owned-p45-capacity",
+              priority: 0,
+              created_by: "krun-test-p62",
+              created_at: yield* DateTime.now,
+              callback_url: null,
+            });
+            yield* f.store.setJobToken(runId, `krun-${runId}`, "owned-hash");
+            yield* f.store.markScheduled(runId);
+            f.jobs.set(`krun-${runId}`, {
+              metadata: { name: `krun-${runId}`, namespace, labels: { "krun.io/run-id": runId } },
+              status: { conditions: [{ type: "Complete", status: "True" }] },
+            });
+          }
           f.putJob();
           yield* f.controller.checkLost;
           yield* TestClock.adjust("119 seconds");
@@ -1349,7 +1382,8 @@ for (const complete of [false, true]) {
           f.setBeforeResult(
             Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(release))),
           );
-          yield* Queue.offer(f.jobEvents, f.ingest({ id, jobSeen: true }));
+          for (const runId of [id, ...blocked])
+            yield* Queue.offer(f.jobEvents, f.ingest({ id: runId, jobSeen: true }));
           const consumer = yield* Effect.forkScoped(f.controller.run);
           yield* Deferred.await(entered);
           const seen = f.ingest({ id: other, jobSeen: true });
@@ -1370,6 +1404,11 @@ for (const complete of [false, true]) {
           yield* f.controller.checkLost;
           expect((yield* f.store.getRun(other)).state).toBe("running");
           yield* TestClock.adjust("3 minutes");
+          expect(
+            (yield* f.store.listByState(["scheduled", "running"], 3)).some(
+              (row) => row.id === other,
+            ),
+          ).toBe(true);
           yield* f.controller.checkLost;
           expect((yield* f.store.getRun(other)).state).toBe("running");
           expect(f.source.hasPendingJob(other)).toBe(true);
@@ -1454,6 +1493,303 @@ it.effect("P45-C1: ingress during the fresh Store read fences the old loss decis
       yield* TestClock.adjust("1 second");
       yield* f.controller.checkLost;
       expect((yield* f.store.getRun(id)).failure_reason).toBe("job_lost");
+    }),
+  ),
+);
+
+for (const mode of ["present", "absent", "failure", "inline"] as const) {
+  it.effect(`P6.2 configured ObjectStore ${mode} controls CAS and delivery`, () => {
+    let checks = 0;
+    const fake = Layer.succeed(
+      ObjectStore,
+      ObjectStore.of({
+        presignPut: () => Effect.die("unexpected PUT"),
+        presignGet: () => Effect.die("unexpected GET"),
+        exists: () =>
+          Effect.suspend(() => {
+            checks++;
+            return mode === "failure"
+              ? Effect.fail(new ObjectStoreError({ operation: "exists" }))
+              : Effect.succeed(mode === "present");
+          }),
+        ref: (runId) => `s3://krun-test-p62/runs/${runId}/result.json`,
+      }),
+    );
+    return test((f) =>
+      Effect.gen(function* () {
+        f.setObjectStore(yield* ObjectStore);
+        yield* f.seed();
+        if (mode === "inline") yield* f.store.setResult(id, false);
+        f.putJob();
+        yield* f.sync;
+        const outcome = yield* Effect.exit(f.controller.handle(id));
+        const row = yield* f.store.getRun(id);
+        expect(checks).toBe(mode === "inline" ? 0 : 1);
+        if (mode === "failure") {
+          expect(outcome._tag).toBe("Failure");
+          expect(row.state).toBe("scheduled");
+          expect(f.calls).not.toContain("cas");
+          expect(f.calls).not.toContain("secret");
+          expect((yield* f.store.claimDeliveries(yield* DateTime.now, 10)).length).toBe(0);
+        } else {
+          expect(outcome._tag).toBe("Success");
+          expect(row.state).toBe("succeeded");
+          const [delivery] = yield* f.store.claimDeliveries(yield* DateTime.now, 10);
+          expect(delivery !== undefined).toBe(true);
+          if (mode === "present")
+            expect(delivery?.payload.resultUri).toBe(`s3://krun-test-p62/runs/${id}/result.json`);
+          else expect(delivery?.payload).not.toHaveProperty("resultUri");
+          expect(row.result_ref !== null).toBe(mode === "present");
+        }
+      }),
+    ).pipe(Effect.provide(fake));
+  });
+}
+
+for (const stream of ["job", "pod"] as const) {
+  it.effect(
+    `P6.2 repair: ${stream} dispatch isolates independent failures from stalled HEAD and repeated same-Run events`,
+    () =>
+      test((f) =>
+        Effect.gen(function* () {
+          yield* f.seed();
+          yield* f.sync;
+          const consumer = yield* Effect.forkScoped(f.controller.run);
+          yield* TestClock.adjust("1 second");
+          const other = "0192f000-0000-7000-8000-000000000002";
+          yield* f.store.createRun({
+            id: other,
+            function_name: "echo",
+            input: {},
+            idempotency_key: null,
+            request_hash: "owned-isolation",
+            priority: 0,
+            created_by: "krun-test-p62",
+            created_at: yield* DateTime.now,
+            callback_url: "https://receiver.example.invalid/terminal",
+          });
+          yield* f.store.setJobToken(other, `krun-${other}`, "owned-hash");
+          yield* f.store.markScheduled(other);
+          f.putJob();
+          f.jobs.set(`krun-${other}`, {
+            metadata: { name: `krun-${other}`, namespace, labels: { "krun.io/run-id": other } },
+            status: {
+              conditions: [{ type: "Failed", status: "True", reason: "BackoffLimitExceeded" }],
+            },
+          });
+          f.pods.set("failed-pod", {
+            metadata: { name: "failed-pod", namespace, labels: { "krun.io/run-id": other } },
+            status: {
+              phase: "Failed",
+              containerStatuses: [
+                {
+                  name: "function",
+                  image: "owned",
+                  imageID: "owned",
+                  ready: false,
+                  restartCount: 0,
+                  state: {
+                    terminated: {
+                      exitCode: 3,
+                      finishedAt: DateTime.toDateUtc(yield* DateTime.now),
+                    },
+                  },
+                },
+              ],
+            },
+          });
+          const entered = yield* Deferred.make<void>();
+          let checks = 0,
+            interrupted = false;
+          f.setObjectStore(
+            ObjectStore.of({
+              presignPut: () => Effect.die("unexpected PUT"),
+              presignGet: () => Effect.die("unexpected GET"),
+              exists: () =>
+                Effect.sync(() => {
+                  checks++;
+                }).pipe(
+                  Effect.andThen(Deferred.succeed(entered, undefined)),
+                  Effect.andThen(Effect.never),
+                  Effect.onInterrupt(() =>
+                    Effect.sync(() => {
+                      interrupted = true;
+                    }),
+                  ),
+                ),
+              ref: (runId) => `s3://krun-test-results/runs/${runId}/result.json`,
+            }),
+          );
+          const events = stream === "job" ? f.jobEvents : f.podEvents;
+          yield* Queue.offer(events, stream === "job" ? f.ingest({ id, jobSeen: true }) : { id });
+          yield* Deferred.await(entered);
+          for (let n = 0; n < 20; n++)
+            yield* Queue.offer(events, stream === "job" ? f.ingest({ id, jobSeen: true }) : { id });
+          yield* Queue.offer(
+            events,
+            stream === "job" ? f.ingest({ id: other, jobSeen: true }) : { id: other },
+          );
+          yield* TestClock.adjust("1 second");
+          const row = yield* f.store.getRun(other);
+          expect(row.state).toBe("failed");
+          expect(row.failure_reason).toBe("exit_code");
+          expect(
+            (yield* f.store.claimDeliveries(yield* DateTime.now, 10)).filter((d) =>
+              d.payload.name.endsWith(other),
+            ),
+          ).toHaveLength(1);
+          expect(checks).toBe(1);
+          yield* Fiber.interrupt(consumer);
+          expect(interrupted).toBe(true);
+          expect((yield* f.store.getRun(id)).state).toBe("scheduled");
+          const completed = f.jobs.get(`krun-${id}`);
+          if (completed === undefined) return yield* Effect.die("Expected owned completed Job");
+          f.jobs.clear();
+          f.pods.clear();
+          f.setObjectStore(
+            ObjectStore.of({
+              presignPut: () => Effect.die("unexpected PUT"),
+              presignGet: () => Effect.die("unexpected GET"),
+              exists: () => Effect.succeed(true),
+              ref: (runId) => `s3://krun-test-results/runs/${runId}/result.json`,
+            }),
+          );
+          const resumed = yield* Effect.forkScoped(f.controller.run);
+          yield* Queue.offer(f.jobEvents, f.ingest({ id, deletedJob: completed }));
+          yield* TestClock.adjust("1 second");
+          expect((yield* f.store.getRun(id)).state).toBe("succeeded");
+          expect(f.source.hasPendingJob(id)).toBe(false);
+          yield* Fiber.interrupt(resumed);
+        }),
+      ),
+  );
+}
+
+it.effect(
+  "P6.2 repair: coalesced ingress retains terminal deletion and newest generation after an active HEAD fails",
+  () =>
+    test((f) =>
+      Effect.gen(function* () {
+        yield* f.seed();
+        yield* f.sync;
+        const consumer = yield* Effect.forkScoped(f.controller.run);
+        yield* TestClock.adjust("1 second");
+        f.putJob();
+        const entered = yield* Deferred.make<void>(),
+          release = yield* Deferred.make<void>();
+        let checks = 0;
+        f.setObjectStore(
+          ObjectStore.of({
+            presignPut: () => Effect.die("unexpected PUT"),
+            presignGet: () => Effect.die("unexpected GET"),
+            exists: () =>
+              Effect.suspend(() =>
+                ++checks === 1
+                  ? Deferred.succeed(entered, undefined).pipe(
+                      Effect.andThen(Deferred.await(release)),
+                      Effect.andThen(Effect.fail(new ObjectStoreError({ operation: "exists" }))),
+                    )
+                  : Effect.succeed(true),
+              ),
+            ref: (runId) => `s3://krun-test-results/runs/${runId}/result.json`,
+          }),
+        );
+        yield* Queue.offer(f.jobEvents, f.ingest({ id, jobSeen: true }));
+        yield* Deferred.await(entered);
+        const completed = f.jobs.get(`krun-${id}`);
+        if (completed === undefined) return yield* Effect.die("Expected owned completed Job");
+        f.jobs.clear();
+        yield* Queue.offer(f.jobEvents, f.ingest({ id, deletedJob: completed }));
+        yield* Queue.offer(
+          f.jobEvents,
+          f.ingest({ id, deletedJob: { metadata: { name: `krun-${id}` }, status: {} } }),
+        );
+        yield* Queue.offer(f.jobEvents, f.ingest({ id, jobSeen: true }));
+        yield* TestClock.adjust("1 second");
+        expect(f.source.hasPendingJob(id)).toBe(true);
+        yield* Deferred.succeed(release, undefined);
+        yield* TestClock.adjust("1 second");
+        const row = yield* f.store.getRun(id);
+        expect(row.state).toBe("succeeded");
+        expect(row.result_ref).not.toBeNull();
+        expect(f.source.hasPendingJob(id)).toBe(false);
+        expect(checks).toBe(2);
+        expect(yield* f.store.claimDeliveries(yield* DateTime.now, 10)).toHaveLength(1);
+        yield* Fiber.interrupt(consumer);
+      }),
+    ),
+);
+
+it.effect("P6.2 repair: independent event workers respect the configured dispatch bound", () =>
+  test((f) =>
+    Effect.gen(function* () {
+      yield* f.seed();
+      yield* f.sync;
+      const consumer = yield* Effect.forkScoped(f.controller.run);
+      yield* TestClock.adjust("1 second");
+      const ids = [
+        id,
+        ...[2, 3, 4].map((n) => `0192f000-0000-7000-8000-${n.toString(16).padStart(12, "0")}`),
+      ];
+      for (const runId of ids.slice(1)) {
+        yield* f.store.createRun({
+          id: runId,
+          function_name: "echo",
+          input: {},
+          idempotency_key: null,
+          request_hash: "owned-bound",
+          priority: 0,
+          created_by: "krun-test-p62",
+          created_at: yield* DateTime.now,
+          callback_url: null,
+        });
+        yield* f.store.setJobToken(runId, `krun-${runId}`, "owned-hash");
+        yield* f.store.markScheduled(runId);
+      }
+      const release = yield* Deferred.make<void>(),
+        full = yield* Deferred.make<void>();
+      let active = 0,
+        maximum = 0,
+        checks = 0;
+      f.setObjectStore(
+        ObjectStore.of({
+          presignPut: () => Effect.die("unexpected PUT"),
+          presignGet: () => Effect.die("unexpected GET"),
+          exists: () =>
+            Effect.gen(function* () {
+              active++;
+              checks++;
+              maximum = Math.max(maximum, active);
+              if (active === 3) yield* Deferred.succeed(full, undefined);
+              return yield* Deferred.await(release).pipe(Effect.as(true));
+            }).pipe(
+              Effect.ensuring(
+                Effect.sync(() => {
+                  active--;
+                }),
+              ),
+            ),
+          ref: (runId) => `s3://krun-test-results/runs/${runId}/result.json`,
+        }),
+      );
+      for (const runId of ids) {
+        f.jobs.set(`krun-${runId}`, {
+          metadata: { name: `krun-${runId}`, namespace, labels: { "krun.io/run-id": runId } },
+          status: { conditions: [{ type: "Complete", status: "True" }] },
+        });
+        yield* Queue.offer(f.jobEvents, f.ingest({ id: runId, jobSeen: true }));
+      }
+      yield* Deferred.await(full);
+      yield* TestClock.adjust("1 second");
+      expect(checks).toBe(3);
+      expect(active).toBe(3);
+      yield* Deferred.succeed(release, undefined);
+      yield* TestClock.adjust("1 second");
+      expect(maximum).toBe(3);
+      expect(checks).toBe(4);
+      expect(active).toBe(0);
+      for (const runId of ids) expect((yield* f.store.getRun(runId)).state).toBe("succeeded");
+      yield* Fiber.interrupt(consumer);
     }),
   ),
 );

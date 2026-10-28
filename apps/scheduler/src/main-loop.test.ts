@@ -5,6 +5,7 @@ import { type FunctionEntry, Functions } from "@krun/shared/dist/functions/cache
 import { functionResourceSchema } from "@krun/shared/dist/functions/schema.js";
 import { validateFunction } from "@krun/shared/dist/functions/validation.js";
 import { KubeConnection, makeKubeConnection } from "@krun/shared/dist/k8s/config.js";
+import { ObjectStore, ObjectStoreError } from "@krun/shared/dist/objstore/index.js";
 import { DatabaseError, type NewRun, Store } from "@krun/shared/dist/store/index.js";
 import { StoreSqlite } from "@krun/shared/dist/store/live.js";
 import { BatchV1Api, CoreV1Api, type V1Job, type V1Secret } from "@kubernetes/client-node";
@@ -52,6 +53,8 @@ const fixture = (
     maxRunning?: string;
     entries?: FunctionEntry[];
     stallJob?: boolean;
+    objectStore?: ObjectStore["Service"];
+    presignTtl?: string | undefined;
     beforeCount?: () => Effect.Effect<void>;
     beforeReplay?: () => Effect.Effect<void>;
     beforeLost?: (log: readonly string[]) => Effect.Effect<void>;
@@ -125,6 +128,7 @@ const fixture = (
       KRUN_NAMESPACE: "krun-test-p43b",
       KRUN_JOBS_NAMESPACE: "krun-test-p43b-jobs",
       KRUN_MAX_RUNNING: options.maxRunning ?? "100",
+      ...(options.presignTtl === undefined ? {} : { KRUN_S3_PRESIGN_TTL: options.presignTtl }),
     });
     const connection = yield* makeKubeConnection({
       load: (c) =>
@@ -177,6 +181,7 @@ const fixture = (
     const loop = yield* makeMainLoop({
       owner: "krun-test-scheduler",
       config,
+      objectStore: options.objectStore,
       checkLost: Effect.suspend(() => options.beforeLost?.(log) ?? Effect.void),
       replayCached: (run) =>
         Effect.gen(function* () {
@@ -1272,4 +1277,118 @@ it.effect("P45: a stalled step6 remains inside the iteration deadline and interr
     yield* Fiber.join(iteration);
     expect(interrupted).toBe(true);
   }).pipe(Effect.provide(StoreSqlite(":memory:"))),
+);
+
+for (const [duration, expected] of [
+  [undefined, 321],
+  ["2m", 120],
+  ["1500ms", 2],
+] as const) {
+  it.effect(
+    `P6.2 signs the actual Job upload URL with TTL ${duration ?? "Function deadline"}`,
+    () =>
+      database(
+        Effect.gen(function* () {
+          const calls: Array<[string, number]> = [];
+          const signed = `https://krun-test.invalid/result?signature=${randomBytes(16).toString("hex")}`;
+          const objectStore = ObjectStore.of({
+            presignPut: (runId, ttl) =>
+              Effect.sync(() => {
+                calls.push([runId, ttl]);
+                return signed;
+              }),
+            presignGet: () => Effect.die("unexpected GET"),
+            exists: () => Effect.die("unexpected HEAD during Job creation"),
+            ref: (runId) => `s3://krun-test-results/runs/${runId}/result.json`,
+          });
+          const f = yield* fixture({
+            objectStore,
+            presignTtl: duration,
+            entries: [entry("echo", { activeDeadlineSeconds: 321 })],
+          });
+          yield* f.seed(1);
+          yield* f.loop.iterate;
+          expect(calls).toEqual([[id(1), expected]]);
+          const env = f.jobs.get(`krun-${id(1)}`)?.spec?.template.spec?.containers[0]?.env ?? [];
+          expect(env.filter((value) => value.name === "KRUN_RESULT_UPLOAD_URL").length).toBe(1);
+          expect(
+            env.find((value) => value.name === "KRUN_RESULT_UPLOAD_URL")?.value === signed,
+          ).toBe(true);
+          expect((yield* f.store.getRun(id(1))).state).toBe("scheduled");
+        }),
+      ),
+  );
+}
+it.effect(
+  "P6.2 disabled storage omits upload env and signing failure releases the claim before any resources",
+  () =>
+    database(
+      Effect.gen(function* () {
+        const disabled = yield* fixture();
+        yield* disabled.seed(1);
+        yield* disabled.loop.iterate;
+        expect(
+          disabled.jobs
+            .get(`krun-${id(1)}`)
+            ?.spec?.template.spec?.containers[0]?.env?.some(
+              (value) => value.name === "KRUN_RESULT_UPLOAD_URL",
+            ),
+        ).toBe(false);
+        const objectStore = ObjectStore.of({
+          presignPut: () => Effect.fail(new ObjectStoreError({ operation: "presignPut" })),
+          presignGet: () => Effect.die("unexpected GET"),
+          exists: () => Effect.die("unexpected HEAD"),
+          ref: (runId) => `s3://krun-test-results/runs/${runId}/result.json`,
+        });
+        const f = yield* fixture({ objectStore });
+        yield* f.seed(2);
+        yield* f.loop.iterate;
+        expect(f.jobs.size).toBe(0);
+        expect(f.secrets.size).toBe(0);
+        const row = yield* f.store.getRun(id(2));
+        expect(row.state).toBe("queued");
+        expect(row.lease_owner).toBeNull();
+      }),
+    ),
+);
+
+it.effect(
+  "P6.2 repair: a presign failure releases only its claim and does not skip healthy scheduling, cancellation or loss checks",
+  () =>
+    Effect.gen(function* () {
+      let lost = 0;
+      const failing = id(1),
+        healthy = id(2),
+        cancelled = id(3);
+      const objectStore = ObjectStore.of({
+        presignPut: (runId) =>
+          runId === failing
+            ? Effect.fail(new ObjectStoreError({ operation: "presignPut" }))
+            : Effect.succeed("https://krun-test.invalid/owned-upload"),
+        presignGet: () => Effect.die("unexpected GET"),
+        exists: () => Effect.die("unexpected HEAD"),
+        ref: () => "s3://krun-test-results/owned-result",
+      });
+      const f = yield* fixture({
+        objectStore,
+        beforeLost: () =>
+          Effect.sync(() => {
+            lost++;
+          }),
+      });
+      yield* f.seed(1);
+      yield* f.seed(2);
+      yield* f.seed(3);
+      yield* f.store.transition(cancelled, "queued", "cancelling", null, {});
+      yield* f.loop.iterate;
+      const row = yield* f.store.getRun(failing);
+      expect(row.state).toBe("queued");
+      expect(row.lease_owner).toBeNull();
+      expect(row.attempt).toBe(1);
+      expect((yield* f.store.getRun(healthy)).state).toBe("scheduled");
+      expect((yield* f.store.getRun(cancelled)).state).toBe("cancelled");
+      expect(f.jobs.has(`krun-${failing}`)).toBe(false);
+      expect(f.secrets.has(`krun-${failing}`)).toBe(false);
+      expect(lost).toBe(1);
+    }).pipe(Effect.provide(StoreSqlite(":memory:"))),
 );

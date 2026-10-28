@@ -15,6 +15,7 @@ import {
   loggingOptions,
   withPinoLogger,
 } from "@krun/shared/dist/runtime/logging.js";
+import { makeObjectStore } from "@krun/shared/dist/runtime/object-store.js";
 import { TelemetryLive } from "@krun/shared/dist/runtime/telemetry.js";
 import { Store } from "@krun/shared/dist/store/index.js";
 import { StoreLive } from "@krun/shared/dist/store/live.js";
@@ -24,12 +25,13 @@ import Fastify from "fastify";
 import { makeDeliveriesLoop } from "./deliveries-loop.js";
 import { makeFunctionStatusWriter } from "./function-status.js";
 import { makeHeartbeatLoop } from "./heartbeat-loop.js";
-import { makeJobController, ResultCheckError } from "./job-controller.js";
+import { makeJobController } from "./job-controller.js";
 import { JobPodSource, makeJobPodSource } from "./k8s/informers.js";
 import { KubeLive } from "./k8s/kube.js";
 import { runLeaderElection } from "./k8s/leader-election.js";
 import { LeaseApiLive } from "./k8s/lease-api.js";
 import { makeMainLoop } from "./main-loop.js";
+import { checkObjectResult } from "./object-storage.js";
 import { makeSweepLoop } from "./sweep-loop.js";
 
 class SchedulerStartupError extends Data.TaggedError("SchedulerStartupError")<{
@@ -40,6 +42,7 @@ const leader = (
   config: SchedulerConfig,
   podName: string,
   cache: Effect.Success<ReturnType<typeof makeFunctions>>,
+  objectStore: Effect.Success<ReturnType<typeof makeObjectStore>>,
 ) =>
   Effect.gen(function* () {
     const source = yield* makeJobPodSource(config.KRUN_JOBS_NAMESPACE);
@@ -47,16 +50,12 @@ const leader = (
       const controller = yield* makeJobController({
         namespace: config.KRUN_JOBS_NAMESPACE,
         maxRunning: config.KRUN_MAX_RUNNING,
-        // P6.2 owns the configured S3 adapter. Disabled storage is genuinely absent;
-        // configured storage must never fabricate not-found/success at this seam.
-        checkResult: () =>
-          config.KRUN_S3_BUCKET === undefined
-            ? Effect.succeed(null)
-            : Effect.fail(new ResultCheckError({ reason: "request_failed" })),
+        checkResult: checkObjectResult(objectStore),
       });
       const main = yield* makeMainLoop({
         owner: podName,
         config,
+        objectStore,
         replayCached: controller.replayCached,
         checkLost: controller.checkLost,
       });
@@ -130,6 +129,7 @@ const scheduler = Effect.gen(function* () {
       const context = yield* Layer.buildWithScope(services, scope);
       yield* Effect.gen(function* () {
         const store = yield* Store;
+        const objectStore = yield* makeObjectStore(config, config.KRUN_MAX_ACTIVE_DEADLINE);
         const readiness = yield* Readiness;
         // Fail startup on an unmigrated schema; serving replicas never migrate it.
         yield* store.countByState();
@@ -150,7 +150,7 @@ const scheduler = Effect.gen(function* () {
         const election = yield* Effect.forkScoped(
           runLeaderElection(
             { namespace: config.KRUN_NAMESPACE, podName },
-            leader(config, podName, cache),
+            leader(config, podName, cache, objectStore),
             Scope.close(functionScope, Exit.void),
           ),
           { uninterruptible: false },

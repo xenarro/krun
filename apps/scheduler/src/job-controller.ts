@@ -678,10 +678,74 @@ export const makeJobController = (options: {
           ),
         ),
       );
+    // One active observer per Run; duplicates retain only compact latest work.
+    // They must not occupy every stream slot waiting on the same Run's gate.
+    const observing = new Map<string, { pending: InformerEvent | undefined }>();
+    const mergeObservation = (
+      before: InformerEvent | undefined,
+      next: InformerEvent,
+    ): InformerEvent => {
+      if (before === undefined) return next;
+      const terminalJob = (job: InformerEvent["deletedJob"]) =>
+        trueCondition(job, "Complete") !== undefined || trueCondition(job, "Failed") !== undefined;
+      const job =
+        terminalJob(before.deletedJob) && !terminalJob(next.deletedJob)
+          ? before.deletedJob
+          : (next.deletedJob ?? before.deletedJob);
+      const pod = compactPod(next.deletedPod ?? before.deletedPod);
+      const observation =
+        before.jobObservation === undefined
+          ? next.jobObservation
+          : next.jobObservation === undefined
+            ? before.jobObservation
+            : Math.max(before.jobObservation, next.jobObservation);
+      return {
+        id: next.id,
+        ...(before.jobSeen || next.jobSeen ? { jobSeen: true as const } : {}),
+        ...(observation === undefined ? {} : { jobObservation: observation }),
+        ...(job === undefined ? {} : { deletedJob: compactJob(job) }),
+        ...(pod === undefined ? {} : { deletedPod: pod }),
+      };
+    };
+    const observe = (event: InformerEvent) =>
+      Effect.acquireUseRelease(
+        Effect.sync(() => {
+          const active = observing.get(event.id);
+          if (active !== undefined) {
+            active.pending = mergeObservation(active.pending, event);
+            return undefined;
+          }
+          const work: { pending: InformerEvent | undefined } = { pending: undefined };
+          observing.set(event.id, work);
+          return work;
+        }),
+        (work) =>
+          work === undefined
+            ? Effect.void
+            : Effect.gen(function* () {
+                let next: InformerEvent | undefined = event;
+                while (next !== undefined) {
+                  work.pending = undefined;
+                  yield* guarded(next.id, next);
+                  next = work.pending;
+                }
+              }),
+        (work) =>
+          work === undefined
+            ? Effect.void
+            : Effect.sync(() => {
+                observing.delete(event.id);
+              }),
+      );
+    const dispatch = (events: Stream.Stream<InformerEvent>) =>
+      events.pipe(
+        Stream.mapEffect(observe, { concurrency: options.maxRunning, unordered: true }),
+        Stream.runDrain,
+      );
     const run = Effect.all(
       [
-        Stream.runForEach(source.jobEvents, (event) => guarded(event.id, event)),
-        Stream.runForEach(source.podEvents, (event) => guarded(event.id, event)),
+        dispatch(source.jobEvents),
+        dispatch(source.podEvents),
         reconcileLost.pipe(Effect.repeat(Schedule.spaced("5 minutes"))),
       ],
       { concurrency: "unbounded", discard: true },

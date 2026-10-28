@@ -253,9 +253,63 @@ the original first-attempt cause remains unestablished. Only P6.1 is checked;
 tracking documentation receives separate fresh checks.
 
 This is verified adapter delivery, not production or complete Phase 6 acceptance.
-Scheduler/gateway wiring and per-Function TTL selection remain P6.2; the complete
-Phase 6 kind gate with a 1 MB result and public 307 redirect remains P6.3. No
-auto-merge or protection bypass is enabled; pushed/green does not mean merged.
+Scheduler/gateway wiring and per-Function TTL selection are implemented locally
+in P6.2 below; the complete Phase 6 kind gate with a 1 MB result and public 307
+redirect remains P6.3. No auto-merge or protection bypass is enabled; pushed/green
+does not mean merged.
+
+## Object storage runtime wiring (P6.2)
+
+Both process graphs now acquire one scoped optional ObjectStore from their
+parsed S3 settings. All five settings absent disables storage; a partial group
+fails startup with only the missing variable name. A configured presign duration
+must fit the S3 adapter's whole-second range. Fractional seconds round upward;
+unset PUT TTL uses each Function's activeDeadlineSeconds. If the scheduler's
+KRUN_MAX_ACTIVE_DEADLINE exceeds the S3 seven-day limit (604800 seconds), an
+explicit representable KRUN_S3_PRESIGN_TTL is required; otherwise startup fails
+with that variable name before acquiring its S3 client or claiming work. The TTL
+is never silently clamped. This PUT restriction does not affect the gateway's
+fixed 300-second GET signing.
+
+The scheduler signs the upload URL before provisioning Secret/Job resources and
+passes it to the existing KRUN_RESULT_UPLOAD_URL manifest field. Signing failure
+releases only its queued claim without provisioning resources; healthy claims,
+cancellation and lost-Job checks still run in the same bounded iteration.
+On Complete with no
+accepted inline result, object existence is checked before the terminal CAS.
+An existing object contributes resultUri to the transaction's delivery payload;
+an absent object does not. Infrastructure failure leaves the Run nonterminal
+and resources intact for the next controller event/reconcile. An inline result,
+including false, skips HEAD and retains atomic precedence over a racing object
+check. Failed/cancelling paths retain their existing controller behavior.
+Job and Pod consumers dispatch independent Runs with bounded, scope-owned
+workers. Repeated events for an active Run coalesce without occupying more
+workers; compact terminal deletion evidence and the newest ingress generation
+remain pending until the existing same-Run handler acknowledges them. A stalled
+HEAD no longer serializes unrelated failures behind it.
+
+The gateway supplies that same process-owned signing capability to the existing
+authorized GetRunResult route, returning 307 with Cache-Control: no-store.
+No URL, signature or S3 credential is logged. Native process tests exercise the
+configured GET route, HEAD failure followed by success, and leader-loss abort of
+an active HEAD while preserving the nonterminal Run. Partial configuration
+fails before claims; default-disabled process behavior remains covered.
+
+P6.2 is delivered as source 2853ac37b510dc8cb317d354455b4cc9aff6c61a in PR #68
+(https://github.com/xenarro/krun/pull/68), stacked on the unmerged P6.1 parent
+feat/object-store-presigning/PR #67. Both review findings are repaired and
+all 146 changed-area tests pass, including 11 repair regressions and 31 new
+permanent tests beyond P6.1. Fresh delivery make check passes 1,708 TypeScript
+tests and one Python test. Exact source CI https://github.com/xenarro/krun/actions/runs/40619376457
+passes verify/kind, generators, rebuilt-image smokes/identity/security, Helm,
+audit, seven native scenarios and seven privacy oracles covering 7 actual
+Run credential contexts. The local native gate used its unchanged existing
+retry once; original failed bootstrap/test-observation receipts are retained and
+qualified. This PLAN/README tracking receives its own fresh precommit make check
+and exact-head hosted CI. Pushed/green is not merged; no stack layer is
+auto-merged and protected-main independent approval still applies.
+MinIO-in-kind large-result/resultUri/307 acceptance remains the separate P6.3
+phase gate; Phase 6, SDK and production/chart acceptance are not claimed.
 
 ## Disposable kind foundation (P4.12)
 
