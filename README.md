@@ -527,9 +527,17 @@ real HEAD requests to scoped ephemeral loopback servers; signed capabilities
 and credentials are not retained. API acceptance is
 not traffic-enforcement proof: CNI reachability, complete chart-installed serving
 in both modes and upgrade/rollback remain the mandatory P7.6/Phase 7 gate. This
-uncommitted implementation has independent reviews and a scoped parser repair.
-Authorized delivery remains separate. No PLAN closure, merge, publication or
-production write is claimed.
+implementation has independent reviews and a scoped parser repair.
+Source commit [`25b809d`](https://github.com/xenarro/krun/commit/25b809d2d85c966240573995732a2f7be1fbabf6)
+is pushed in [PR #77](https://github.com/xenarro/krun/pull/77) against main after normal ancestry
+reconciliation with the merged parent. Fresh local and
+[exact source CI](https://github.com/xenarro/krun/actions/runs/40789149949) pass 1,992 TypeScript tests plus
+one Python test; hosted `verify` and `kind` also pass current-source image/security
+gates and eight existing raw-manifest scenarios/privacy oracles. Local task-resource
+API acceptance passes six matrices and 44 exact policy readbacks with cleanup.
+At source acceptance the PR is OPEN/REVIEW_REQUIRED: pushed/green is not merged.
+This PLAN/README tracking update requires its own fresh check and exact-head CI.
+No auto-merge, protection bypass, publication or production write is claimed.
 
 ## Gateway waits (P5.1)
 
