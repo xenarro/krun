@@ -334,11 +334,45 @@ Real-Helm controls cover the above contracts, both replica-limit failures,
 missing/whitespace Litestream image/Secret failures even with CRD disabled,
 local storage classes and naming edge cases. Existing public/internal Service
 controls are retained and distinguish the additional embedded headless Service.
-This is an implementation slice awaiting independent review and Git delivery,
-not complete Phase7 chart-installed security or data-plane acceptance. P7.4 and
-later tasks still supply RBAC, namespace resources, policy and monitoring. A
-single replica means brief upgrade downtime; keep scheduler outages below
-`config.ttlAfterFinished`. No publication or production write is claimed.
+Both independent source reviews report no material product defect; integration
+preserves all eight implementation paths. The 24 embedded and 99 combined
+chart/generator controls, 12 independent rendered/ConfigLive controls, six
+explicit mock shell-boundary controls, two namespace-fallback counterfactuals,
+strict replay types, both lint modes and generators twice pass. Earlier
+namespace-defect wording is qualified: ConfigLive already reads the mounted
+ServiceAccount namespace when explicit env is absent. Current explicit release
+env is valid, but its earlier absence alone does not prove a Postgres defect.
+
+Fresh genuine PSA-restricted Helm verification starts both actual serving
+processes Ready with scheduler leadership, shared PVC and two SQLite migrations.
+A committed witness survives real Litestream file-replica restore after DB
+removal and orphan WAL/SHM creation, followed by real serving upgrades disabling
+and re-enabling Litestream against preserved data. Actual init/sidecar lack API
+tokens; both apps use projected API access. Uninstall retains the PVC; the owned
+fixture then removes it, the cluster, aliases and private inputs. The unchanged
+runtime matches 93 modules plus launcher. Fixture-only existing e2e RBAC is
+explicit: chart-owned permissions are later work, not assumed complete here.
+
+Exact source `c6ede61f7e227feb408fcb759d9ccc1adc251aab` passes [hosted verify and kind](https://github.com/xenarro/krun/actions/runs/40733378478):
+1,806 TypeScript tests plus one Python test, generators, actual image
+smokes/identity/security, Helm/audit and all eight existing raw-manifest native
+scenarios and privacy oracles over 9 actual Run credential contexts. The
+existing retry policy is unchanged; this is not a no-retry claim.
+[PR #73](https://github.com/xenarro/krun/pull/73) targets its immediate unmerged parent
+`feat/helm-postgres-hooks` / PR #72, which remains OPEN/REVIEW_REQUIRED. No
+auto-merge or protection bypass is enabled. Only P7.3 is checked after accepted
+source CI; this PLAN/README tracking update receives fresh local and exact-final
+hosted checks.
+
+This is not full Phase7 chart-installed security/data-plane or S3 backup
+acceptance. The genuine native replica is a file URL on the disposable local
+PVC; signed-request credential checks use an explicitly simulated empty-bucket
+protocol server, not a real object store. Original fixture/import/host-UID and
+contrary credential-hypothesis failures are retained with their qualifications.
+P7.4 and later tasks still supply RBAC, namespace resources, policy and
+monitoring. A single replica means brief upgrade downtime; keep scheduler
+outages below `config.ttlAfterFinished`. No publication or production write is
+claimed.
 
 ## Gateway waits (P5.1)
 
