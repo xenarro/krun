@@ -58,7 +58,9 @@ it.each(["postgres", "embedded"])(
       false,
     );
     expect(result.stdout).not.toMatch(/\bsubPath:/);
-    const services = result.documents.filter((d) => d.kind === "Service");
+    const allServices = result.documents.filter((d) => d.kind === "Service");
+    expect(allServices).toHaveLength(mode === "embedded" ? 3 : 2);
+    const services = allServices.filter((d) => d.spec.clusterIP !== "None");
     expect(services.map((d) => d.metadata.name).sort()).toEqual([
       "krun-gateway-internal",
       "krun-test-foundation",
@@ -347,14 +349,14 @@ for (const mode of ["postgres", "embedded"]) {
       );
       expect(new Set(identities).size).toBe(identities.length);
       const services = docs.filter((d) => d.kind === "Service");
-      expect(services).toHaveLength(2);
+      expect(services).toHaveLength(mode === "embedded" ? 3 : 2);
       for (const service of services) {
         expect(service.metadata.name).toMatch(/^[a-z]([-a-z0-9]*[a-z0-9])?$/);
         expect(service.metadata.name.length).toBeLessThanOrEqual(63);
         expect(service.spec.selector["app.kubernetes.io/instance"]).toBe(release);
       }
-      expect(services.find((d) => d.spec.ports[0].port === 8080).metadata.name).toBe(publicName);
-      expect(services.find((d) => d.spec.ports[0].port === 8081).metadata.name).toBe(
+      expect(services.find((d) => d.spec.ports?.[0]?.port === 8080).metadata.name).toBe(publicName);
+      expect(services.find((d) => d.spec.ports?.[0]?.port === 8081).metadata.name).toBe(
         "krun-gateway-internal",
       );
     },

@@ -290,9 +290,55 @@ open/unmerged pending required independent approval, with no auto-merge or
 protection bypass. Only P7.2 is checked after accepted source CI; this PLAN/README
 tracking update receives fresh local and exact-final hosted checks.
 
-Embedded lifecycle (P7.3), RBAC/isolation/optional features, generated chart docs,
-serving-Pod upgrade/rollback, native data-plane acceptance and monitoring remain
-later tasks. No publication or production change is claimed.
+The embedded lifecycle (P7.3) follows below. RBAC/isolation/optional features,
+generated chart docs, serving-Pod upgrade/rollback, native data-plane acceptance
+and monitoring remain later tasks. No publication or production change is claimed.
+
+## Embedded chart lifecycle (P7.3)
+
+Embedded mode renders one single-replica StatefulSet with real gateway and
+scheduler containers sharing a local ReadWriteOnce PVC at `/data/krun.db`.
+`fsGroup: 65532` and `OnRootMismatch` make it writable without a privileged
+ownership init container. An empty storage class is omitted so the platform's
+default provisioner can be used. Network filesystems are unsupported. The
+headless Service has no ports and a bounded DNS-label-safe name distinct from
+both serving Services; it is the StatefulSet's `serviceName`.
+
+Gateway exposes 8080, 8081 and admin 9090; scheduler exposes `admin-sched` 9091
+and sets `KRUN_ADMIN_LISTEN_ADDR=:9091`. Both use their own exact section13
+readiness/liveness probes, resources and quoted config. All krun processes share
+the same embedded DB path. Serving processes use the actual release namespace
+for Functions and Leases in both modes, not the runtime's default namespace.
+The pod runs as `krun-scheduler`; no gateway ServiceAccount or RoleBinding is
+added in embedded mode.
+
+Without Litestream, the real `migrate` command is the sole init container. With
+it enabled, init order is `litestream-restore`, native `litestream` sidecar
+(`restartPolicy: Always`), then `migrate`. Restore removes only orphan WAL/SHM
+when the DB is absent and uses `-if-replica-exists -if-db-not-exists`; its URL is
+passed as a positional argument, never interpolated as shell source. The
+sidecar uses the same supplied image and replica URL and remains until both
+serving processes terminate. The supplied digest-pinned image must support the
+documented Litestream restore/replicate URL CLI and `/bin/sh`; the compatible
+official 0.3.13 image is used for disposable integration verification.
+
+Only restore and replication receive the two named Litestream Secret keys via
+explicit key references. All containers are nonroot 65532, drop all capabilities,
+have a read-only root and writable `/tmp`. Automatic pod API-token injection is
+disabled; the standard rotating token/CA/namespace projection is mounted only
+into the two serving containers, not migrate, restore or Litestream. API keys
+are mounted as a read-only directory only into gateway. The chart creates no
+Secret, ConfigMap or Function (D115).
+
+Real-Helm controls cover the above contracts, both replica-limit failures,
+missing/whitespace Litestream image/Secret failures even with CRD disabled,
+local storage classes and naming edge cases. Existing public/internal Service
+controls are retained and distinguish the additional embedded headless Service.
+This is an implementation slice awaiting independent review and Git delivery,
+not complete Phase7 chart-installed security or data-plane acceptance. P7.4 and
+later tasks still supply RBAC, namespace resources, policy and monitoring. A
+single replica means brief upgrade downtime; keep scheduler outages below
+`config.ttlAfterFinished`. No publication or production write is claimed.
 
 ## Gateway waits (P5.1)
 

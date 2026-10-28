@@ -1,0 +1,133 @@
+{{- if eq .Values.db.mode "embedded" }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "krun.fullname" . | quote }}
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "krun.labels" . | nindent 4 }}
+    app.kubernetes.io/component: embedded
+spec:
+  replicas: 1
+  serviceName: {{ include "krun.headlessServiceName" . | quote }}
+  selector:
+    matchLabels:
+      {{- include "krun.selectorLabels" (dict "root" . "component" "embedded") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "krun.selectorLabels" (dict "root" . "component" "embedded") | nindent 8 }}
+        krun.io/gateway: "true"
+    spec:
+      serviceAccountName: krun-scheduler
+      automountServiceAccountToken: false
+      {{- include "krun.podLifecycle" . | nindent 6 }}
+      securityContext:
+        {{- include "krun.podSecurityContext" . | nindent 8 }}
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "krun.selectorLabels" (dict "root" . "component" "embedded") | nindent 14 }}
+      initContainers:
+        {{- if .Values.db.embedded.litestream.enabled }}
+        - name: litestream-restore
+          image: {{ .Values.db.embedded.litestream.image | quote }}
+          command: [/bin/sh, -ec]
+          args:
+            - |
+              if [ ! -f /data/krun.db ]; then rm -f /data/krun.db-wal /data/krun.db-shm; fi
+              exec litestream restore -if-replica-exists -if-db-not-exists -o /data/krun.db "$1"
+            - krun-restore
+            - {{ .Values.db.embedded.litestream.url | quote }}
+          {{- include "krun.litestreamContainer" . | nindent 10 }}
+        - name: litestream
+          image: {{ .Values.db.embedded.litestream.image | quote }}
+          restartPolicy: Always
+          args: [replicate, /data/krun.db, {{ .Values.db.embedded.litestream.url | quote }}]
+          {{- include "krun.litestreamContainer" . | nindent 10 }}
+        {{- end }}
+        - name: migrate
+          image: {{ include "krun.image" . }}
+          args: [migrate]
+          resources:
+            {{- toYaml .Values.scheduler.resources | nindent 12 }}
+          securityContext:
+            {{- include "krun.containerSecurityContext" . | nindent 12 }}
+          env:
+            {{- include "krun.configEnv" . | nindent 12 }}
+            - name: KRUN_DB_MODE
+              value: embedded
+            - name: KRUN_DB_PATH
+              value: /data/krun.db
+          volumeMounts:
+            - {name: data, mountPath: /data}
+            - {name: tmp, mountPath: /tmp}
+      containers:
+        {{- range $component := list "gateway" "scheduler" }}
+        - name: {{ $component }}
+          image: {{ include "krun.image" $ }}
+          args: [{{ $component }}]
+          ports:
+            {{- if eq $component "gateway" }}
+            - {name: http, containerPort: 8080}
+            - {name: internal, containerPort: 8081}
+            - {name: admin, containerPort: 9090}
+            {{- else }}
+            - {name: admin-sched, containerPort: 9091}
+            {{- end }}
+          {{- $admin := ternary "admin" "admin-sched" (eq $component "gateway") }}
+          {{- include "krun.probes" $admin | nindent 10 }}
+          resources:
+            {{- toYaml (index $.Values $component "resources") | nindent 12 }}
+          securityContext:
+            {{- include "krun.containerSecurityContext" $ | nindent 12 }}
+          env:
+            {{- include "krun.processEnv" (dict "root" $ "component" $component) | nindent 12 }}
+            {{- if eq $component "scheduler" }}
+            - name: KRUN_ADMIN_LISTEN_ADDR
+              value: ":9091"
+            {{- end }}
+          volumeMounts:
+            - {name: data, mountPath: /data}
+            - {name: tmp, mountPath: /tmp}
+            - {name: kube-api-access, mountPath: /var/run/secrets/kubernetes.io/serviceaccount, readOnly: true}
+            {{- if eq $component "gateway" }}
+            - {name: api-keys, mountPath: /etc/krun, readOnly: true}
+            {{- end }}
+        {{- end }}
+      volumes:
+        - {name: tmp, emptyDir: {}}
+        - name: api-keys
+          secret:
+            secretName: {{ .Values.apiKeys.existingSecret | quote }}
+            items:
+              - {key: keys.yaml, path: keys.yaml}
+        - name: kube-api-access
+          projected:
+            sources:
+              - serviceAccountToken: {path: token, expirationSeconds: 3600}
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - {key: ca.crt, path: ca.crt}
+              - downwardAPI:
+                  items:
+                    - path: namespace
+                      fieldRef: {apiVersion: v1, fieldPath: metadata.namespace}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- with .Values.db.embedded.storageClass }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.db.embedded.storage | quote }}
+{{- end }}
