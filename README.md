@@ -225,8 +225,18 @@ passed Phase 7 gate. P7.2 adds/verifies the Postgres migration hooks; P7.3 adds
 the embedded StatefulSet, PVC and optional Litestream lifecycle. P7.4 security
 resources and optional integrations, P7.5 generated chart documentation and
 P7.6 chart-installed embedded/Postgres native acceptance are still required.
-The raw-manifest native foundation is unchanged here. No PLAN task is closed
-by this implementation, and independent review/Git delivery remain separate.
+The raw-manifest native foundation is unchanged here. P7.1 source is delivered
+as `63adbabfb65345d9e93a0fe96f129ec6d3d3584f` in PR #70 (https://github.com/xenarro/krun/pull/70) against
+still-unmerged parent PR #69. Exact source hosted CI passes verify/kind,
+1,769 TypeScript tests plus one Python test and the existing eight native
+scenarios/eight privacy oracles over nine actual Run credential contexts;
+existing retries remain configured, so this is not a no-retry claim.
+The two independent naming findings are repaired and native Service API
+create/readback is verified; scoped normal cleanup retries recover the retained
+Docker exit-event failures without an invented daemon fix. Only P7.1 is closed
+by the separate PLAN/README tracking update, which receives its own fresh local
+check and exact-head hosted CI. Pushed/green is not merged; no auto-merge,
+publication, production installation or completed Phase7 gate is claimed.
 
 ## Gateway waits (P5.1)
 
