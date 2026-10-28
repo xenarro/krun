@@ -406,9 +406,37 @@ establish full Phase7 chart-installed serving, isolation or data-plane acceptanc
 A kept namespace retains Helm release annotations. Reinstall with the same
 release name and platform namespace, or follow the documented operator adoption
 procedure; uninstall does not remove its existing Secrets or in-flight Jobs.
-With `keep=false`, namespace deletion removes its contents. This implementation
-slice awaits independent review and authorized delivery; no PLAN closure,
-publication or production write is claimed.
+With `keep=false`, namespace deletion removes its contents.
+
+Delivered source `2106479253344dfb725a4b62ab10ff4d9a5596c4` in PR #74
+(https://github.com/xenarro/krun/pull/74), based on still-unmerged PR #73. Both independent
+reviews identified the same count-quantity comparison defect; the repaired guard
+compares decimal/SI/exponent/binary quantities exactly without changing the
+rendered literal. Equality and zero concurrency pass; an actual overage fails,
+and `create=false` skips only that comparison. All 56 namespace/155 combined
+controls, 14 reviewer controls and 144 exact-arithmetic cases pass. Both modes
+lint and generation is deterministic. Fresh hardened and exact reviewer full
+checks each pass 1,862 TypeScript tests plus one Python test.
+
+The genuine disposable native check installs the exact six task resources with
+current helpers/validation/values, not the unfinished full serving chart. It
+verifies PSA, tokenless SA, resource defaults, ephemeral-storage maximum and CPU
+quota, regular/init CREATE and main/init Pod UPDATE digest rejection, valid
+legacy-Job metadata UPDATE rejection, namespace scoping, creation/admission
+toggles and both keep/uninstall modes. Actual `1k`, `2e2` and `1Ki` Helm releases
+install, read back and uninstall. Positive API objects stay dry-run,
+scheduling-gated or suspended; no probe Function image executes. Owned resources
+and private inputs are removed. Initial admission-cache readiness failures remain
+retained and qualified; the complete behavior-synchronized repeat passes.
+
+Exact source CI https://github.com/xenarro/krun/actions/runs/40747966142
+passes verify/kind, including image smokes/security, audit and the existing eight
+raw-manifest native scenarios/eight privacy oracles over
+8 actual Run credential contexts, with unchanged retry policy. This is not
+chart-installed Phase7 serving/data-plane acceptance. The PLAN/README-only
+tracking commit receives its own fresh full check and exact-head hosted CI.
+PR #74 and its #73/#72 ancestry remain unmerged; no protected approval, merge,
+full Phase7 completion, publication or production write is claimed.
 
 ## Gateway waits (P5.1)
 
