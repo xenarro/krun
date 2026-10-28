@@ -438,6 +438,50 @@ tracking commit receives its own fresh full check and exact-head hosted CI.
 PR #74 and its #73/#72 ancestry remain unmerged; no protected approval, merge,
 full Phase7 completion, publication or production write is claimed.
 
+## Namespaced chart RBAC (P7.4b)
+
+The jobs namespace always receives `krun-scheduler-jobs` Role/RoleBinding and the
+unbound `krun-job-viewer` Role, even when `jobsNamespace.create=false`. The
+scheduler binding points to `krun-scheduler` in the actual release namespace.
+Jobs allow create/get/list/watch/delete; pods allow get/list/watch and logs get;
+Secrets allow create/get/list/delete only, with no watch/update/patch.
+
+The release namespace always receives the scheduler Role and binding. Lease
+get/update are restricted to `krun-scheduler` by `resourceNames`; create is a
+separate unrestricted-name rule because Kubernetes cannot name-restrict create.
+Function access is get/list/watch plus status patch, not Function spec writes.
+Postgres mode adds the gateway's Function-read-only Role/binding. Embedded mode
+keeps the shared scheduler identity and renders no gateway Role/binding/account.
+
+`krun-function-author` in the release namespace grants the specified Function
+CRUD verbs without status writes. `krun-job-viewer` in the jobs namespace grants
+pod/Job get/list and logs get, not watch, Secret access, exec or Job mutation.
+Neither operator Role is automatically bound: platform teams choose subjects.
+The chart adds no ClusterRole/ClusterRoleBinding, wildcards, migrate binding or
+job-default binding. Named job credentials are still managed by the scheduler;
+chart RBAC contains no credential values or token Secret.
+
+Purpose-specific jobs/platform Role names remain distinct when the jobs and
+release namespaces coincide; both still bind the unchanged `krun-scheduler`
+ServiceAccount and keep the exact rule sets. No new namespace restriction or
+permission is introduced. When the namespaces coincide, the scheduler naturally
+receives the union of those existing grants in that namespace.
+
+The 20 RBAC controls exercise both modes and namespace-creation settings,
+including the required external-namespace/maxRunning=300 render. All 175 combined
+chart/generator controls pass. D117 records scope without changing section 9
+policy or the values shape. Fresh real-API authorization covers six mode/layout
+combinations: both modes with chart-created jobs namespaces, external jobs
+namespaces, and coincident release/jobs namespaces. All 528 asserted decisions
+match (213 allowed, 315 denied), with exact Role/binding readback and access
+revocation after uninstall. This is a task-resource install, not a serving-chart
+or data-plane gate.
+
+Independent reviews and scoped collision repair precede authorized delivery;
+no PLAN closure, merge, publication or production write is claimed.
+NetworkPolicies, optional features and the full Phase7 chart-installed
+serving/data-plane/upgrade gate remain later tasks.
+
 ## Gateway waits (P5.1)
 
 `CreateRun?wait=<duration>` retains status 201. `POST /v1/functions/{function}/runs/{run}:wait`

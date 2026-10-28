@@ -1,0 +1,37 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: krun-scheduler
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "krun.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    resourceNames: [krun-scheduler]
+    verbs: [get, update]
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [create]
+  - apiGroups: [krun.io]
+    resources: [functions]
+    verbs: [get, list, watch]
+  - apiGroups: [krun.io]
+    resources: [functions/status]
+    verbs: [patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: krun-scheduler
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "krun.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: krun-scheduler
+subjects:
+  - kind: ServiceAccount
+    name: krun-scheduler
+    namespace: {{ .Release.Namespace | quote }}

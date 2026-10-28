@@ -73,7 +73,7 @@ for (const mode of ["postgres", "embedded"]) {
     for (const resource of [limits, quota])
       expect(resource.metadata.annotations?.["helm.sh/resource-policy"]).toBeUndefined();
   });
-  it(`keeps only job SA and optional admission objects when namespace creation is disabled in ${mode}`, () => {
+  it(`keeps job SA and optional admission objects when namespace creation is disabled in ${mode}`, () => {
     const docs = accepted(["jobsNamespace.create=false", "config.maxRunning=300"], mode);
     for (const kind of ["Namespace", "LimitRange", "ResourceQuota", "NetworkPolicy"])
       expect(docs.filter((d) => d.kind === kind)).toEqual([]);
@@ -268,14 +268,12 @@ it("renders fixed cluster-scoped digest policy for Jobs and Pods, create and upd
     "kubernetes.io/metadata.name": "krun-jobs",
   });
 });
-it("creates no credentials, Function, RBAC grant or network policy ahead of its task", () => {
+it("creates no credentials, Function, cluster-wide RBAC or network policy ahead of its task", () => {
   for (const d of accepted())
     expect([
       "Secret",
       "ConfigMap",
       "Function",
-      "Role",
-      "RoleBinding",
       "ClusterRole",
       "ClusterRoleBinding",
       "NetworkPolicy",
