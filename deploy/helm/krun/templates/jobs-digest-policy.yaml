@@ -1,0 +1,29 @@
+{{- if .Values.jobsNamespace.admissionPolicy }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: krun-jobs-digest
+  labels:
+    {{- include "krun.labels" . | nindent 4 }}
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [batch]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [jobs]
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+  variables:
+    - name: spec
+      expression: "request.resource.resource == 'jobs' ? object.spec.template.spec : object.spec"
+  validations:
+    - expression: >-
+        variables.spec.containers.all(c, c.image.contains('@sha256:')) &&
+        (!has(variables.spec.initContainers) ||
+         variables.spec.initContainers.all(c, c.image.contains('@sha256:')))
+      message: "images in the krun jobs namespace must be pinned by digest (image@sha256:...)"
+{{- end }}

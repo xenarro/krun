@@ -1,0 +1,15 @@
+{{- if .Values.jobsNamespace.admissionPolicy }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: krun-jobs-digest
+  labels:
+    {{- include "krun.labels" . | nindent 4 }}
+spec:
+  policyName: krun-jobs-digest
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: {{ .Values.jobsNamespace.name | quote }}
+{{- end }}
