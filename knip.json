@@ -7,6 +7,7 @@
       "entry": [
         "bin/krun.js",
         "test/e2e/cluster.ts",
+        "test/e2e/functions/large_result.ts",
         "test/**/*.test.ts",
         "scripts/gen-crd.ts",
         "scripts/gen-openapi.ts",

@@ -1,0 +1,60 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: krun-test-minio-init
+  namespace: krun-test-minio
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 90
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: krun-test-minio-init
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: initialize
+          image: __KRUN_E2E_IMAGE__
+          workingDir: /app/packages/shared
+          command: [/nodejs/bin/node, --input-type=module, -e]
+          args:
+            - |
+              import { S3Client, HeadBucketCommand, CreateBucketCommand } from '@aws-sdk/client-s3';
+              const client = new S3Client({
+                endpoint: process.env.KRUN_S3_ENDPOINT,
+                region: 'us-east-1', forcePathStyle: true, maxAttempts: 1,
+                requestChecksumCalculation: 'WHEN_REQUIRED',
+                credentials: { accessKeyId: process.env.KRUN_S3_ACCESS_KEY,
+                  secretAccessKey: process.env.KRUN_S3_SECRET_KEY },
+              });
+              try {
+                try {
+                  await client.send(new HeadBucketCommand({ Bucket: 'krun-test-results' }),
+                    { abortSignal: AbortSignal.timeout(10000) });
+                } catch (error) {
+                  if (error?.$metadata?.httpStatusCode !== 404) throw error;
+                  await client.send(new CreateBucketCommand({ Bucket: 'krun-test-results' }),
+                    { abortSignal: AbortSignal.timeout(10000) });
+                }
+                process.stdout.write('Native MinIO bucket initialized\n');
+              } catch {
+                process.stderr.write('Native MinIO initialization failed\n');
+                process.exitCode = 1;
+              } finally { client.destroy(); }
+          env:
+            - {name: KRUN_S3_ENDPOINT, value: "http://krun-test-minio.krun-test-minio.svc.cluster.local:9000"}
+            - {name: KRUN_S3_ACCESS_KEY, valueFrom: {secretKeyRef: {name: krun-test-minio-credentials, key: accessKey}}}
+            - {name: KRUN_S3_SECRET_KEY, valueFrom: {secretKeyRef: {name: krun-test-minio-credentials, key: secretKey}}}
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: '1', memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}

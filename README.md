@@ -4,7 +4,7 @@ HTTP-triggered functions, executed as one-off Kubernetes Jobs. Callers submit JS
 
 ## Development status
 
-Core function execution and the Phase 5 native wait/signed-webhook gate now pass locally in disposable embedded-mode kind. Gateway waits, Run event streams and scheduler webhook delivery are implemented as described below. Both P5.4 independent source reviews are complete without a confirmed material defect; post-review integration passes the full local native gate. Exact source-head hosted `verify` and `kind` acceptance now pass; delivery evidence is recorded below. This is not a complete or production-ready release: SDK runtime behaviour, large-result object storage and production Helm acceptance remain later work.
+Core function execution,the Phase5 wait/signed-webhook gate and Phase6 MinIO large-result acceptance pass locally and in exact source-head hosted CI. P6.3 source `55df490` is delivered in [PR #69](https://github.com/xenarro/krun/pull/69) against its immediate unmerged P6.2 parent. Independent source reviews and reproduced privacy-oracle/bucket-initializer repairs are complete;hosted `verify` and `kind` pass for that exact source head. The PLAN/README-only tracking update receives its own fresh local check and exact-head hosted verification. This is pushed/green,not merged or a complete production-ready release:SDK runtime behaviour,production Helm and release acceptance remain later work.
 
 - Strict TypeScript workspace on Node.js 26, with Effect 4 process entrypoints.
 - Zod configuration schemas and Effect services for gateway and scheduler settings.
@@ -101,6 +101,86 @@ independent repository approval; no auto-merge or protection bypass is enabled.
 This PLAN/README tracking update receives its own fresh `make check` and
 exact-head hosted acceptance. Production/chart, SDK and object-storage
 acceptance remain later work.
+
+## Local large-result object-storage gate (P6.3)
+
+The complete local `make e2e` gate passes all eight real Kubernetes scenarios,
+including the unchanged Phase 4/5 regressions, with S3 enabled in both serving
+processes and the mandatory open/deny/reopen NetworkPolicy enforcement probe.
+This is local Phase 6 evidence; independent source reviews are complete, while
+exact source-head hosted delivery now passes as recorded below. Implementation did not close P6.3;only the checked delivery tracking update does so after source acceptance.
+
+- A real Node26 Function fetches its opaque input and uploads exactly 1,048,576
+  UTF-8 JSON bytes with `Content-Type: application/json` through its per-Run
+  `KRUN_RESULT_UPLOAD_URL`. It never submits an inline result or receives S3
+  account credentials. The persisted FULL Run is `SUCCEEDED`, has no inline
+  result, and carries the canonical `s3://` result reference.
+- Authenticated `GetRunResult` returns a bodyless, `no-store` 307 with a
+  300-second signed GET. A separate in-cluster client receives only that URL,
+  not the krun API key, and verifies the raw object's exact size and SHA256.
+  The public route rejects anonymous requests; unsigned S3 object access is 403.
+- The genuine checksum-pinned MinIO binary runs nonroot with a read-only root
+  filesystem, ephemeral data and no service-account token in `krun-test-minio`.
+  Generated account material stays in private state and Secret references.
+  `test/e2e/allow-minio.yaml` adds only the MinIO namespace plus server Pod
+  selector on TCP9000 to the existing jobs default deny, DNS and gateway rules.
+  Removing only that allow makes the real upload fail; restoring the exact
+  policy restores successful upload/download acceptance.
+- Every scenario witnesses actual Run credentials, opaque-input/token absence
+  from Pod manifests, and API/webhook/S3 credential and signed-URL absence from
+  gateway, scheduler and MinIO logs. Only the required Function PUT URL field is
+  excluded after validation against the actual Run, endpoint and owned key;
+  no other Pod field receives a signed-URL exception. Account-credential env
+  fields or account Secret references in a Function Pod are rejected.
+
+The original implementation gate used the unchanged single retry once for the existing
+`exit_code_status` case: eight privacy oracles cover nine actual Run credential
+contexts. Both attempts retain the second runtime report and native exit 3;
+the first-attempt failure cause is not exposed by the passing retry output.
+The new large-result scenario passes on its first attempt.
+
+Twenty-one permanent fixture/manifest/privacy controls include canonical
+configuration-schema parsing, nonroot source-path permissions and opaque UTF-8
+payload sizing. Initial fixture configuration, directory-mode and client-route
+failures are retained with their actual red/green evidence, not hidden by extra
+retries or looser deadlines. Production Helm, SDK and release acceptance remain
+later phases. See `test/e2e/README.md` for the disposable setup and cleanup.
+
+Post-review repair validates a closed, single-valued SigV4/PutObject query,
+calendar-valid signing date, credential date/region/service scope, actual public
+access-key identity and bounded expiry before excluding the capability. Raw and
+decoded values are checked against known private input, tokens and API/webhook/S3
+secrets; only the credential's public key component and previously validated
+capabilities receive their precise exceptions. Unknown or duplicate parameters
+and private signature/credential substitutions fail before observation. Both
+independent six-control replays pass against the repaired source.
+
+The disposable bucket initializer now HEADs the bucket and creates it only after
+an actual 404. Existing buckets succeed; 403 and infrastructure errors still fail.
+Four failing-first script controls and genuine MinIO diagnostics cover repeated
+initialization without changing the 90-second Job or ten-second request bounds.
+The earlier initializer deadline and generic cleanup-hook failure remain retained
+and qualified, not attributed to invented causes. Cleanup errors now identify
+only fixed safe stage names, never private exception details.
+
+## P6.3 delivery
+
+Source `55df49060ba20a683ec0d71eff77f80170a2a608` is pushed in [PR #69](https://github.com/xenarro/krun/pull/69)
+against the immediate unmerged parent `feat/object-store-runtime` / PR #68.
+[Exact source-head hosted verify and kind](https://github.com/xenarro/krun/actions/runs/40634100991) pass,
+including 1,733 TypeScript tests plus one Python test,generators,current-source
+image/process/security gates and all eight real native scenarios. The hosted
+privacy oracles cover eight actual Run credential contexts;these are distinct
+from the original implementation gate's historical nine-context retry evidence.
+The real one-MiB/resultUri/bodyless307/GET/raw-byte/hash path passes on hosted kind.
+No retry/deadline policy was changed and no prior failed receipt is erased.
+
+Only P6.3 is newly checked in PLAN after that acceptance. This PLAN/README-only
+tracking update receives a separate fresh precommit `make check` and exact-head
+hosted CI. Pushed/green is not merged;PRs #68,#67 and #66 remain pending-main
+dependencies,with no auto-merge or protection bypass. P7.1 starts from the
+current committed verified lineage after refreshing parent/main state,not an
+obsolete main checkout. Production chart,SDK and release acceptance remain later.
 
 ## Gateway waits (P5.1)
 
@@ -308,8 +388,10 @@ retry once; original failed bootstrap/test-observation receipts are retained and
 qualified. This PLAN/README tracking receives its own fresh precommit make check
 and exact-head hosted CI. Pushed/green is not merged; no stack layer is
 auto-merged and protected-main independent approval still applies.
-MinIO-in-kind large-result/resultUri/307 acceptance remains the separate P6.3
-phase gate; Phase 6, SDK and production/chart acceptance are not claimed.
+At P6.2 delivery, MinIO-in-kind large-result/resultUri/307 acceptance remained
+the separate P6.3 phase gate. The later implementation-local Phase 6 gate is
+recorded above; P6.2 delivery alone did not claim it. SDK and production/chart
+acceptance are still later work.
 
 ## Disposable kind foundation (P4.12)
 

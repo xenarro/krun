@@ -1,0 +1,20 @@
+# P6.3 only: retain jobs-namespace.yaml's default deny and DNS/gateway allows.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: krun-test-allow-minio
+  namespace: krun-jobs
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: krun-test-minio
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: krun-test-minio
+      ports:
+        - protocol: TCP
+          port: 9000

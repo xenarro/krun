@@ -6,7 +6,7 @@ import { webhookResources } from "../e2e/lib/webhook-fixture.js";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const read = (path: string) => readFileSync(`${root}${path}`, "utf8");
-it("requires every Phase4 and Phase5 scenario file and refuses an empty suite", () => {
+it("requires every Phase4, Phase5 and Phase6 scenario file and refuses an empty suite", () => {
   expect(
     readdirSync(`${root}test/e2e`)
       .filter((path) => path.endsWith(".e2e.ts"))
@@ -16,6 +16,7 @@ it("requires every Phase4 and Phase5 scenario file and refuses an empty suite", 
     "exit_code_status.e2e.ts",
     "heartbeat_timeout.e2e.ts",
     "image_pull_backoff.e2e.ts",
+    "large_result.e2e.ts",
     "success.e2e.ts",
     "wait.e2e.ts",
     "webhook.e2e.ts",
