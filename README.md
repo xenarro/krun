@@ -221,7 +221,7 @@ independently reported naming failures, derived collisions and maximum-length
 numeric releases. The expanded real-Helm matrix checks CRD toggles as well.
 
 This is a common-foundation slice, not an install-ready production chart or a
-passed Phase 7 gate. P7.2 adds/verifies the Postgres migration hooks; P7.3 adds
+passed Phase 7 gate. P7.2 provides the Postgres migration hooks below; P7.3 adds
 the embedded StatefulSet, PVC and optional Litestream lifecycle. P7.4 security
 resources and optional integrations, P7.5 generated chart documentation and
 P7.6 chart-installed embedded/Postgres native acceptance are still required.
@@ -237,6 +237,33 @@ Docker exit-event failures without an invented daemon fix. Only P7.1 is closed
 by the separate PLAN/README tracking update, which receives its own fresh local
 check and exact-head hosted CI. Pushed/green is not merged; no auto-merge,
 publication, production installation or completed Phase7 gate is claimed.
+
+## Postgres chart migration hooks (P7.2)
+
+Postgres mode retains the two serving Deployments and adds a `krun-migrate`
+ServiceAccount hook at weight `-5` before a migration Job at weight `0`.
+Both use `pre-install,pre-upgrade` and
+`before-hook-creation,hook-succeeded`: successful hooks are removed, while a
+failed Job is retained for diagnosis and replaced before the next attempt.
+The hook executes the real image's `migrate` command with `restartPolicy: Never`,
+`backoffLimit: 1` and `activeDeadlineSeconds: 240`. Its DSN is a reference to the
+pre-existing Secret's `dsn` key; it receives neither API keys nor an API token,
+and has no Role or RoleBinding.
+
+The migration container reuses scheduler resources and common image, config env,
+65532/RuntimeDefault hardening, read-only root, writable `/tmp`, priority and
+termination grace helpers. It is one-shot and starts no admin HTTP listener,
+so it uses Job completion/exit status rather than HTTP readiness/liveness probes
+(D114). Gateway and scheduler retain both exact section13 probes; all three
+containers receive every quoted `config` key. Missing or whitespace Postgres
+Secret references fail clearly even with the CRD disabled. Both hooks are absent
+in embedded mode.
+
+Thirteen new real-Helm controls and the 75-case combined chart/generator suite
+cover these contracts. This is an implementation slice awaiting independent
+review and Git delivery, not a passed full Phase7 gate. Embedded lifecycle,
+RBAC/isolation/optional features, generated chart docs, serving-Pod upgrade and
+rollback/native data-plane acceptance and monitoring remain later tasks.
 
 ## Gateway waits (P5.1)
 

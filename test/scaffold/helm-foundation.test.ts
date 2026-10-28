@@ -74,7 +74,9 @@ it.each(["postgres", "embedded"])(
       });
       expect(service.metadata.namespace).toBe("krun-test-platform");
     }
-    const accounts = result.documents.filter((d) => d.kind === "ServiceAccount");
+    const accounts = result.documents.filter(
+      (d) => d.kind === "ServiceAccount" && !d.metadata.annotations?.["helm.sh/hook"],
+    );
     expect(accounts.map((d) => d.metadata.name).sort()).toEqual(
       mode === "embedded" ? ["krun-scheduler"] : ["krun-gateway", "krun-scheduler"],
     );
