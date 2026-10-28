@@ -295,11 +295,21 @@ configured GET route, HEAD failure followed by success, and leader-loss abort of
 an active HEAD while preserving the nonterminal Run. Partial configuration
 fails before claims; default-disabled process behavior remains covered.
 
-The complete changed-area suites pass 146 tests, including 11 permanent repair
-regressions beyond the initial implementation. Full-tree and rebuilt-image
-verification are recorded in the implementation and repair reports, not inferred
-from this area result. P6.2 is not committed or PLAN-closed by these jobs;
-MinIO-in-kind large-result/resultUri/307 acceptance is still the P6.3 phase gate.
+P6.2 is delivered as source 2853ac37b510dc8cb317d354455b4cc9aff6c61a in PR #68
+(https://github.com/xenarro/krun/pull/68), stacked on the unmerged P6.1 parent
+feat/object-store-presigning/PR #67. Both review findings are repaired and
+all 146 changed-area tests pass, including 11 repair regressions and 31 new
+permanent tests beyond P6.1. Fresh delivery make check passes 1,708 TypeScript
+tests and one Python test. Exact source CI https://github.com/xenarro/krun/actions/runs/40619376457
+passes verify/kind, generators, rebuilt-image smokes/identity/security, Helm,
+audit, seven native scenarios and seven privacy oracles covering 7 actual
+Run credential contexts. The local native gate used its unchanged existing
+retry once; original failed bootstrap/test-observation receipts are retained and
+qualified. This PLAN/README tracking receives its own fresh precommit make check
+and exact-head hosted CI. Pushed/green is not merged; no stack layer is
+auto-merged and protected-main independent approval still applies.
+MinIO-in-kind large-result/resultUri/307 acceptance remains the separate P6.3
+phase gate; Phase 6, SDK and production/chart acceptance are not claimed.
 
 ## Disposable kind foundation (P4.12)
 
