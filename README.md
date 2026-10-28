@@ -243,10 +243,19 @@ pass. One scheduler-image shutdown deadline failed during review; its unchanged
 retry passes, and the original cause remains unestablished. The failed receipt
 is retained rather than promoted to a pass or hidden by a larger timeout.
 
-This is adapter-local acceptance, not a production or hosted-delivery claim.
+Adapter source `fb4228a6f984c50536a501e8ae96476ff96da960` passes exact-head hosted verification and the
+seven-scenario native regression: https://github.com/xenarro/krun/actions/runs/40605426490 in PR #67
+(https://github.com/xenarro/krun/pull/67), stacked on the unmerged P5.4 parent. Fresh
+delivery `make check` passes 1,677 TypeScript tests plus one Python test. Seven
+privacy oracles cover eight actual Run credential contexts; exit_code_status
+passes on its existing configured retry. No retry or deadline was relaxed, and
+the original first-attempt cause remains unestablished. Only P6.1 is checked;
+tracking documentation receives separate fresh checks.
+
+This is verified adapter delivery, not production or complete Phase 6 acceptance.
 Scheduler/gateway wiring and per-Function TTL selection remain P6.2; the complete
-Phase 6 kind gate with a 1 MB result and public 307 redirect remains P6.3. No PLAN
-checkbox is closed by this implementation.
+Phase 6 kind gate with a 1 MB result and public 307 redirect remains P6.3. No
+auto-merge or protection bypass is enabled; pushed/green does not mean merged.
 
 ## Disposable kind foundation (P4.12)
 
