@@ -1,0 +1,49 @@
+{{- if eq .Values.db.mode "postgres" }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ printf "%s-migrate" (include "krun.fullname" .) | quote }}
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "krun.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migrate
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "0"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: 240
+  template:
+    metadata:
+      labels:
+        {{- include "krun.selectorLabels" (dict "root" . "component" "migrate") | nindent 8 }}
+    spec:
+      serviceAccountName: krun-migrate
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      {{- include "krun.podLifecycle" . | nindent 6 }}
+      securityContext:
+        {{- include "krun.podSecurityContext" . | nindent 8 }}
+      containers:
+        - name: migrate
+          image: {{ include "krun.image" . }}
+          args: [migrate]
+          resources:
+            {{- toYaml .Values.scheduler.resources | nindent 12 }}
+          securityContext:
+            {{- include "krun.containerSecurityContext" . | nindent 12 }}
+          env:
+            {{- include "krun.configEnv" . | nindent 12 }}
+            - name: KRUN_DB_MODE
+              value: "postgres"
+            - name: KRUN_DB_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.db.postgres.existingSecret | quote }}
+                  key: dsn
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - {name: tmp, emptyDir: {}}
+{{- end }}
