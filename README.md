@@ -369,10 +369,74 @@ acceptance. The genuine native replica is a file URL on the disposable local
 PVC; signed-request credential checks use an explicitly simulated empty-bucket
 protocol server, not a real object store. Original fixture/import/host-UID and
 contrary credential-hypothesis failures are retained with their qualifications.
-P7.4 and later tasks still supply RBAC, namespace resources, policy and
-monitoring. A single replica means brief upgrade downtime; keep scheduler
+Jobs namespace resources follow below. Later tasks still supply RBAC,
+NetworkPolicies, optional integrations and monitoring. A single replica means brief upgrade downtime; keep scheduler
 outages below `config.ttlAfterFinished`. No publication or production write is
 claimed.
+
+## Jobs namespace resources and digest admission (P7.4a)
+
+`jobsNamespace.create` gates the jobs Namespace, LimitRange and ResourceQuota.
+The Namespace has all six enforce/warn/audit PSA labels pinned to
+`jobsNamespace.podSecurityVersion`, and its keep annotation follows
+`jobsNamespace.keep`. The exact three LimitRange maps include CPU, memory and
+ephemeral-storage defaults/requests/maxima; quota includes pod count and CPU,
+memory and ephemeral-storage requests. Only the Namespace is kept: budget
+objects are removed by uninstall. `config.maxRunning` cannot exceed `quota.pods`
+when creation is enabled; creation disabled skips that check and requires an
+already provisioned namespace with the prescribed labels, budgets and policies.
+
+The job ServiceAccount `krun-job-default` always renders into the jobs namespace,
+with automatic token mounting disabled and no RoleBinding. The optional
+`krun-jobs-digest` ValidatingAdmissionPolicy and binding render independently of
+namespace creation. Their fixed cluster-wide name means one installation per
+cluster; no release suffix changes policy ownership. The binding uses the
+API-populated namespace-name label, not a chart-managed label. Fail-closed CEL
+checks regular and init images for the exact required `@sha256:` marker on
+Job/Pod CREATE and UPDATE. It is not signature verification and does not widen
+to unrequested subresources or other namespaces (D116).
+
+Always-rendered validation also rejects configured webhooks without an existing
+Secret and enabled object storage without endpoint, bucket or existing Secret,
+even with CRD/namespace creation disabled. The chart creates no credential
+Secrets, ConfigMaps or Functions. This task adds no Role/RoleBinding or
+NetworkPolicy ahead of P7.4b/P7.4c; passing these render controls alone does not
+establish full Phase7 chart-installed serving, isolation or data-plane acceptance.
+
+A kept namespace retains Helm release annotations. Reinstall with the same
+release name and platform namespace, or follow the documented operator adoption
+procedure; uninstall does not remove its existing Secrets or in-flight Jobs.
+With `keep=false`, namespace deletion removes its contents.
+
+Delivered source `2106479253344dfb725a4b62ab10ff4d9a5596c4` in PR #74
+(https://github.com/xenarro/krun/pull/74), based on still-unmerged PR #73. Both independent
+reviews identified the same count-quantity comparison defect; the repaired guard
+compares decimal/SI/exponent/binary quantities exactly without changing the
+rendered literal. Equality and zero concurrency pass; an actual overage fails,
+and `create=false` skips only that comparison. All 56 namespace/155 combined
+controls, 14 reviewer controls and 144 exact-arithmetic cases pass. Both modes
+lint and generation is deterministic. Fresh hardened and exact reviewer full
+checks each pass 1,862 TypeScript tests plus one Python test.
+
+The genuine disposable native check installs the exact six task resources with
+current helpers/validation/values, not the unfinished full serving chart. It
+verifies PSA, tokenless SA, resource defaults, ephemeral-storage maximum and CPU
+quota, regular/init CREATE and main/init Pod UPDATE digest rejection, valid
+legacy-Job metadata UPDATE rejection, namespace scoping, creation/admission
+toggles and both keep/uninstall modes. Actual `1k`, `2e2` and `1Ki` Helm releases
+install, read back and uninstall. Positive API objects stay dry-run,
+scheduling-gated or suspended; no probe Function image executes. Owned resources
+and private inputs are removed. Initial admission-cache readiness failures remain
+retained and qualified; the complete behavior-synchronized repeat passes.
+
+Exact source CI https://github.com/xenarro/krun/actions/runs/40747966142
+passes verify/kind, including image smokes/security, audit and the existing eight
+raw-manifest native scenarios/eight privacy oracles over
+8 actual Run credential contexts, with unchanged retry policy. This is not
+chart-installed Phase7 serving/data-plane acceptance. The PLAN/README-only
+tracking commit receives its own fresh full check and exact-head hosted CI.
+PR #74 and its #73/#72 ancestry remain unmerged; no protected approval, merge,
+full Phase7 completion, publication or production write is claimed.
 
 ## Gateway waits (P5.1)
 

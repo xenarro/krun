@@ -77,7 +77,10 @@ it.each(["postgres", "embedded"])(
       expect(service.metadata.namespace).toBe("krun-test-platform");
     }
     const accounts = result.documents.filter(
-      (d) => d.kind === "ServiceAccount" && !d.metadata.annotations?.["helm.sh/hook"],
+      (d) =>
+        d.kind === "ServiceAccount" &&
+        d.metadata.namespace === "krun-test-platform" &&
+        !d.metadata.annotations?.["helm.sh/hook"],
     );
     expect(accounts.map((d) => d.metadata.name).sort()).toEqual(
       mode === "embedded" ? ["krun-scheduler"] : ["krun-gateway", "krun-scheduler"],
@@ -291,6 +294,8 @@ it.each(["true", "null"])("keeps the valid release/namespace label %s a string",
       chart,
       "--namespace",
       name,
+      "--set-string",
+      `jobsNamespace.name=${name}`,
       "--set",
       "apiKeys.existingSecret=krun-test-keys",
       "--set",
@@ -303,8 +308,18 @@ it.each(["true", "null"])("keeps the valid release/namespace label %s a string",
     .filter((d) => d.contents !== null)
     .map((d) => d.toJSON());
   expect(docs.length).toBeGreaterThan(3);
-  for (const doc of docs)
-    if (doc.kind !== "CustomResourceDefinition") expect(doc.metadata.namespace).toBe(name);
+  for (const doc of docs) {
+    if (
+      [
+        "CustomResourceDefinition",
+        "Namespace",
+        "ValidatingAdmissionPolicy",
+        "ValidatingAdmissionPolicyBinding",
+      ].includes(doc.kind)
+    )
+      expect(doc.metadata.namespace).toBeUndefined();
+    else expect(doc.metadata.namespace).toBe(name);
+  }
   expect(docs.some((d) => d.kind === "Service" && d.metadata.name === name)).toBe(true);
 });
 

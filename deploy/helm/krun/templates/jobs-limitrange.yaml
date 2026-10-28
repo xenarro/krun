@@ -1,0 +1,13 @@
+{{- if .Values.jobsNamespace.create }}
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: krun-jobs
+  namespace: {{ .Values.jobsNamespace.name | quote }}
+  labels:
+    {{- include "krun.labels" . | nindent 4 }}
+spec:
+  limits:
+    - type: Container
+      {{- toYaml .Values.jobsNamespace.limitRange | nindent 6 }}
+{{- end }}

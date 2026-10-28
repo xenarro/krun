@@ -1,0 +1,16 @@
+{{- if .Values.jobsNamespace.create }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.jobsNamespace.name | quote }}
+  labels:
+    {{- include "krun.labels" . | nindent 4 }}
+    {{- range $level := list "enforce" "warn" "audit" }}
+    pod-security.kubernetes.io/{{ $level }}: restricted
+    pod-security.kubernetes.io/{{ $level }}-version: {{ $.Values.jobsNamespace.podSecurityVersion | quote }}
+    {{- end }}
+  {{- if .Values.jobsNamespace.keep }}
+  annotations:
+    helm.sh/resource-policy: keep
+  {{- end }}
+{{- end }}
