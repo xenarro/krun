@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile, spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { once } from "node:events";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -9,6 +10,7 @@ import { DatabaseSync } from "node:sqlite";
 import { setTimeout } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { z } from "zod";
 import { startSchedulerKube } from "./scheduler.js";
 
 const execute = promisify(execFile);
@@ -39,6 +41,8 @@ export const startSchedulerProcess = async (
     seed?: boolean;
     image?: string | undefined;
     configuredStorage?: boolean;
+    maxActiveDeadline?: string;
+    storage?: { endpoint: string; accessKeyId: string; secretAccessKey: string; ttl?: string };
     webhook?: { url: string; secret: string; terminal?: boolean };
   } = {},
 ) => {
@@ -62,7 +66,17 @@ export const startSchedulerProcess = async (
     KRUN_LOG_LEVEL: "info",
     KUBECONFIG: kubePath,
   };
+  if (options.maxActiveDeadline !== undefined)
+    env.KRUN_MAX_ACTIVE_DEADLINE = options.maxActiveDeadline;
   if (options.configuredStorage) env.KRUN_S3_BUCKET = "krun-test-results";
+  if (options.storage) {
+    env.KRUN_S3_ENDPOINT = options.storage.endpoint;
+    env.KRUN_S3_BUCKET = "krun-test-results";
+    env.KRUN_S3_REGION = "us-east-1";
+    env.KRUN_S3_ACCESS_KEY = options.storage.accessKeyId;
+    env.KRUN_S3_SECRET_KEY = options.storage.secretAccessKey;
+    if (options.storage.ttl !== undefined) env.KRUN_S3_PRESIGN_TTL = options.storage.ttl;
+  }
   if (options.webhook) {
     env.KRUN_WEBHOOK_ALLOWED_HOSTS = new URL(options.webhook.url).hostname;
     env.KRUN_WEBHOOK_ALLOWED_CIDRS = "127.0.0.0/8";
@@ -84,7 +98,7 @@ export const startSchedulerProcess = async (
       const launcher = join(dir, "launcher.cjs");
       await writeFile(
         launcher,
-        `const a=require('node:assert/strict');const s=require('node:child_process').spawnSync; a.equal(process.getuid(),65532);a.equal(process.getgid(),65532);const r=s(process.execPath,['/app/bin/krun.js','migrate'],{encoding:'utf8'});a.equal(r.status,0,'Owned image migration failed');${options.seed ? seed : ""}process.argv=[process.execPath,'/app/apps/scheduler/dist/main.js'];import('/app/apps/scheduler/dist/main.js');`,
+        `const a=require('node:assert/strict');const s=require('node:child_process').spawnSync; a.equal(process.getuid(),65532);a.equal(process.getgid(),65532);const r=s(process.execPath,['/app/bin/krun.js','migrate'],{encoding:'utf8'});a.equal(r.status,0,'Owned image migration failed');${options.seed ? seed : ""}process.on('exit',()=>{try{const d=new(require('node:sqlite').DatabaseSync)(process.env.KRUN_DB_PATH,{readOnly:true});const row=d.prepare('select state,result_ref from runs where id=?').get('${schedulerRunId}')??null;d.close();console.log(JSON.stringify({krunTestExitRun:row}));}catch{console.log(JSON.stringify({krunTestExitRun:null}));}});process.argv=[process.execPath,'/app/apps/scheduler/dist/main.js'];import('/app/apps/scheduler/dist/main.js');`,
         { mode: 0o444 },
       );
       const args = [
@@ -108,7 +122,12 @@ export const startSchedulerProcess = async (
       ];
       for (const [key, value] of Object.entries(env))
         if (key.startsWith("KRUN_") && value !== undefined)
-          args.push("--env", key === "KRUN_WEBHOOK_SECRET" ? key : `${key}=${value}`);
+          args.push(
+            "--env",
+            ["KRUN_WEBHOOK_SECRET", "KRUN_S3_ACCESS_KEY", "KRUN_S3_SECRET_KEY"].includes(key)
+              ? key
+              : `${key}=${value}`,
+          );
       args.push(
         "--env",
         "KUBECONFIG=/krun-test-kube",
@@ -118,7 +137,12 @@ export const startSchedulerProcess = async (
         "/krun-test-launcher.cjs",
       );
       child = spawn("docker", args, {
-        env: { ...process.env, KRUN_WEBHOOK_SECRET: env.KRUN_WEBHOOK_SECRET },
+        env: {
+          ...process.env,
+          KRUN_WEBHOOK_SECRET: env.KRUN_WEBHOOK_SECRET,
+          KRUN_S3_ACCESS_KEY: env.KRUN_S3_ACCESS_KEY,
+          KRUN_S3_SECRET_KEY: env.KRUN_S3_SECRET_KEY,
+        },
         stdio: ["ignore", "pipe", "pipe"],
       });
     } else {
@@ -168,12 +192,28 @@ export const startSchedulerProcess = async (
       return undefined;
     }
   };
+  // The image's /data tmpfs disappears on exit. Read its actual final SQL
+  // projection inside the exit hook, after runtime finalizers, before unmount.
+  const exitedRun = async () => {
+    await exited;
+    if (child.stdout && !child.stdout.readableEnded) await once(child.stdout, "end");
+    const line = output.split("\n").find((value) => value.startsWith('{"krunTestExitRun":'));
+    assert.ok(line, "Owned image final Run witness was absent");
+    const parsed = z
+      .object({
+        krunTestExitRun: z.object({ state: z.string(), result_ref: z.string().nullable() }),
+      })
+      .parse(JSON.parse(line));
+    return parsed.krunTestExitRun;
+  };
   return {
     kube,
     output: () => output,
     exited,
     response,
     state: async () => {
+      if (options.image && (child.exitCode !== null || child.signalCode !== null))
+        return (await exitedRun()).state;
       if (options.image) {
         const script = `const d=new(require('node:sqlite').DatabaseSync)(process.env.KRUN_DB_PATH,{readOnly:true});console.log(JSON.stringify(d.prepare('select state from runs where id=?').get('${schedulerRunId}')));d.close();`;
         const result = await execute("docker", ["exec", name, "/nodejs/bin/node", "-e", script], {
@@ -189,6 +229,28 @@ export const startSchedulerProcess = async (
             | { state: string }
             | undefined
         )?.state;
+      } finally {
+        db.close();
+      }
+    },
+    resultRef: async () => {
+      if (options.image && (child.exitCode !== null || child.signalCode !== null))
+        return (await exitedRun()).result_ref;
+      if (options.image) {
+        const script = `const d=new(require('node:sqlite').DatabaseSync)(process.env.KRUN_DB_PATH,{readOnly:true});console.log(JSON.stringify(d.prepare('select result_ref from runs where id=?').get('${schedulerRunId}')));d.close();`;
+        const result = await execute("docker", ["exec", name, "/nodejs/bin/node", "-e", script], {
+          encoding: "utf8",
+          timeout: 10000,
+        });
+        return (JSON.parse(result.stdout) as { result_ref: string | null }).result_ref;
+      }
+      const db = new DatabaseSync(dbPath, { readOnly: true });
+      try {
+        return (
+          db.prepare("select result_ref from runs where id=?").get(schedulerRunId) as {
+            result_ref: string | null;
+          }
+        ).result_ref;
       } finally {
         db.close();
       }

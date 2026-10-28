@@ -11,6 +11,7 @@ import {
   loggingOptions,
   withPinoLogger,
 } from "@krun/shared/dist/runtime/logging.js";
+import { makeObjectStore } from "@krun/shared/dist/runtime/object-store.js";
 import { TelemetryLive } from "@krun/shared/dist/runtime/telemetry.js";
 import { Store } from "@krun/shared/dist/store/index.js";
 import { StoreLive } from "@krun/shared/dist/store/live.js";
@@ -58,6 +59,7 @@ const gateway = Layer.unwrap(
       config.KRUN_DB_MODE === "embedded"
         ? DatabaseSqlite(config.KRUN_DB_PATH)
         : DatabasePostgres(config.KRUN_DB_DSN ?? "");
+    const objectStore = yield* makeObjectStore(config);
     const store = StoreLive.pipe(Layer.provideMerge(database));
     const readiness = Layer.unwrap(
       Effect.map(Store, (store) => ReadinessLive(store.countByState().pipe(Effect.asVoid))),
@@ -77,7 +79,7 @@ const gateway = Layer.unwrap(
             server.register(create);
             server.register(runReadRoutes);
             server.register(cancelRunRoutes);
-            server.register(runResultRoutes());
+            server.register(runResultRoutes(objectStore));
           },
         });
         yield* listen(app, config.KRUN_LISTEN_ADDR, "public_listen");

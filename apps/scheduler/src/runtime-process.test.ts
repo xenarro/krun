@@ -85,16 +85,14 @@ it("standby readiness fails on a real database error without sacrificing livenes
   }
 }, 20000);
 
-it("configured result storage without its later adapter never fabricates terminal success", async () => {
+it("partial object-store configuration fails startup before claims or resources", async () => {
   const process = await startSchedulerProcess({ image, seed: true, configuredStorage: true });
   try {
-    await schedulerUntil(() => process.kube.snapshot().jobs === 1);
-    process.kube.complete();
-    await schedulerUntil(() => process.output().includes("ResultCheckError"));
-    expect(await process.state()).toBe("scheduled");
-    expect(process.kube.snapshot().jobs).toBe(1);
-    expect(await process.stop()).toEqual({ code: 0, signal: null });
-    expect(process.kube.snapshot().holder).toBe("");
+    expect(await process.exited).toEqual({ code: 1, signal: null });
+    expect(await process.state()).toBe("queued");
+    expect(process.kube.snapshot().jobs).toBe(0);
+    expect(process.kube.snapshot().secrets).toBe(0);
+    expect(process.output().includes('"variable":"KRUN_S3_ENDPOINT"')).toBe(true);
   } finally {
     await process.close();
   }
@@ -239,3 +237,146 @@ for (const mode of ["SIGTERM", "leadership loss"] as const)
       await receiver.close();
     }
   }, 20000);
+
+it("P6.2 real scheduler retries object HEAD failure before CAS and publishes the configured ref", async () => {
+  let status = 503;
+  let requests = 0;
+  const server = createServer((_request, response) => {
+    requests++;
+    response.statusCode = status;
+    response.end();
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string")
+    throw new Error("Owned object-store port unavailable");
+  const accessKeyId = randomBytes(16).toString("hex"),
+    secretAccessKey = randomBytes(32).toString("hex");
+  const process = await startSchedulerProcess({
+    image,
+    seed: true,
+    storage: {
+      endpoint: `http://127.0.0.1:${address.port}`,
+      accessKeyId,
+      secretAccessKey,
+      ttl: "2m",
+    },
+  });
+  try {
+    await schedulerUntil(() => process.kube.snapshot().jobs === 1);
+    process.kube.complete();
+    await schedulerUntil(() => requests > 0 && process.output().includes("ResultCheckError"));
+    expect(await process.state()).toBe("scheduled");
+    expect(await process.resultRef()).toBeNull();
+    expect(process.kube.snapshot().jobs).toBe(1);
+    expect(process.kube.snapshot().secrets).toBe(1);
+    status = 200;
+    process.kube.complete();
+    await schedulerUntil(async () => (await process.state()) === "succeeded");
+    expect(await process.resultRef()).toBe(
+      "s3://krun-test-results/runs/0192f000-0000-7000-8000-000000000411/result.json",
+    );
+    await schedulerUntil(
+      () => process.kube.snapshot().jobs === 0 && process.kube.snapshot().secrets === 0,
+    );
+    for (const value of [accessKeyId, secretAccessKey])
+      expect(process.output().includes(value)).toBe(false);
+    expect(await process.stop()).toEqual({ code: 0, signal: null });
+  } finally {
+    await process.close();
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+}, 20000);
+
+it("P6.2 leader loss aborts an active object HEAD and preserves the nonterminal run", async () => {
+  let received = false,
+    closed = false;
+  const server = createServer((request, _response) => {
+    received = true;
+    request.once("close", () => {
+      closed = true;
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string")
+    throw new Error("Owned object-store port unavailable");
+  const process = await startSchedulerProcess({
+    image,
+    seed: true,
+    storage: {
+      endpoint: `http://127.0.0.1:${address.port}`,
+      accessKeyId: randomBytes(16).toString("hex"),
+      secretAccessKey: randomBytes(32).toString("hex"),
+    },
+  });
+  try {
+    await schedulerUntil(() => process.kube.snapshot().jobs === 1);
+    process.kube.complete();
+    await schedulerUntil(() => received);
+    process.kube.steal();
+    expect(await process.exited).toEqual({ code: 1, signal: null });
+    await schedulerUntil(() => closed);
+    expect(await process.state()).toBe("scheduled");
+    expect(await process.resultRef()).toBeNull();
+    expect(process.kube.snapshot().jobs).toBe(1);
+    expect(process.kube.snapshot().secrets).toBe(1);
+    expect(process.kube.snapshot().holder).toBe("krun-test-other-scheduler");
+  } finally {
+    await process.close();
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+}, 20000);
+
+it("P6.2 repair: an unsafe installation default requires explicit TTL before claims or resources", async () => {
+  const storage = {
+    endpoint: "https://krun-test.invalid",
+    accessKeyId: randomBytes(16).toString("hex"),
+    secretAccessKey: randomBytes(32).toString("hex"),
+  };
+  const process = await startSchedulerProcess({
+    image,
+    seed: true,
+    maxActiveDeadline: "700000",
+    storage,
+  });
+  try {
+    expect(await process.exited).toEqual({ code: 1, signal: null });
+    expect(await process.state()).toBe("queued");
+    expect(process.kube.snapshot().jobs).toBe(0);
+    expect(process.kube.snapshot().secrets).toBe(0);
+    expect(process.output().includes('"variable":"KRUN_S3_PRESIGN_TTL"')).toBe(true);
+    expect(process.output().includes(storage.accessKeyId)).toBe(false);
+    expect(process.output().includes(storage.secretAccessKey)).toBe(false);
+  } finally {
+    await process.close();
+  }
+}, 20000);
+it("P6.2 repair: explicit TTL permits a high installation ceiling and real Job scheduling", async () => {
+  const storage = {
+    endpoint: "https://krun-test.invalid",
+    accessKeyId: randomBytes(16).toString("hex"),
+    secretAccessKey: randomBytes(32).toString("hex"),
+    ttl: "2m",
+  };
+  const process = await startSchedulerProcess({
+    image,
+    seed: true,
+    maxActiveDeadline: "700000",
+    storage,
+  });
+  try {
+    // Job creation precedes the scheduling CAS. Observe both, not the
+    // intermediate API side effect before SQL has committed.
+    await schedulerUntil(
+      async () => process.kube.snapshot().jobs === 1 && (await process.state()) === "scheduled",
+    );
+    expect(await process.stop()).toEqual({ code: 0, signal: null });
+    expect(process.output().includes(storage.accessKeyId)).toBe(false);
+    expect(process.output().includes(storage.secretAccessKey)).toBe(false);
+  } finally {
+    await process.close();
+  }
+}, 20000);

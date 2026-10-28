@@ -8,7 +8,7 @@ import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "@effect/vitest";
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
-import { Effect, Schedule } from "effect";
+import { DateTime, Effect, Schedule } from "effect";
 import { Wait } from "testcontainers";
 import { startFakeKube } from "../../../test/fake-kube/server.js";
 
@@ -193,9 +193,10 @@ const fixture = (holdList = false, overrides: Record<string, string> = {}) =>
           }),
         ),
       );
-    const watch = (path: string) =>
+    const watch = (path: string, redirect: RequestRedirect = "follow") =>
       fetch(`http://127.0.0.1:${ports[0]}${path}`, {
         headers: { authorization: `Bearer ${bearer}` },
+        redirect,
       });
     return { dir, child, exited, until, request, watch, kube, bearer, logs: () => stdout + stderr };
   });
@@ -555,4 +556,59 @@ it.live(
       }),
     ),
   60000,
+);
+
+it.live(
+  "P6.2 real gateway process wires configured fixed-TTL GET signing without secret logs",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const access = randomBytes(16).toString("hex"),
+          secret = randomBytes(32).toString("hex");
+        const f = yield* fixture(false, {
+          KRUN_S3_ENDPOINT: "https://krun-test-p62.invalid",
+          KRUN_S3_BUCKET: "krun-test-results",
+          KRUN_S3_REGION: "us-east-1",
+          KRUN_S3_ACCESS_KEY: access,
+          KRUN_S3_SECRET_KEY: secret,
+          KRUN_SHUTDOWN_DELAY: "0s",
+        });
+        yield* f.until("/readyz", 2, 200);
+        const created = yield* Effect.promise(() =>
+          f.request("/v1/functions/echo/runs", 0, { input: {} }),
+        );
+        expect(created.code).toBe(201);
+        const name = String(created.body.name),
+          id = name.split("/")[3] ?? "";
+        const at = DateTime.formatIso(yield* DateTime.now);
+        const db = new DatabaseSync(join(f.dir, "krun.db"));
+        try {
+          db.prepare("update runs set state='succeeded',finished_at=?,result_ref=? where id=?").run(
+            at,
+            `s3://krun-test-results/runs/${id}/result.json`,
+            id,
+          );
+        } finally {
+          db.close();
+        }
+        const response = yield* Effect.promise(() => f.watch(`/v1/${name}:getResult`, "manual"));
+        expect(response.status).toBe(307);
+        expect(response.headers.get("cache-control")).toBe("no-store");
+        const location = response.headers.get("location");
+        if (!location) return yield* Effect.die("Expected configured result redirect");
+        const target = new URL(location);
+        expect(target.hostname).toBe("krun-test-p62.invalid");
+        expect(target.searchParams.get("X-Amz-Expires")).toBe("300");
+        expect(target.searchParams.has("X-Amz-Signature")).toBe(true);
+        expect(yield* Effect.promise(() => response.text())).toBe("");
+        f.child.kill("SIGTERM");
+        expect(yield* Effect.promise(() => f.exited).pipe(Effect.timeout("5 seconds"))).toEqual({
+          code: 0,
+          signal: null,
+        });
+        for (const value of [access, secret, location])
+          expect(f.logs().includes(value)).toBe(false);
+      }),
+    ),
+  20000,
 );

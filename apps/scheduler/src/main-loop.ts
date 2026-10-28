@@ -3,6 +3,7 @@ import type { SchedulerConfig } from "@krun/shared/dist/config/index.js";
 import { type FunctionEntry, Functions } from "@krun/shared/dist/functions/cache.js";
 import type { FunctionResource } from "@krun/shared/dist/functions/schema.js";
 import { KubeApiError, kubeApiStatus } from "@krun/shared/dist/k8s/errors.js";
+import type { ObjectStore } from "@krun/shared/dist/objstore/index.js";
 import { leaderRunStore, makeRunGauges } from "@krun/shared/dist/runtime/run-metrics.js";
 import type { DatabaseError } from "@krun/shared/dist/store/errors.js";
 import { type Run, Store } from "@krun/shared/dist/store/index.js";
@@ -43,10 +44,12 @@ type Config = Pick<
   | "KRUN_MAX_RESULT_BYTES"
   | "KRUN_TTL_AFTER_FINISHED"
   | "KRUN_JOB_HOST_USERS"
+  | "KRUN_S3_PRESIGN_TTL"
 >;
 interface Options {
   readonly owner: string;
   readonly config: Config;
+  readonly objectStore?: ObjectStore["Service"] | undefined;
   // P4.4 supplies its cache-backed handler; no default/no-op or API re-read.
   readonly replayCached: (run: Run) => Effect.Effect<void, DatabaseError | KubeApiError>;
   // P4.5 supplies the same leader-scoped check used by controller reconciliation.
@@ -146,6 +149,16 @@ export const makeMainLoop = (options: Options) =>
           let creating = true;
           const provision = Effect.gen(function* () {
             yield* checkDeadline;
+            const resultUploadUrl =
+              options.objectStore === undefined
+                ? undefined
+                : yield* options.objectStore.presignPut(
+                    run.id,
+                    config.KRUN_S3_PRESIGN_TTL === undefined
+                      ? fn.spec.activeDeadlineSeconds
+                      : Math.ceil(Duration.toSeconds(config.KRUN_S3_PRESIGN_TTL)),
+                  );
+            yield* checkDeadline;
             const fresh = yield* Effect.sync(() => randomBytes(32).toString("base64url"));
             const secret = yield* Effect.fromResult(buildSecret({ run, config, token: fresh }));
             const adopted = yield* kube.createSecret(target(run), secret).pipe(
@@ -190,7 +203,14 @@ export const makeMainLoop = (options: Options) =>
               metadata: { name: fn.name },
               spec: fn.spec,
             };
-            const job = yield* Effect.fromResult(buildJob({ run, function: resource, config }));
+            const job = yield* Effect.fromResult(
+              buildJob({
+                run,
+                function: resource,
+                config,
+                ...(resultUploadUrl === undefined ? {} : { resultUploadUrl }),
+              }),
+            );
             yield* kube
               .createJob(target(run), job)
               .pipe(
@@ -333,7 +353,17 @@ export const makeMainLoop = (options: Options) =>
         for (const { run, fn } of claims) {
           yield* checkDeadline;
           if (yield* policy.isBackingOff(fn.name)) continue;
-          const decision = yield* schedule(run, fn);
+          const decision = yield* schedule(run, fn).pipe(
+            Effect.catchTag("ObjectStoreError", () =>
+              release(run).pipe(
+                Effect.andThen(
+                  Effect.logWarning("Scheduler upload signing failed; claim released"),
+                ),
+                Effect.annotateLogs({ "krun.run_id": run.id, "krun.function": fn.name }),
+                Effect.as(undefined),
+              ),
+            ),
+          );
           if (decision?.pauseSeconds !== undefined) return decision.pauseSeconds;
         }
         // Step 5 normally drains the active prefix. On an isolated failure,
