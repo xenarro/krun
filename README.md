@@ -259,11 +259,40 @@ containers receive every quoted `config` key. Missing or whitespace Postgres
 Secret references fail clearly even with the CRD disabled. Both hooks are absent
 in embedded mode.
 
-Thirteen new real-Helm controls and the 75-case combined chart/generator suite
-cover these contracts. This is an implementation slice awaiting independent
-review and Git delivery, not a passed full Phase7 gate. Embedded lifecycle,
-RBAC/isolation/optional features, generated chart docs, serving-Pod upgrade and
-rollback/native data-plane acceptance and monitoring remain later tasks.
+Thirteen new real-Helm controls, the 75-case combined chart/generator suite and
+12 independent rendered/actual-ConfigLive controls cover these contracts. Both
+independent source reviews find no scoped material product defect. Integration
+preserves the implementation without speculative fixes: standard and exact
+reviewer-affinity full checks each pass 1,782 TypeScript tests plus one Python
+test; the exact scheduler replay passes all 333 cases. Earlier reviewer 5s/20s
+deadlines remain retained, with their original cause unestablished. No timeout,
+worker, retry or skip policy was weakened.
+
+Fresh genuine PSA-restricted Helm 4.3 acceptance proves an initial bad-auth
+migration prevents serving Deployment creation and retains the failed Job. Helm
+correctly removes the earlier successful ServiceAccount hook; actual failed Pods
+have no projected token. Initial recovery, idempotent upgrade, failed-upgrade
+retention/recovery and uninstall pass, with three successful migration commands
+and all four source-matched Postgres migrations. The unchanged runtime image
+matches 93 compiled modules plus its launcher. Owned cluster, containers, aliases
+and private inputs are removed. This fixture has zero serving replicas and CRD
+installation disabled: it proves hook lifecycle, not the full Phase 7 gate.
+
+Exact source `cfda0f4b93e312afda4e4f05a4f876a176d980d1` passes [hosted verify and kind](https://github.com/xenarro/krun/actions/runs/40721426046):
+1,782 TypeScript tests plus one Python test, generators, image smokes/identity,
+Helm lint, audit/security and all eight existing raw-manifest native scenarios
+and privacy oracles over nine actual Run credential contexts. The existing retry
+policy is unchanged; this is not a no-retry claim.
+[PR #72](https://github.com/xenarro/krun/pull/72) targets `main` after prerequisite PR #70 independently
+merged/approved. The normal two-parent source commit reconciles main ancestry
+without changing the reviewed feature tree or rewriting history. It remains
+open/unmerged pending required independent approval, with no auto-merge or
+protection bypass. Only P7.2 is checked after accepted source CI; this PLAN/README
+tracking update receives fresh local and exact-final hosted checks.
+
+Embedded lifecycle (P7.3), RBAC/isolation/optional features, generated chart docs,
+serving-Pod upgrade/rollback, native data-plane acceptance and monitoring remain
+later tasks. No publication or production change is claimed.
 
 ## Gateway waits (P5.1)
 
