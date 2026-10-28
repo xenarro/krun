@@ -38,4 +38,4 @@ e2e: kind-up
 	pnpm exec vitest run --config test/e2e/vitest.config.ts
 
 helm-lint:
-	helm lint deploy/helm/krun
+	helm lint deploy/helm/krun --set apiKeys.existingSecret=krun-lint-api-keys --set db.postgres.existingSecret=krun-lint-db

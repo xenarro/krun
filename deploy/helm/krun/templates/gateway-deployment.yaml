@@ -1,0 +1,59 @@
+{{- if eq .Values.db.mode "postgres" }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "krun.fullname" . }}-gateway
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "krun.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  replicas: {{ .Values.gateway.replicas }}
+
+  selector:
+    matchLabels:
+      {{- include "krun.selectorLabels" (dict "root" . "component" "gateway") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "krun.selectorLabels" (dict "root" . "component" "gateway") | nindent 8 }}
+        krun.io/gateway: "true"
+    spec:
+      serviceAccountName: krun-gateway
+      automountServiceAccountToken: true
+      {{- include "krun.podLifecycle" . | nindent 6 }}
+      securityContext:
+        {{- include "krun.podSecurityContext" . | nindent 8 }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "krun.selectorLabels" (dict "root" . "component" "gateway") | nindent 14 }}
+      containers:
+        - name: gateway
+          image: {{ include "krun.image" . }}
+          args: [gateway]
+          ports:
+            - {name: http, containerPort: 8080}
+            - {name: internal, containerPort: 8081}
+            - {name: admin, containerPort: 9090}
+          {{- include "krun.probes" "admin" | nindent 10 }}
+          resources:
+            {{- toYaml .Values.gateway.resources | nindent 12 }}
+          securityContext:
+            {{- include "krun.containerSecurityContext" . | nindent 12 }}
+          env:
+            {{- include "krun.processEnv" (dict "root" . "component" "gateway") | nindent 12 }}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+            - {name: api-keys, mountPath: /etc/krun, readOnly: true}
+      volumes:
+        - {name: tmp, emptyDir: {}}
+        - name: api-keys
+          secret:
+            secretName: {{ .Values.apiKeys.existingSecret | quote }}
+            items:
+              - {key: keys.yaml, path: keys.yaml}
+{{- end }}

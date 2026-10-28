@@ -1,0 +1,49 @@
+{{- if eq .Values.db.mode "postgres" }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "krun.fullname" . }}-scheduler
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "krun.labels" . | nindent 4 }}
+    app.kubernetes.io/component: scheduler
+spec:
+  replicas: {{ .Values.scheduler.replicas }}
+  strategy:
+    {{- include "krun.schedulerStrategy" . | nindent 4 }}
+  selector:
+    matchLabels:
+      {{- include "krun.selectorLabels" (dict "root" . "component" "scheduler") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "krun.selectorLabels" (dict "root" . "component" "scheduler") | nindent 8 }}
+
+    spec:
+      serviceAccountName: krun-scheduler
+      automountServiceAccountToken: true
+      {{- include "krun.podLifecycle" . | nindent 6 }}
+      securityContext:
+        {{- include "krun.podSecurityContext" . | nindent 8 }}
+
+      containers:
+        - name: scheduler
+          image: {{ include "krun.image" . }}
+          args: [scheduler]
+          ports:
+
+            - {name: admin, containerPort: 9090}
+          {{- include "krun.probes" "admin" | nindent 10 }}
+          resources:
+            {{- toYaml .Values.scheduler.resources | nindent 12 }}
+          securityContext:
+            {{- include "krun.containerSecurityContext" . | nindent 12 }}
+          env:
+            {{- include "krun.processEnv" (dict "root" . "component" "scheduler") | nindent 12 }}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+
+      volumes:
+        - {name: tmp, emptyDir: {}}
+
+{{- end }}

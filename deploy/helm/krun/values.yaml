@@ -1,3 +1,90 @@
+image: { repository: ghcr.io/xenarro/krun, tag: "" }   # tag defaults to appVersion
+
+gateway:
+  replicas: 2
+  resources: { requests: { cpu: 100m, memory: 128Mi }, limits: { memory: 512Mi } }
+scheduler:
+  replicas: 1          # extra replicas are standby
+  resources: { requests: { cpu: 100m, memory: 128Mi }, limits: { memory: 512Mi } }
+priorityClassName: ""
+terminationGracePeriodSeconds: 30
+
+config:                 # one camelCase key per section 12 tunable, rendered as env on both processes
+  maxRunning: 100
+  maxQueued: 1000
+  maxInputBytes: 262144
+  maxResultBytes: 262144
+  maxWait: 60s
+  shutdownDelay: 5s
+  rateLimitRps: 10
+  rateLimitBurst: 50
+  maxActiveDeadline: 86400
+  allowedServiceAccounts: krun-job-default
+  k8sConcurrency: 8
+  ttlAfterFinished: 86400
+  retention: 720h
+  allowedRegistries: ""
+  s3PresignTtl: ""      # empty means unset: the run's activeDeadlineSeconds
+  logLevel: info
+
+db:
+  mode: postgres        # postgres | embedded
+  postgres:
+    existingSecret: ""  # key: dsn; required in postgres mode, chart fails when empty
+  embedded:
+    storage: 1Gi
+    storageClass: ""    # empty omits storageClassName (an empty string would disable dynamic provisioning)
+    litestream:
+      enabled: false
+      image: ""         # pinned by digest; required when enabled
+      url: s3://bucket/krun
+      existingSecret: ""   # keys: LITESTREAM_ACCESS_KEY_ID, LITESTREAM_SECRET_ACCESS_KEY; required when enabled
+      # rendered as a native sidecar: an init container with restartPolicy: Always
+
 crds:
-  install: true
-  keep: true
+  install: true         # CRD templated into the release
+  keep: true            # helm.sh/resource-policy: keep on the CRD
+apiKeys:
+  existingSecret: ""    # key: keys.yaml; required
+
+jobsNamespace:
+  name: krun-jobs
+  create: true
+  keep: true            # helm.sh/resource-policy: keep on the Namespace
+  podSecurityVersion: v1.33
+  admissionPolicy: true # ValidatingAdmissionPolicy requiring digest-pinned images
+  userNamespaces: false # hostUsers: false on function pods; see section 9
+  quota: { pods: "200", requests.cpu: "50", requests.memory: 100Gi, requests.ephemeral-storage: 100Gi }
+  limitRange:
+    defaultRequest: { cpu: 100m, memory: 128Mi, ephemeral-storage: 256Mi }
+    default:        { cpu: "1",  memory: 1Gi,   ephemeral-storage: 2Gi }
+    max:            { cpu: "4",  memory: 8Gi,   ephemeral-storage: 20Gi }
+  dnsEgress:            # NetworkPolicyPeer list for UDP and TCP 53
+    - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+      podSelector: { matchLabels: { k8s-app: kube-dns } }
+  egressCIDRs: []       # ipBlock objects { cidr, except: [] }, extra egress for all functions
+
+networkPolicy:
+  metricsFrom: {}       # namespaceSelector allowed to scrape the admin ports; empty allows all
+
+gatewayApi:
+  httpRoute:            # Gateway API HTTPRoute for the public API (port 8080)
+    enabled: false
+    parentRefs: []      # Gateway references
+    hostnames: []
+
+observability:
+  otlpEndpoint: ""      # OTEL_EXPORTER_OTLP_ENDPOINT on both processes; empty drops traces
+  tracesSampleRatio: "0.1"
+
+metrics:
+  podMonitor: { enabled: false, labels: {} }
+  prometheusRule:
+    enabled: false
+    labels: {}
+    thresholds: { queueWaitP95Seconds: 60, jobLostPerHour: 1, heartbeatTimeoutsPerHour: 5, quotaRejectionsPerMinute: 1 }
+
+objectStorage: { enabled: false, endpoint: "", bucket: "", region: "", existingSecret: "", egress: [] }
+  # existingSecret keys: accessKey, secretKey; endpoint, bucket and existingSecret required when enabled
+webhooks: { allowedHosts: [], allowedCIDRs: [], existingSecret: "" }
+  # existingSecret key: secret (comma-separated); required when allowedHosts is set

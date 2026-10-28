@@ -4,7 +4,7 @@ HTTP-triggered functions, executed as one-off Kubernetes Jobs. Callers submit JS
 
 ## Development status
 
-Core function execution,the Phase5 wait/signed-webhook gate and Phase6 MinIO large-result acceptance pass locally and in exact source-head hosted CI. P6.3 source `55df490` is delivered in [PR #69](https://github.com/xenarro/krun/pull/69) against its immediate unmerged P6.2 parent. Independent source reviews and reproduced privacy-oracle/bucket-initializer repairs are complete;hosted `verify` and `kind` pass for that exact source head. The PLAN/README-only tracking update receives its own fresh local check and exact-head hosted verification. This is pushed/green,not merged or a complete production-ready release:SDK runtime behaviour,production Helm and release acceptance remain later work.
+Core function execution,the Phase5 wait/signed-webhook gate and Phase6 MinIO large-result acceptance pass locally and in exact source-head hosted CI. P6.3 source `55df490` is delivered in [PR #69](https://github.com/xenarro/krun/pull/69) against its immediate unmerged P6.2 parent. Independent source reviews and reproduced privacy-oracle/bucket-initializer repairs are complete;hosted `verify` and `kind` pass for that exact source head. The PLAN/README-only tracking update receives its own fresh local check and exact-head hosted verification. This is pushed/green,not merged or a complete production-ready release:SDK runtime behaviour,production Helm and release acceptance remain later work. P7.1 now adds a locally linted and render-tested common Helm foundation; mode-specific lifecycle, RBAC/isolation and chart-installed embedded/Postgres acceptance remain later Phase 7 tasks.
 
 - Strict TypeScript workspace on Node.js 26, with Effect 4 process entrypoints.
 - Zod configuration schemas and Effect services for gateway and scheduler settings.
@@ -181,6 +181,52 @@ hosted CI. Pushed/green is not merged;PRs #68,#67 and #66 remain pending-main
 dependencies,with no auto-merge or protection bypass. P7.1 starts from the
 current committed verified lineage after refreshing parent/main state,not an
 obsolete main checkout. Production chart,SDK and release acceptance remain later.
+
+## Helm chart foundation (P7.1)
+
+The chart now carries the complete section 13 values shape, the unchanged
+generated CRD template and its install/keep switches, public and internal
+Services, mode-appropriate gateway/scheduler ServiceAccounts, and a gateway
+PodDisruptionBudget only for Postgres gateway replicas above one. No Service
+exposes an admin port. It creates no Secret, ConfigMap or Function; API keys
+must reference an existing Secret and mount as a read-only directory, never
+with `subPath`.
+
+The baseline Postgres gateway/scheduler Deployments consume shared label,
+selector, image, config/env, security, probe and lifecycle helpers. Real Helm
+render tests assert nonroot 65532, RuntimeDefault seccomp, dropped capabilities,
+no privilege escalation, read-only root filesystems, writable `/tmp`, default
+resources without a CPU limit, each process's admin probes, downward-API
+scheduler identity, hostname topology spread and standby-safe scheduler
+RollingUpdate. Tunables remain quoted environment strings; no secret values
+are embedded in values or generated resources.
+
+`make helm-lint` supplies only disposable existing-Secret reference names and
+passes. Real `helm template` renders both common-resource modes; the 36
+chart controls also check missing API-key failure even with CRD installation disabled,
+CRD keep/install behavior, selector stability, resource/image overrides and
+all config-key environment mappings. The existing generator/CRD tests retain
+their isolated-artifact coverage and select only the CRD from the expanded
+real chart rather than assume the release contains a single object.
+
+Public Service naming is now independent of the general workload fullname.
+Ordinary DNS-label-safe release names remain unchanged; dotted or numeric-leading
+names and the reserved `krun-gateway-internal` release get a bounded `krun-`
+prefix with dots normalized to hyphens. If normalization itself reaches the
+fixed internal name, it receives another prefix. The internal Service remains
+`krun-gateway-internal`, and workload names and release/selector labels do not
+change. Public backend references, including future HTTPRoute templates, must
+use `krun.publicServiceName`. Both-mode identity/DNS regressions cover the two
+independently reported naming failures, derived collisions and maximum-length
+numeric releases. The expanded real-Helm matrix checks CRD toggles as well.
+
+This is a common-foundation slice, not an install-ready production chart or a
+passed Phase 7 gate. P7.2 adds/verifies the Postgres migration hooks; P7.3 adds
+the embedded StatefulSet, PVC and optional Litestream lifecycle. P7.4 security
+resources and optional integrations, P7.5 generated chart documentation and
+P7.6 chart-installed embedded/Postgres native acceptance are still required.
+The raw-manifest native foundation is unchanged here. No PLAN task is closed
+by this implementation, and independent review/Git delivery remain separate.
 
 ## Gateway waits (P5.1)
 

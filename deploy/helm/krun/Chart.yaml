@@ -1,6 +1,6 @@
 apiVersion: v2
 name: krun
-description: Scaffold chart; platform resources are not implemented yet.
+description: Hardened common chart foundation; mode lifecycle and security integration are developed in Phase 7.
 type: application
 version: 0.0.0
 appVersion: "0.0.0"

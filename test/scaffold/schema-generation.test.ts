@@ -221,10 +221,16 @@ for (const install of [false, true])
           `crds.install=${install}`,
           "--set",
           `crds.keep=${keep}`,
+          "--set",
+          "apiKeys.existingSecret=krun-test-schema-keys",
+          "--set",
+          "db.postgres.existingSecret=krun-test-schema-db",
         ],
         { encoding: "utf8" },
       );
-      const docs = parseAllDocuments(output).filter((doc) => doc.contents !== null);
+      const docs = parseAllDocuments(output).filter(
+        (doc) => doc.contents !== null && doc.toJSON().kind === "CustomResourceDefinition",
+      );
       expect(docs).toHaveLength(install ? 1 : 0);
       if (!install) return;
       expect(docs[0]?.errors).toEqual([]);
