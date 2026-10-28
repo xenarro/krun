@@ -25,7 +25,12 @@ and one embedded Pod containing the real gateway and scheduler. An init
 container runs explicit SQLite migrations on their shared `emptyDir`. Both
 serving containers must become ready, and `function.yaml` must reach current
 `Ready=True` before setup succeeds. `kind-up` itself submits no Run;
-`make e2e` then submits the seven Phase 4/5 behavioural workloads.
+`make e2e` then submits the eight Phase 4/5/6 behavioural workloads.
+The foundation also builds the genuine checksum-pinned MinIO fixture,deploys
+its restricted ephemeral namespace, initializes the real private bucket, and
+configures both serving processes through generated Secret references.
+`allow-minio.yaml` adds only TCP9000 egress to the selected MinIO Pods; the
+existing jobs default deny, DNS and gateway allows are retained.
 
 `make e2e` always runs the mandatory infrastructure verification before invoking
 the separate Vitest configuration. Verification uses two restricted Pods in a
@@ -39,8 +44,8 @@ generated API credential without printing it.
 
 ## Phase 4 scenarios (P4.13)
 
-The separate Vitest runner requires all seven `*.e2e.ts` files (five Phase 4
-and two Phase 5); an empty suite fails. File execution is sequential, with a unique generated Function
+The separate Vitest runner requires all eight `*.e2e.ts` files (five Phase 4,
+two Phase 5 and one Phase 6); an empty suite fails. File execution is sequential, with a unique generated Function
 per file, the existing bounded test/hook budgets and one visible runner retry.
 The phase gate passes locally and in [exact source-head hosted CI](https://github.com/xenarro/krun/actions/runs/40523418351)
 for `2f8f5e2` ([PR #59](https://github.com/xenarro/krun/pull/59));
@@ -118,9 +123,67 @@ entrypoint/relative import resolution. Native failure evidence and a red/green
 mount contract qualify that correction; the final complete gate has no skips.
 
 SSE behavior has its P5.2 handler/native stream controls, not a new P5.4 kind
-scenario. Large results remain Phase 6, chart/admission scenarios Phase 7 and
-capacity/security acceptance Phase 9. This gate makes no production, SDK or
-object-storage completion claim.
+scenario. The later Phase 6 large-result gate is recorded below;chart/admission
+scenarios remain Phase 7 and capacity/security acceptance Phase 9. The Phase 5
+section alone makes no production,SDK or object-storage completion claim.
+
+## Phase 6 scenario (P6.3)
+
+The complete local `make e2e` gate passes all eight scenarios with genuine
+MinIO in `krun-test-minio` and S3 enabled in both real process graphs.
+`large_result.e2e.ts` runs a Node26 author Function built from the same immutable
+runtime image. It reads the actual internal input and uploads exactly one MiB
+of JSON through its designated signed PUT URL, without an inline result or S3
+account credentials. Author source directories use traversable read-only modes.
+
+The native FULL Run exposes the canonical external `resultUri` and no inline
+result. Authenticated `:getResult` returns a bodyless no-store 307 with a
+300-second signed GET. A separate in-cluster client receives only that URL,
+not the krun API key, and verifies the raw object's exact byte length and SHA256.
+Anonymous public access is 401;unsigned native object access is 403. A direct
+readonly SQLite/native HTTP readback independently confirms the stored reference,
+zero redirect-body bytes and genuine one-MiB object. MinIO's running binary
+matches the upstream release checksum from `test/minio/Dockerfile`.
+
+`minio.yaml` has no account values: generated material is held only in private
+owned state and Secrets referenced by the restricted server,initializer and
+serving processes. `allow-minio.yaml` selects only that namespace plus the
+MinIO server Pods on TCP9000. Removing just this allow causes real uploads to
+fail and leaves external refs absent; restoring the exact policy restores the
+positive native acceptance. No jobs default-deny or enforced-policy probe is
+removed or relaxed.
+
+Pod privacy permits only the required `KRUN_RESULT_UPLOAD_URL` env value after
+checking its Run identity, internal endpoint and owned object key. It is not a
+blanket Pod URL exemption. Input, actual Run/API/webhook/S3 credentials and other
+signed URLs are still forbidden in manifests or gateway/scheduler/MinIO logs;
+account credential env fields or account Secret references in a Function Pod
+are rejected. The original implementation gate covers eight privacy oracles and nine actual Run
+credential contexts because the existing `exit_code_status` case used its
+unchanged single retry; the new large-result case passed first attempt. The
+first-attempt failure cause remains unestablished and is not hidden or promoted
+to a no-retry claim. Initial fixture configuration, directory-mode and client URL
+failures and their red/green corrections remain in the owned P6.3 evidence.
+
+Post-review repair validates a closed, single-valued SigV4/PutObject query,
+calendar-valid signing date, credential date/region/service scope, actual public
+access-key identity and bounded expiry before excluding the capability. Raw and
+decoded values are checked against known private input, tokens and API/webhook/S3
+secrets; only the credential's public key component and previously validated
+capabilities receive their precise exceptions. Unknown or duplicate parameters
+and private signature/credential substitutions fail before observation. Both
+independent six-control replays pass against the repaired source.
+
+The disposable bucket initializer now HEADs the bucket and creates it only after
+an actual 404. Existing buckets succeed; 403 and infrastructure errors still fail.
+Four failing-first script controls and genuine MinIO diagnostics cover repeated
+initialization without changing the 90-second Job or ten-second request bounds.
+The earlier initializer deadline and generic cleanup-hook failure remain retained
+and qualified, not attributed to invented causes. Cleanup errors now identify
+only fixed safe stage names, never private exception details.
+
+This is local acceptance, not hosted delivery,
+a PLAN closure,production chart installation, SDK completion or publication.
 
 ## Ownership and recovery
 

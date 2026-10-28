@@ -140,6 +140,11 @@ spec:
             - {name: KRUN_WEBHOOK_ALLOWED_HOSTS, value: "krun-test-webhook-*.krun.svc.cluster.local"}
             - {name: KRUN_WEBHOOK_ALLOWED_CIDRS, value: "10.244.0.0/16,10.96.0.0/16"}
             - {name: KRUN_WEBHOOK_SECRET, valueFrom: {secretKeyRef: {name: krun-e2e-webhook-keys, key: secrets}}}
+            - {name: KRUN_S3_ENDPOINT, value: "http://krun-test-minio.krun-test-minio.svc.cluster.local:9000"}
+            - {name: KRUN_S3_BUCKET, value: krun-test-results}
+            - {name: KRUN_S3_REGION, value: us-east-1}
+            - {name: KRUN_S3_ACCESS_KEY, valueFrom: {secretKeyRef: {name: krun-test-minio-credentials, key: accessKey}}}
+            - {name: KRUN_S3_SECRET_KEY, valueFrom: {secretKeyRef: {name: krun-test-minio-credentials, key: secretKey}}}
             - {name: KRUN_API_KEYS_PATH, value: /etc/krun/keys.yaml}
           ports: [{name: public, containerPort: 8080}, {name: internal, containerPort: 8081}, {name: admin, containerPort: 9090}]
           readinessProbe: {httpGet: {path: /readyz, port: 9090}, periodSeconds: 1, timeoutSeconds: 3}
@@ -157,6 +162,11 @@ spec:
             - {name: KRUN_WEBHOOK_ALLOWED_HOSTS, value: "krun-test-webhook-*.krun.svc.cluster.local"}
             - {name: KRUN_WEBHOOK_ALLOWED_CIDRS, value: "10.244.0.0/16,10.96.0.0/16"}
             - {name: KRUN_WEBHOOK_SECRET, valueFrom: {secretKeyRef: {name: krun-e2e-webhook-keys, key: secrets}}}
+            - {name: KRUN_S3_ENDPOINT, value: "http://krun-test-minio.krun-test-minio.svc.cluster.local:9000"}
+            - {name: KRUN_S3_BUCKET, value: krun-test-results}
+            - {name: KRUN_S3_REGION, value: us-east-1}
+            - {name: KRUN_S3_ACCESS_KEY, valueFrom: {secretKeyRef: {name: krun-test-minio-credentials, key: accessKey}}}
+            - {name: KRUN_S3_SECRET_KEY, valueFrom: {secretKeyRef: {name: krun-test-minio-credentials, key: secretKey}}}
             - {name: KRUN_JOBS_NAMESPACE, value: krun-jobs}
             - {name: KRUN_ADMIN_LISTEN_ADDR, value: ":9091"}
             - {name: KRUN_GATEWAY_INTERNAL_URL, value: "http://krun-gateway-internal.krun.svc:8081"}

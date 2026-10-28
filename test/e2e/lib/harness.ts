@@ -9,6 +9,12 @@ import { parse } from "yaml";
 import { z } from "zod";
 import { publicSchemas } from "../../../apps/gateway/src/public-contracts.js";
 import { contextArgs, parsePushDigest } from "./contracts.js";
+import {
+  largeResult,
+  objectStoreBucket,
+  objectStoreEndpoint,
+  privatePodManifest,
+} from "./object-store.js";
 import { podSchema } from "./pod.js";
 import { runCredentials } from "./run-credentials.js";
 import { eventually } from "./wait.js";
@@ -25,6 +31,7 @@ const modes = [
   "heartbeat_timeout",
   "wait",
   "webhook",
+  "large_result",
 ] as const;
 type Mode = (typeof modes)[number];
 const runSchema = publicSchemas.Run;
@@ -49,6 +56,8 @@ export const scenario = (mode: Mode) => {
   const seenJobs = new Set<string>();
   const runs: Run[] = [];
   const forbidden = new Set<string>();
+  const uploadCapabilities = new Set<string>();
+  let objectStoreAccessKeyId = "";
   const credentials = runCredentials(name, forbidden);
   const podContents = new Set<string>();
   let key = "";
@@ -93,6 +102,22 @@ export const scenario = (mode: Mode) => {
       "A presigned URL appeared in a process log or Pod manifest",
     );
   };
+  const safePod = (content: string) =>
+    safeContent(
+      privatePodManifest(
+        content,
+        (upload) => {
+          forbidden.add(upload);
+          uploadCapabilities.add(upload);
+          const signature = new URL(upload).searchParams.get("X-Amz-Signature");
+          if (signature) {
+            forbidden.add(signature);
+            uploadCapabilities.add(signature);
+          }
+        },
+        { accessKeyId: objectStoreAccessKeyId, forbidden, capabilities: uploadCapabilities },
+      ),
+    );
   const api = async (
     path: string,
     method = "GET",
@@ -184,7 +209,7 @@ export const scenario = (mode: Mode) => {
           const content = JSON.stringify(event.object);
           // Secret and Pod streams can arrive out of order;recheck after binding.
           podContents.add(content);
-          safeContent(content);
+          safePod(content);
           const pod = decode(podSchema, event.object, "Invalid Pod event");
           check(
             pod.metadata.labels["krun.io/function"] === name,
@@ -301,6 +326,7 @@ export const scenario = (mode: Mode) => {
           key: z.string().regex(/^[a-f0-9]{64}$/),
           image: z.string(),
           webhookSecrets: z.tuple([z.string(), z.string()]),
+          minioSecrets: z.tuple([z.string(), z.string()]),
         }),
         json(readFileSync(join(privateDir, "state.json"), "utf8")),
         "Missing owned foundation state; run make e2e",
@@ -321,6 +347,11 @@ export const scenario = (mode: Mode) => {
       );
       key = state.key;
       forbidden.add(key);
+      objectStoreAccessKeyId = state.minioSecrets[0];
+      for (const secret of state.minioSecrets) {
+        forbidden.add(secret);
+        forbidden.add(Buffer.from(secret).toString("base64"));
+      }
       for (const secret of [...state.webhookSecrets, state.webhookSecrets.join(",")])
         forbidden.add(secret);
       let image = `localhost:5001/krun-test-e2e-unpullable@sha256:${"0".repeat(64)}`;
@@ -335,13 +366,22 @@ export const scenario = (mode: Mode) => {
           "docker",
           [
             "build",
-            "--build-arg",
-            `CURL_IMAGE=${curl}`,
-            "--build-arg",
-            `SCENARIO=${mode === "wait" || mode === "webhook" ? "success" : mode}`,
+            ...(mode === "large_result"
+              ? [
+                  "--build-arg",
+                  `KRUN_IMAGE=${state.image}`,
+                  "--file",
+                  "test/e2e/functions/Dockerfile.large-result",
+                ]
+              : [
+                  "--build-arg",
+                  `CURL_IMAGE=${curl}`,
+                  "--build-arg",
+                  `SCENARIO=${mode === "wait" || mode === "webhook" ? "success" : mode}`,
+                ]),
             "--tag",
             tag,
-            "test/e2e/functions",
+            mode === "large_result" ? "test/e2e" : "test/e2e/functions",
           ],
           "Build actual curl function",
           undefined,
@@ -572,6 +612,111 @@ export const scenario = (mode: Mode) => {
       );
       return value;
     },
+    async largeResult(run: Run, input: unknown) {
+      check(mode === "large_result", "Large result witness requires its owned Function");
+      const id = run.name.split("/").at(-1);
+      check(
+        run.result === undefined &&
+          run.resultUri === `s3://${objectStoreBucket}/runs/${id}/result.json`,
+        "Terminal Run lacks the external-only result reference",
+      );
+      // docs/API.md GetRunResult is an AIP custom method. Fastify's declared
+      // route contains parameter regexes and escaped colons, not a client URL.
+      const path = `${url}/v1/${run.name}:getResult`;
+      const anonymous = await fetch(path, {
+        redirect: "manual",
+        signal: AbortSignal.timeout(3000),
+      });
+      await anonymous.body?.cancel();
+      check(anonymous.status === 401, "Public result route lost its authentication boundary");
+      const response = await fetch(path, {
+        headers: { authorization: `Bearer ${key}` },
+        redirect: "manual",
+        signal: AbortSignal.timeout(3000),
+      });
+      await response.body?.cancel();
+      check(
+        response.status === 307 && response.headers.get("cache-control") === "no-store",
+        "Public result route did not return a no-store 307",
+      );
+      const location = response.headers.get("location");
+      check(location, "Public result redirect lacks its Location");
+      forbidden.add(location);
+      const signed = new URL(location);
+      check(
+        signed.origin === objectStoreEndpoint &&
+          signed.pathname === `/${objectStoreBucket}/runs/${id}/result.json` &&
+          signed.searchParams.get("X-Amz-Expires") === "300" &&
+          signed.searchParams.get("X-Amz-SignedHeaders") === "host",
+        "Public result redirect has an invalid native S3 target or TTL",
+      );
+      // The signed request is made by a separate in-cluster client. Only its URL
+      // enters stdin; the krun API key is neither forwarded nor supplied to it.
+      const download = (target: string) =>
+        decode(
+          z.object({
+            status: z.number(),
+            bytes: z.number(),
+            sha256: z.string(),
+            contentType: z.string().nullable(),
+          }),
+          json(
+            kube(
+              [
+                "exec",
+                "-i",
+                "-n",
+                "krun",
+                "deployment/krun",
+                "-c",
+                "gateway",
+                "--",
+                "/nodejs/bin/node",
+                "--input-type=module",
+                "-e",
+                `import {readFileSync} from 'node:fs';import {createHash} from 'node:crypto';
+        const target=JSON.parse(readFileSync(0,'utf8')).url;
+        try {const r=await fetch(target,{redirect:'error',signal:AbortSignal.timeout(10000)});
+        const body=Buffer.from(await r.arrayBuffer());process.stdout.write(JSON.stringify({
+        status:r.status,bytes:body.length,sha256:createHash('sha256').update(body).digest('hex'),
+        contentType:r.headers.get('content-type')}));}catch{process.exitCode=1;}`,
+              ],
+              "Read only native object verdict",
+              JSON.stringify({ url: target }),
+            ),
+          ),
+          "Invalid native object verdict",
+        );
+      const body = largeResult(input);
+      const actual = download(location);
+      check(
+        actual.status === 200 &&
+          actual.bytes === 1024 * 1024 &&
+          actual.sha256 === createHash("sha256").update(body).digest("hex") &&
+          actual.contentType?.startsWith("application/json"),
+        "Native S3 bytes differ from the one MiB Function result",
+      );
+      const unsigned = new URL(location);
+      unsigned.search = "";
+      check(
+        download(unsigned.href).status === 403,
+        "Native result unexpectedly permits unsigned access",
+      );
+      console.log(
+        JSON.stringify({
+          scenario: mode,
+          resultBytes: actual.bytes,
+          rawResultSha256Matched: true,
+          resultUriPersisted: true,
+          inlineResultAbsent: true,
+          publicResultRedirect: 307,
+          noStore: true,
+          signedGetTtlSeconds: 300,
+          freshClientWithoutKrunAuthorization: true,
+          unsignedObjectStatus: 403,
+        }),
+      );
+    },
     equalOpaque(actual: unknown, expected: unknown, message: string) {
       check(isDeepStrictEqual(actual, expected), message);
     },
@@ -670,7 +815,7 @@ export const scenario = (mode: Mode) => {
         "Owned Run credential witnesses",
         5000,
       );
-      for (const content of podContents) safeContent(content);
+      for (const content of podContents) safePod(content);
       for (const container of ["gateway", "scheduler"])
         safeContent(
           kube(
@@ -678,10 +823,18 @@ export const scenario = (mode: Mode) => {
             "Check process log privacy",
           ),
         );
+      safeContent(
+        kube(
+          ["logs", "-n", "krun-test-minio", "deployment/krun-test-minio"],
+          "Check MinIO log privacy",
+        ),
+      );
       console.log(
         JSON.stringify({
           scenario: mode,
           privatePodManifest: true,
+          privateObjectStoreLogs: true,
+          scopedUploadCapabilityWitnessed: true,
           privateProcessLogs: true,
           runCredentialsWitnessed: runs.length,
           nativeUnknownFinishTime: [...pods.values()].some((pod) =>
@@ -694,7 +847,7 @@ export const scenario = (mode: Mode) => {
       );
     },
     async close() {
-      let cleanupFailed = false;
+      const cleanupFailures: string[] = [];
       try {
         if (applied) {
           // API or observer failure must not bypass this Function's bounded cleanup.
@@ -712,7 +865,7 @@ export const scenario = (mode: Mode) => {
               }
             }
           } catch {
-            cleanupFailed = true;
+            cleanupFailures.push("run-observation");
           }
           try {
             kube(
@@ -746,7 +899,7 @@ export const scenario = (mode: Mode) => {
               60_000,
             );
           } catch {
-            cleanupFailed = true;
+            cleanupFailures.push("resource-delete-or-readback");
           }
           try {
             kube(
@@ -761,7 +914,7 @@ export const scenario = (mode: Mode) => {
               "Scenario Function deletion was not confirmed",
             );
           } catch {
-            cleanupFailed = true;
+            cleanupFailures.push("function-delete-or-readback");
           }
         }
       } finally {
@@ -794,7 +947,7 @@ export const scenario = (mode: Mode) => {
             );
             check(inventory.items.length === 0, "Receiver cleanup was not confirmed");
           } catch {
-            cleanupFailed = true;
+            cleanupFailures.push("receiver-delete-or-readback");
           }
         }
         closing = true;
@@ -827,8 +980,13 @@ export const scenario = (mode: Mode) => {
       }
       credentials.clear();
       forbidden.clear();
+      uploadCapabilities.clear();
+      objectStoreAccessKeyId = "";
       podContents.clear();
-      check(!cleanupFailed, "Owned scenario cleanup failed;private diagnostics withheld");
+      check(
+        cleanupFailures.length === 0,
+        `Owned scenario cleanup failed (${cleanupFailures.join(",")});private diagnostics withheld`,
+      );
     },
   };
 };

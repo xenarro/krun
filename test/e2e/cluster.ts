@@ -27,6 +27,13 @@ const stateSchema = z.object({
   webhookSecrets: z
     .tuple([z.string().regex(/^[a-f0-9]{64}$/), z.string().regex(/^[a-f0-9]{64}$/)])
     .optional(),
+  minioSecrets: z
+    .tuple([z.string().regex(/^[a-f0-9]{32}$/), z.string().regex(/^[a-f0-9]{64}$/)])
+    .optional(),
+  minioImage: z
+    .string()
+    .regex(/^localhost:5001\/krun-test-minio@sha256:[a-f0-9]{64}$/)
+    .optional(),
   image: z
     .string()
     .regex(/^localhost:5001\/krun@sha256:[a-f0-9]{64}$/)
@@ -94,10 +101,9 @@ const kube = (args: string[], operation: string, options: Parameters<typeof run>
 const apply = (value: unknown, operation: string) =>
   kube(["apply", "-f", "-"], operation, { input: JSON.stringify(value) });
 const readManifest = async (name: string, image: string) => {
-  const text = (await readFile(join(root, "test/e2e", name), "utf8")).replaceAll(
-    "__KRUN_E2E_IMAGE__",
-    image,
-  );
+  const text = (await readFile(join(root, "test/e2e", name), "utf8"))
+    .replaceAll("__KRUN_E2E_IMAGE__", image)
+    .replaceAll("__KRUN_E2E_MINIO_IMAGE__", image);
   const path = join(stateDir, name);
   await writeFile(path, text, { mode: 0o600 });
   return path;
@@ -162,6 +168,7 @@ const up = async () => {
   const existingRegistry = registry(pins.registry);
   state ??= { owner, key: randomBytes(32).toString("hex") };
   state.webhookSecrets ??= [randomBytes(32).toString("hex"), randomBytes(32).toString("hex")];
+  state.minioSecrets ??= [randomBytes(16).toString("hex"), randomBytes(32).toString("hex")];
   await saveState(state);
   if (!existingRegistry)
     run(
@@ -309,6 +316,75 @@ const up = async () => {
     },
     "Apply generated disposable webhook rotation keys",
   );
+  // Reuse D106's checksum-enforced upstream binary fixture, never a fake S3 server.
+  run(
+    "docker",
+    ["build", "-t", "krun-test-e2e-minio:local", "-f", "test/minio/Dockerfile", "test/minio"],
+    "build genuine pinned MinIO",
+    { timeout: 600_000 },
+  );
+  run(
+    "docker",
+    ["tag", "krun-test-e2e-minio:local", "localhost:5001/krun-test-minio:e2e"],
+    "tag owned MinIO image",
+  );
+  const minioPush = run(
+    "docker",
+    ["push", "localhost:5001/krun-test-minio:e2e"],
+    "push only owned MinIO image",
+  );
+  state.minioImage = `localhost:5001/krun-test-minio@${parsePushDigest(minioPush.stdout)}`;
+  await saveState(state);
+  const minio = await readManifest("minio.yaml", state.minioImage);
+  apply(
+    parseAllDocuments(await readFile(minio, "utf8"))[0]?.toJSON(),
+    "create owned MinIO namespace",
+  );
+  for (const namespace of ["krun", "krun-test-minio"])
+    apply(
+      {
+        apiVersion: "v1",
+        kind: "Secret",
+        type: "Opaque",
+        metadata: { name: "krun-test-minio-credentials", namespace },
+        stringData: { accessKey: state.minioSecrets[0], secretKey: state.minioSecrets[1] },
+      },
+      "apply generated private MinIO credentials",
+    );
+  kube(["apply", "-f", minio], "deploy genuine restricted MinIO");
+  kube(
+    ["rollout", "status", "deployment/krun-test-minio", "-n", "krun-test-minio", "--timeout=180s"],
+    "await genuine MinIO readiness",
+    { timeout: 200_000 },
+  );
+  kube(
+    [
+      "delete",
+      "job/krun-test-minio-init",
+      "-n",
+      "krun-test-minio",
+      "--ignore-not-found",
+      "--wait=true",
+      "--timeout=60s",
+    ],
+    "remove previous owned bucket initializer",
+  );
+  kube(
+    ["apply", "-f", await readManifest("minio-init.yaml", state.image)],
+    "initialize real S3 bucket",
+  );
+  kube(
+    [
+      "wait",
+      "job/krun-test-minio-init",
+      "-n",
+      "krun-test-minio",
+      "--for=condition=complete",
+      "--timeout=90s",
+    ],
+    "await real S3 bucket creation",
+  );
+  kube(["apply", "-f", "test/e2e/allow-minio.yaml"], "apply narrow jobs-to-MinIO egress");
   kube(["apply", "-f", embedded], "deploy embedded processes");
   kube(
     ["rollout", "status", "deployment/krun", "-n", "krun", "--timeout=180s"],

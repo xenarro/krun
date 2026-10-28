@@ -1,0 +1,5 @@
+ARG KRUN_IMAGE
+FROM ${KRUN_IMAGE}
+COPY --chmod=0555 lib/large-result.ts /fixture/lib/large-result.ts
+COPY --chmod=0555 functions/large_result.ts /fixture/functions/large_result.ts
+ENTRYPOINT ["/nodejs/bin/node", "/fixture/functions/large_result.ts"]
