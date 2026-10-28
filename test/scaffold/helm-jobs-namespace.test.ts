@@ -75,8 +75,11 @@ for (const mode of ["postgres", "embedded"]) {
   });
   it(`keeps job SA and optional admission objects when namespace creation is disabled in ${mode}`, () => {
     const docs = accepted(["jobsNamespace.create=false", "config.maxRunning=300"], mode);
-    for (const kind of ["Namespace", "LimitRange", "ResourceQuota", "NetworkPolicy"])
+    for (const kind of ["Namespace", "LimitRange", "ResourceQuota"])
       expect(docs.filter((d) => d.kind === kind)).toEqual([]);
+    expect(
+      docs.filter((d) => d.kind === "NetworkPolicy" && d.metadata.namespace === "krun-jobs"),
+    ).toEqual([]);
     const account = docs.find(
       (d) => d.kind === "ServiceAccount" && d.metadata.name === "krun-job-default",
     );
@@ -268,14 +271,9 @@ it("renders fixed cluster-scoped digest policy for Jobs and Pods, create and upd
     "kubernetes.io/metadata.name": "krun-jobs",
   });
 });
-it("creates no credentials, Function, cluster-wide RBAC or network policy ahead of its task", () => {
+it("creates no credentials, Function or cluster-wide RBAC", () => {
   for (const d of accepted())
-    expect([
-      "Secret",
-      "ConfigMap",
-      "Function",
-      "ClusterRole",
-      "ClusterRoleBinding",
-      "NetworkPolicy",
-    ]).not.toContain(d.kind);
+    expect(["Secret", "ConfigMap", "Function", "ClusterRole", "ClusterRoleBinding"]).not.toContain(
+      d.kind,
+    );
 });

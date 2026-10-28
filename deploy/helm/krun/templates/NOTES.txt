@@ -1,0 +1,5 @@
+{{- range .Values.jobsNamespace.egressCIDRs }}
+{{- if and (or (eq .cidr "0.0.0.0/0") (eq .cidr "::/0")) (empty .except) }}
+WARNING: jobsNamespace.egressCIDRs contains unrestricted {{ .cidr }} without except; this permits all destinations for that address family. Review the internet-egress recipe in docs/OPERATIONS.md.
+{{- end }}
+{{- end }}
