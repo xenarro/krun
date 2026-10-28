@@ -24,6 +24,9 @@ const lock = `${stateDir}.lock`;
 const stateSchema = z.object({
   owner: z.literal(owner),
   key: z.string().regex(/^[a-f0-9]{64}$/),
+  webhookSecrets: z
+    .tuple([z.string().regex(/^[a-f0-9]{64}$/), z.string().regex(/^[a-f0-9]{64}$/)])
+    .optional(),
   image: z
     .string()
     .regex(/^localhost:5001\/krun@sha256:[a-f0-9]{64}$/)
@@ -158,6 +161,7 @@ const up = async () => {
     throw new StepFailure("Refusing an existing cluster without owned state");
   const existingRegistry = registry(pins.registry);
   state ??= { owner, key: randomBytes(32).toString("hex") };
+  state.webhookSecrets ??= [randomBytes(32).toString("hex"), randomBytes(32).toString("hex")];
   await saveState(state);
   if (!existingRegistry)
     run(
@@ -290,6 +294,20 @@ const up = async () => {
       },
     },
     "apply generated private API key",
+  );
+  apply(
+    {
+      apiVersion: "v1",
+      kind: "Secret",
+      metadata: { name: "krun-e2e-webhook-keys", namespace: "krun" },
+      type: "Opaque",
+      stringData: {
+        current: state.webhookSecrets[0],
+        previous: state.webhookSecrets[1],
+        secrets: state.webhookSecrets.join(","),
+      },
+    },
+    "Apply generated disposable webhook rotation keys",
   );
   kube(["apply", "-f", embedded], "deploy embedded processes");
   kube(

@@ -4,7 +4,7 @@ HTTP-triggered functions, executed as one-off Kubernetes Jobs. Callers submit JS
 
 ## Development status
 
-Core function execution now works locally in disposable embedded-mode kind through the Phase 4 gate. Gateway waits, Run event streams and scheduler webhook delivery are implemented locally as described below. This is not a complete or production-ready release: the full Phase 5 native wait/signed-webhook gate, SDK runtime behaviour, large-result object storage and production Helm acceptance remain later work.
+Core function execution and the Phase 5 native wait/signed-webhook gate now pass locally in disposable embedded-mode kind. Gateway waits, Run event streams and scheduler webhook delivery are implemented as described below. Both P5.4 independent source reviews are complete without a confirmed material defect; post-review integration passes the full local native gate. Exact source-head hosted `verify` and `kind` acceptance now pass; delivery evidence is recorded below. This is not a complete or production-ready release: SDK runtime behaviour, large-result object storage and production Helm acceptance remain later work.
 
 - Strict TypeScript workspace on Node.js 26, with Effect 4 process entrypoints.
 - Zod configuration schemas and Effect services for gateway and scheduler settings.
@@ -51,6 +51,57 @@ Earlier component sections below retain their historical acceptance boundaries;
 this gate is the current Phase 4 execution result. Later phases are not complete.
 See [test/e2e/README.md](test/e2e/README.md).
 
+## Local wait and signed-webhook end-to-end gate (P5.4)
+
+The local `make e2e` gate passes all seven real Kubernetes scenarios: the five
+Phase 4 regressions plus wait and signed webhook delivery, after the mandatory
+open/deny/reopen NetworkPolicy probe. Each scenario retains its actual
+Run-credential, private Pod-manifest/process-log and owned-cleanup witnesses.
+The existing worker, hook/test-timeout and visible retry budgets are unchanged.
+
+- `wait`: `POST .../runs?wait=30s` returns 201 only after the real Job succeeds,
+  carrying its inline result and FULL input. `POST ...:wait` on that same Run
+  returns 200 with the identical complete FULL resource, not a selected subset.
+- `webhook`: an in-cluster restricted receiver Pod returns 500 once, then 200.
+  The scheduler waits the real persistent one-minute retry; both requests carry
+  the same delivery ID, Run ID and exact BASIC bytes. The receiver independently
+  verifies the timestamped raw-byte HMAC with each of two rotation keys. Retry
+  timestamps and attempt trace contexts are fresh. No input, result, log tail
+  or error details can pass the canonical BASIC schema.
+
+The disposable fixture explicitly matches kind's Pod and Service CIDRs on both
+serving processes and permits only the generated receiver hostname pattern.
+Signing material is generated into private owned state and Kubernetes Secrets,
+referenced rather than embedded in Pod manifests. Receiver ingress is limited
+to the existing serving Pods; jobs-namespace isolation is unchanged. A
+read-only single-file ConfigMap mount preserves Node's entrypoint/import path.
+The same receiver source uses source contracts on the host and the matching
+compiled contract in the real runtime image, without a host `dist` prerequisite.
+
+Twelve native HTTP receiver controls cover raw-byte verification, both keys in
+either order, stale/future timestamps, missing/duplicated/malformed signatures,
+tampered bytes, FULL-body rejection, wrong Run/function bindings and detectable
+changed retry identity/body. Fresh-checkout resolution, fixture security and
+actual-credential regression controls also pass. The initial receiver mount
+failure is retained and reproduced; the corrected complete seven-scenario gate
+passes without skipped cases. Both independent source reviews found no confirmed
+material defect; their incomplete full-gate attempts are retained, not promoted
+to passes. Exclusive integration replays all fourteen independent receiver
+controls and reruns the canonical seven-scenario gate with every actual
+wait/signature/privacy witness. The original native cleanup/export failures and
+outer-budget stops remain qualified separately from this passing integration.
+Exact source `94317d6a0e4b0f637a8ea549d4c43644d22bbda3` passes
+[hosted CI](https://github.com/xenarro/krun/actions/runs/40593392023): `verify` runs
+1,654 TypeScript tests and one Python test, generators, the actual runtime
+container smokes/identity, Helm lint, production audit and fixable-critical scan;
+`kind` passes all seven scenarios, NetworkPolicy enforcement and all seven
+actual Run-credential/privacy witnesses, followed by owned cleanup.
+[PR #66](https://github.com/xenarro/krun/pull/66) targets `main` and awaits the required
+independent repository approval; no auto-merge or protection bypass is enabled.
+This PLAN/README tracking update receives its own fresh `make check` and
+exact-head hosted acceptance. Production/chart, SDK and object-storage
+acceptance remain later work.
+
 ## Gateway waits (P5.1)
 
 `CreateRun?wait=<duration>` retains status 201. `POST /v1/functions/{function}/runs/{run}:wait`
@@ -73,8 +124,8 @@ existing native kind regression scenarios pass. [Exact source CI](https://github
 verifies `f211ba0` with hosted `verify` and `kind`. [PR #60](https://github.com/xenarro/krun/pull/60)
 was independently approved and merged; this task's PLAN/README tracking receives
 its own fresh check and exact-head hosted acceptance in a follow-up PR.
-The complete Phase 5 wait/SSE/signed-webhook gate remains P5.4; this slice does
-not implement SSE or webhook delivery.
+The native wait/signed-webhook gate is recorded separately under P5.4 above;
+this original wait-only slice adds neither SSE nor webhook delivery.
 
 ## Gateway Run event streams (P5.2)
 
@@ -105,9 +156,9 @@ retained; its test-only correction separates independent scenarios without
 changing assertions or per-scenario deadlines. Source integrated externally
 through PR #62 and the independently approved parent PR #61; fresh main is
 content-equal to the accepted source. This documentation/tracking follow-up
-receives its own checks and protected-main approval separately. The full Phase 5
-kind wait/signed-webhook gate remains P5.4; this slice adds no webhook delivery
-or production-completion claim.
+receives its own checks and protected-main approval separately. The native
+wait/signed-webhook gate is recorded separately under P5.4 above; this original
+stream-only slice adds no webhook delivery or production-completion claim.
 
 ## Local webhook deliveries (P5.3)
 
@@ -158,9 +209,9 @@ PostgreSQL transport reproduction is claimed. A historical unchanged claim-test
 deadline remains qualified by a complete passing rerun without relaxed budgets.
 Source PR #64 and prior tracking PR #63 integrated through independent approval
 outside this delivery job. Normal ancestry reconciliation preserves the accepted
-source; tracking documentation receives its own fresh checks. The complete
-Phase 5 native wait/signed-webhook gate remains P5.4. No production or
-publication completion is claimed.
+source; tracking documentation receives its own fresh checks. The native
+wait/signed-webhook gate is recorded separately under P5.4 above. No production
+or publication completion is claimed.
 
 ## Disposable kind foundation (P4.12)
 

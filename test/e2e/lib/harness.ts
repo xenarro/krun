@@ -7,10 +7,12 @@ import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import { parse } from "yaml";
 import { z } from "zod";
+import { publicSchemas } from "../../../apps/gateway/src/public-contracts.js";
 import { contextArgs, parsePushDigest } from "./contracts.js";
 import { podSchema } from "./pod.js";
 import { runCredentials } from "./run-credentials.js";
 import { eventually } from "./wait.js";
+import { receiverSnapshotSchema, webhookResources } from "./webhook-fixture.js";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const owner = createHash("sha256").update(root).digest("hex").slice(0, 16);
@@ -21,36 +23,11 @@ const modes = [
   "exit_code_status",
   "image_pull_backoff",
   "heartbeat_timeout",
+  "wait",
+  "webhook",
 ] as const;
 type Mode = (typeof modes)[number];
-const runSchema = z.object({
-  name: z.string().regex(/^functions\/[^/]+\/runs\/[^/]+$/),
-  state: z.enum([
-    "QUEUED",
-    "SCHEDULED",
-    "RUNNING",
-    "SUCCEEDED",
-    "FAILED",
-    "CANCELLING",
-    "CANCELLED",
-  ]),
-  jobName: z.string().optional(),
-  failureReason: z.string().optional(),
-  logTail: z.string().optional(),
-  result: z.unknown().optional(),
-  endTime: z.string().optional(),
-  runtimeStatus: z
-    .object({ message: z.string(), progress: z.number().optional(), reportTime: z.string() })
-    .optional(),
-  jobStatus: z
-    .object({
-      podName: z.string().optional(),
-      phase: z.string().optional(),
-      reason: z.string().optional(),
-      exitCode: z.number().optional(),
-    })
-    .optional(),
-});
+const runSchema = publicSchemas.Run;
 type Run = z.infer<typeof runSchema>;
 
 function check(value: unknown, message: string): asserts value {
@@ -77,6 +54,7 @@ export const scenario = (mode: Mode) => {
   let key = "";
   let url = "";
   let applied = false;
+  let receiverApplied = false;
   let closing = false;
   let watchBroken = false;
   let manifestObserved = false;
@@ -115,7 +93,12 @@ export const scenario = (mode: Mode) => {
       "A presigned URL appeared in a process log or Pod manifest",
     );
   };
-  const api = async (path: string, method = "GET", body?: unknown): Promise<Run> => {
+  const api = async (
+    path: string,
+    method = "GET",
+    body?: unknown,
+    timeout = 3000,
+  ): Promise<Run> => {
     let response: Response;
     try {
       response = await fetch(`${url}/v1/${path}`, {
@@ -125,12 +108,13 @@ export const scenario = (mode: Mode) => {
           ...(body === undefined ? {} : { "content-type": "application/json" }),
         },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-        signal: AbortSignal.timeout(3000),
+        signal: AbortSignal.timeout(timeout),
       });
     } catch {
       throw new Error("Public API transport failed");
     }
-    if (response.status !== (method === "POST" && !path.endsWith(":cancel") ? 201 : 200))
+    const create = method === "POST" && !path.endsWith(":cancel") && !path.endsWith(":wait");
+    if (response.status !== (create ? 201 : 200))
       throw new Error(`Public API returned HTTP ${response.status}; private body withheld`);
     let value: unknown;
     try {
@@ -316,6 +300,7 @@ export const scenario = (mode: Mode) => {
           owner: z.literal(owner),
           key: z.string().regex(/^[a-f0-9]{64}$/),
           image: z.string(),
+          webhookSecrets: z.tuple([z.string(), z.string()]),
         }),
         json(readFileSync(join(privateDir, "state.json"), "utf8")),
         "Missing owned foundation state; run make e2e",
@@ -336,6 +321,8 @@ export const scenario = (mode: Mode) => {
       );
       key = state.key;
       forbidden.add(key);
+      for (const secret of [...state.webhookSecrets, state.webhookSecrets.join(",")])
+        forbidden.add(secret);
       let image = `localhost:5001/krun-test-e2e-unpullable@sha256:${"0".repeat(64)}`;
       if (mode !== "image_pull_backoff") {
         const curl = decode(
@@ -351,7 +338,7 @@ export const scenario = (mode: Mode) => {
             "--build-arg",
             `CURL_IMAGE=${curl}`,
             "--build-arg",
-            `SCENARIO=${mode}`,
+            `SCENARIO=${mode === "wait" || mode === "webhook" ? "success" : mode}`,
             "--tag",
             tag,
             "test/e2e/functions",
@@ -366,6 +353,28 @@ export const scenario = (mode: Mode) => {
           "Push curl fixture only to owned local registry",
         );
         image = `${tag.slice(0, -4)}@${parsePushDigest(pushed)}`;
+      }
+      if (mode === "webhook") {
+        // Set before apply: a partially applied List still belongs to this cleanup.
+        receiverApplied = true;
+        kube(
+          ["apply", "-f", "-"],
+          "Apply isolated webhook receiver",
+          JSON.stringify(
+            webhookResources(
+              name,
+              state.image,
+              readFileSync(join(root, "test/e2e/lib/webhook-receiver.ts"), "utf8"),
+            ),
+          ),
+        );
+        kube(
+          ["wait", "-n", "krun", `pod/${name}`, "--for=condition=Ready", "--timeout=90s"],
+          "Await actual receiver readiness",
+        );
+        safeContent(
+          kube(["get", "pod", name, "-n", "krun", "-o", "json"], "Check receiver Pod privacy"),
+        );
       }
       kube(
         ["apply", "-f", "-"],
@@ -452,11 +461,102 @@ export const scenario = (mode: Mode) => {
       forbidden.add(marker);
       return { marker, nested: { items: [1, true, "opaque"] } };
     },
-    async submit(input?: unknown) {
-      const run = await api(`functions/${name}/runs`, "POST", { input: input ?? {} });
+    async submit(input?: unknown, options: { wait?: boolean; callback?: boolean } = {}) {
+      check(!options.callback || mode === "webhook", "Callback requires the owned receiver");
+      const marker = randomBytes(24).toString("hex");
+      forbidden.add(marker);
+      const run = await api(
+        `functions/${name}/runs${options.wait ? "?wait=30s" : ""}`,
+        "POST",
+        {
+          input: input ?? {},
+          ...(options.callback
+            ? {
+                callback: {
+                  url: `http://${name}.krun.svc.cluster.local:8080/hook?canary=${marker}`,
+                },
+              }
+            : {}),
+        },
+        options.wait ? 35_000 : 3000,
+      );
       credentials.bind(run.name);
       runs.push(run);
       return run;
+    },
+    wait(run: Run) {
+      return api(`${run.name}:wait`, "POST", { timeout: "30s" }, 35_000);
+    },
+    async deliveries(run: Run) {
+      check(receiverApplied, "No owned webhook receiver");
+      const receipts = await eventually(
+        async () =>
+          decode(
+            receiverSnapshotSchema,
+            json(
+              kube(
+                [
+                  "exec",
+                  "-n",
+                  "krun",
+                  `pod/${name}`,
+                  "--",
+                  "/nodejs/bin/node",
+                  "-e",
+                  "fetch('http://127.0.0.1:8080/observations', {signal:AbortSignal.timeout(2000)}).then(async r => {if (!r.ok) process.exit(1);process.stdout.write(await r.text())}).catch(() => process.exit(1))",
+                ],
+                "Read sanitized receiver verdict",
+              ),
+            ),
+            "Invalid sanitized receiver verdict",
+          ),
+        (values) => {
+          healthyWatch();
+          return values.some((value) => !value.valid) || values.length > 2
+            ? "fail"
+            : values.length === 2
+              ? "done"
+              : "wait";
+        },
+        "Native one-minute webhook retry",
+        100_000,
+        1000,
+      );
+      const [first, second] = receipts;
+      check(
+        first && second && first.responseStatus === 500 && second.responseStatus === 200,
+        "Receiver did not return 500 then 200",
+      );
+      check(
+        first.deliveryId === second.deliveryId &&
+          first.runId === run.name.split("/").at(-1) &&
+          second.runId === first.runId,
+        "Delivery identity changed or belongs to another Run",
+      );
+      check(
+        receipts.every((value) => value.v1Count === 2 && value.sameBody),
+        "Rotation signatures or raw body changed",
+      );
+      check(second.timestamp > first.timestamp, "Retry did not carry a fresh send timestamp");
+      check(
+        Boolean(first.traceparent && second.traceparent) &&
+          first.traceparent !== second.traceparent,
+        "Retry did not carry its own valid attempt trace context",
+      );
+      safeContent(kube(["logs", "-n", "krun", `pod/${name}`], "Check receiver log privacy"));
+      console.log(
+        JSON.stringify({
+          scenario: mode,
+          nativeReceiver: true,
+          attempts: receipts.length,
+          responseStatuses: receipts.map((r) => r.responseStatus),
+          distinctDeliveries: new Set(receipts.map((r) => r.deliveryId)).size,
+          verifiedRotationKeys: 2,
+          exactRawBytes: true,
+          freshAttemptTimestamp: true,
+          distinctAttemptTrace: true,
+        }),
+      );
     },
     until,
     async terminal(run: Run, state: "SUCCEEDED" | "FAILED", timeout = 120_000) {
@@ -665,6 +765,38 @@ export const scenario = (mode: Mode) => {
           }
         }
       } finally {
+        if (receiverApplied) {
+          try {
+            const resources = "pods,services,configmaps,networkpolicies";
+            const receiverSelector = `krun.io/e2e-receiver=${name}`;
+            kube(
+              [
+                "delete",
+                resources,
+                "-n",
+                "krun",
+                "-l",
+                receiverSelector,
+                "--wait=true",
+                "--timeout=60s",
+              ],
+              "Clean only this receiver's resources",
+            );
+            const inventory = decode(
+              z.object({ items: z.array(z.unknown()) }),
+              json(
+                kube(
+                  ["get", resources, "-n", "krun", "-l", receiverSelector, "-o", "json"],
+                  "Read back receiver cleanup",
+                ),
+              ),
+              "Invalid receiver cleanup inventory",
+            );
+            check(inventory.items.length === 0, "Receiver cleanup was not confirmed");
+          } catch {
+            cleanupFailed = true;
+          }
+        }
         closing = true;
         await Promise.all(
           children.map(async (child) => {
