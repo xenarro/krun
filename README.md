@@ -213,6 +213,50 @@ source; tracking documentation receives its own fresh checks. The native
 wait/signed-webhook gate is recorded separately under P5.4 above. No production
 or publication completion is claimed.
 
+## Object storage adapter (P6.1)
+
+The shared `ObjectStore` Effect service now presigns PUT and GET URLs and checks
+object existence against a real MinIO testcontainer. PUT URLs use the requested
+whole-second TTL, sign only the host and accept `Content-Type: application/json`
+without a checksum or size constraint. GET URLs expire after 300 seconds and
+serve the identical uploaded bytes. Keys are fixed to `runs/<UUIDv7>/result.json`
+in the configured bucket; foreign or noncanonical result references fail closed.
+Signing dates come from Effect's Clock.
+
+One scoped, path-style AWS client uses `requestChecksumCalculation: WHEN_REQUIRED`,
+explicit credentials and no hidden SDK retries. Ten-second Effect deadlines and
+caller interruption abort native HEAD requests; scope release destroys pooled
+sockets. A missing object returns false only after the bucket is confirmed
+accessible. A missing bucket, permissions, transport or service error stays a
+bounded `ObjectStoreError`, without credentials, URLs or native causes.
+
+Run `pnpm exec vitest run packages/shared/src/objstore` for the 23 current
+adapter, MinIO and lifecycle controls. The disposable fixture builds genuine
+upstream MinIO release binaries with enforced SHA256 digests on a pinned base,
+because the vendor's public registry endpoints rejected anonymous pulls for
+that release. It runs nonroot, capability-free with generated private credentials
+and owned cleanup; no fake object-store response substitutes for MinIO.
+
+Both independent source reviews found no confirmed material defect. Their nine
+additional native HTTP controls and two genuine-MinIO media/size/expiry controls
+pass. One scheduler-image shutdown deadline failed during review; its unchanged
+retry passes, and the original cause remains unestablished. The failed receipt
+is retained rather than promoted to a pass or hidden by a larger timeout.
+
+Adapter source `fb4228a6f984c50536a501e8ae96476ff96da960` passes exact-head hosted verification and the
+seven-scenario native regression: https://github.com/xenarro/krun/actions/runs/40605426490 in PR #67
+(https://github.com/xenarro/krun/pull/67), stacked on the unmerged P5.4 parent. Fresh
+delivery `make check` passes 1,677 TypeScript tests plus one Python test. Seven
+privacy oracles cover eight actual Run credential contexts; exit_code_status
+passes on its existing configured retry. No retry or deadline was relaxed, and
+the original first-attempt cause remains unestablished. Only P6.1 is checked;
+tracking documentation receives separate fresh checks.
+
+This is verified adapter delivery, not production or complete Phase 6 acceptance.
+Scheduler/gateway wiring and per-Function TTL selection remain P6.2; the complete
+Phase 6 kind gate with a 1 MB result and public 307 redirect remains P6.3. No
+auto-merge or protection bypass is enabled; pushed/green does not mean merged.
+
 ## Disposable kind foundation (P4.12)
 
 `make kind-up` now builds and deploys the current hardened image into the owned
