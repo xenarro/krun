@@ -477,8 +477,14 @@ match (213 allowed, 315 denied), with exact Role/binding readback and access
 revocation after uninstall. This is a task-resource install, not a serving-chart
 or data-plane gate.
 
-Independent reviews and scoped collision repair precede authorized delivery;
-no PLAN closure, merge, publication or production write is claimed.
+Reviewed source `77f49198db688461fbbfc80c97eb71b404c792fe` is pushed and green in [PR #76](https://github.com/xenarro/krun/pull/76)
+against main. [Exact source CI](https://github.com/xenarro/krun/actions/runs/40767862469)
+passes verify/kind with 1,882 TypeScript tests and one Python test, current-source
+image/security checks and the eight existing raw-manifest native/privacy
+regressions. Only P7.4b closes after that acceptance. The PLAN/README-only tracking
+update receives a separate fresh precommit full check and exact-head hosted CI.
+The PR remains open for required independent main review; pushed/green is not
+merged. No automatic merge, protection bypass, publication or production write.
 NetworkPolicies, optional features and the full Phase7 chart-installed
 serving/data-plane/upgrade gate remain later tasks.
 
