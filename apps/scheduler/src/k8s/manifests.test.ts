@@ -5,6 +5,7 @@ import { functionResourceSchema } from "@krun/shared/dist/functions/schema.js";
 import { ObjectSerializer } from "@kubernetes/client-node/dist/gen/models/ObjectSerializer.js";
 import { Effect, Result } from "effect";
 import { expect, it } from "vitest";
+import { privatePodManifest } from "../../../../test/e2e/lib/object-store.js";
 import { buildJob, buildSecret, ManifestInvalid } from "./manifests.js";
 
 const run = {
@@ -249,4 +250,116 @@ it("fails closed on invalid namespaces, heartbeat duration and Secret identity",
       }),
     ),
   ).toBe(true);
+});
+
+const privacyId = "0192f000-0000-7000-8000-000000000001";
+const privacyAccessKeyId = randomBytes(16).toString("hex");
+const privacySigned = `http://krun-test-minio.krun-test-minio.svc.cluster.local:9000/krun-test-results/runs/${privacyId}/result.json?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=${privacyAccessKeyId}%2F20261028%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20261028T000000Z&X-Amz-SignedHeaders=host&X-Amz-Expires=120&X-Amz-Signature=${"a".repeat(64)}`;
+const privacyPod = () => ({
+  metadata: { labels: { "krun.io/run-id": privacyId } },
+  spec: {
+    containers: [
+      {
+        name: "function",
+        image: `registry.example.invalid/privacy@sha256:${"a".repeat(64)}`,
+        env: [
+          { name: "KRUN_RUN_ID", value: privacyId },
+          { name: "KRUN_RESULT_UPLOAD_URL", value: privacySigned },
+          {
+            name: "KRUN_TOKEN",
+            valueFrom: { secretKeyRef: { name: `krun-${privacyId}`, key: "token" } },
+          },
+        ],
+      },
+    ],
+  },
+});
+
+const nativePrivacyPod = (spec: object = {}) => {
+  const original = privacyPod();
+  return JSON.parse(
+    JSON.stringify(
+      ObjectSerializer.serialize(
+        {
+          ...original,
+          apiVersion: "v1",
+          kind: "Pod",
+          metadata: {
+            ...original.metadata,
+            name: "krun-test-reference",
+            namespace: "krun-test-postgres-jobs",
+          },
+          spec: { ...original.spec, restartPolicy: "Never", ...spec },
+        },
+        "V1Pod",
+        "",
+      ),
+    ),
+  );
+};
+const platformSecretNames = [
+  "krun-test-minio-credentials",
+  "krun-test-postgres",
+  "krun-e2e-keys",
+  "krun-e2e-webhook-keys",
+];
+for (const secretName of platformSecretNames) {
+  for (const location of ["imagePullSecrets", "nodePublishSecretRef"] as const) {
+    it(`rejects native-serialized ${location} platform reference ${secretName} before capability observation`, () => {
+      const value = nativePrivacyPod(
+        location === "imagePullSecrets"
+          ? { imagePullSecrets: [{ name: secretName }] }
+          : {
+              volumes: [
+                {
+                  name: "platform",
+                  csi: {
+                    driver: "example.invalid/csi",
+                    nodePublishSecretRef: { name: secretName },
+                  },
+                },
+              ],
+            },
+      );
+      const reference =
+        location === "imagePullSecrets"
+          ? value.spec.imagePullSecrets[0].name
+          : value.spec.volumes[0].csi.nodePublishSecretRef.name;
+      expect(reference === secretName).toBe(true);
+      let observed = false;
+      expect(() =>
+        privatePodManifest(JSON.stringify(value), () => {
+          observed = true;
+        }),
+      ).toThrow("Invalid native upload URL witness");
+      expect(observed).toBe(false);
+    });
+  }
+}
+it("retains native per-Run references in both additional fields and the legitimate namespace substring", () => {
+  const name = `krun-${privacyId}`;
+  const value = nativePrivacyPod({
+    imagePullSecrets: [{ name }],
+    volumes: [
+      { name: "run", csi: { driver: "example.invalid/csi", nodePublishSecretRef: { name } } },
+    ],
+  });
+  expect(value.metadata.namespace).toBe("krun-test-postgres-jobs");
+  expect(value.spec.imagePullSecrets[0].name).toBe(name);
+  expect(value.spec.volumes[0].csi.nodePublishSecretRef.name).toBe(name);
+  expect(() => privatePodManifest(JSON.stringify(value))).not.toThrow();
+});
+it("does not mistake native non-Secret name/driver fields for a platform reference", () => {
+  for (const name of platformSecretNames) {
+    const value = nativePrivacyPod({
+      volumes: [
+        { name: "data", configMap: { name } },
+        { name: "csi", csi: { driver: name } },
+      ],
+    });
+    value.metadata.name = name;
+    expect(value.spec.volumes[0].configMap.name).toBe(name);
+    expect(value.spec.volumes[1].csi.driver).toBe(name);
+    expect(() => privatePodManifest(JSON.stringify(value))).not.toThrow();
+  }
 });

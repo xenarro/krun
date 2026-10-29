@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
-import { parse, parseAllDocuments } from "yaml";
+import { parse } from "yaml";
+import { chartValues } from "../e2e/lib/chart.js";
 import {
   assertRegistryOwner,
   contextArgs,
@@ -83,38 +84,24 @@ it("refuses to adopt or delete another registry at the fixed recipe name", () =>
   ).toThrow();
 });
 
-it("keeps raw job isolation and embedded workload security explicit", () => {
-  const jobs = parseAllDocuments(read("test/e2e/jobs-namespace.yaml")).map((doc) => doc.toJSON());
-  const namespace = jobs.find((doc) => doc.kind === "Namespace");
-  expect(namespace.metadata.labels["pod-security.kubernetes.io/enforce"]).toBe("restricted");
-  expect(namespace.metadata.labels["pod-security.kubernetes.io/enforce-version"]).toBe("v1.33");
-  const deny = jobs.find(
-    (doc) => doc.kind === "NetworkPolicy" && doc.metadata.name === "krun-jobs-deny-all",
-  );
-  expect(deny.spec).toEqual({ podSelector: {}, policyTypes: ["Ingress", "Egress"] });
-  const account = jobs.find((doc) => doc.kind === "ServiceAccount");
-  expect(account.automountServiceAccountToken).toBe(false);
-  const workload = parseAllDocuments(read("test/e2e/krun-embedded.yaml"))
-    .map((doc) => doc.toJSON())
-    .find((doc) => doc.kind === "Deployment");
-  expect(
-    workload.spec.template.spec.containers.map((container: { name: string }) => container.name),
-  ).toEqual(["gateway", "scheduler"]);
-  expect(workload.spec.template.spec.initContainers[0].args).toEqual(["migrate"]);
-  expect(workload.spec.template.spec.securityContext.runAsNonRoot).toBe(true);
-  for (const container of workload.spec.template.spec.containers) {
-    expect(container.securityContext.readOnlyRootFilesystem).toBe(true);
-    expect(container.securityContext.capabilities.drop).toEqual(["ALL"]);
+it("uses the chart for both isolated restricted modes without parallel raw policy/workload definitions", () => {
+  for (const mode of ["embedded", "postgres"] as const) {
+    const values = chartValues(mode, `localhost:5001/krun@sha256:${"a".repeat(64)}`);
+    expect(values.db.mode).toBe(mode);
+    expect(values.jobsNamespace.name).toBe(`krun-test-${mode}-jobs`);
+    expect(values.jobsNamespace.keep).toBe(false);
+    expect(values.crds).toEqual({ install: true, keep: false });
+    expect(values.scheduler.replicas).toBe(mode === "postgres" ? 2 : 1);
+    expect(values.objectStorage.egress).toEqual([
+      {
+        namespaceSelector: { matchLabels: { "kubernetes.io/metadata.name": "krun-test-minio" } },
+        podSelector: { matchLabels: { "app.kubernetes.io/name": "krun-test-minio" } },
+      },
+    ]);
   }
-  const scheduler = workload.spec.template.spec.containers[1];
-  expect(
-    scheduler.env.find((env: { name: string }) => env.name === "KRUN_POD_NAME").valueFrom.fieldRef
-      .fieldPath,
-  ).toBe("metadata.name");
-  expect(
-    workload.spec.template.spec.volumes.find((volume: { name: string }) => volume.name === "data")
-      .emptyDir,
-  ).toEqual({});
+  const source = read("test/e2e/cluster.ts");
+  expect(source).toContain('"deploy/helm/krun"');
+  expect(source).not.toContain("krun-embedded.yaml");
 });
 
 it("keeps mandatory infrastructure verification outside the zero-scenario runner", () => {
@@ -123,4 +110,14 @@ it("keeps mandatory infrastructure verification outside the zero-scenario runner
   expect(make).toContain("node test/e2e/cluster.ts verify");
   expect(make).toContain("vitest run --config test/e2e/vitest.config.ts");
   expect(read("test/e2e/vitest.config.ts")).toContain("passWithNoTests: false");
+});
+
+it("lets owned PID1 probe servers and clients exit cooperatively without extending cleanup budgets", () => {
+  const stop = "process.once('SIGTERM',()=>process.exit(0));";
+  const source = read("test/e2e/cluster.ts");
+  expect(source).toContain(`${stop}require('node:http')`);
+  expect(source).toContain(`${stop}setInterval`);
+  expect(read("test/e2e/lib/chart-harness.ts")).toContain(`${stop}setInterval`);
+  expect(source).toContain('"--timeout=60s"');
+  expect(source).not.toContain('"--grace-period=0"');
 });

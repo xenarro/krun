@@ -1,27 +1,33 @@
 import { z } from "zod";
 
 const runId = z.uuidv7().refine((value) => value === value.toLowerCase());
-const ownedSecret = z.object({
-  metadata: z.object({
-    name: z.string(),
-    namespace: z.literal("krun-jobs"),
-    uid: z.string().min(1),
-    resourceVersion: z.string().min(1),
-    labels: z.object({
-      "krun.io/function": z.string(),
-      "krun.io/run-id": runId,
-      "krun.io/created-by": z.literal("e2e"),
-      "app.kubernetes.io/managed-by": z.literal("krun"),
+const ownedSecret = (namespace: string) =>
+  z.object({
+    metadata: z.object({
+      name: z.string(),
+      namespace: z.literal(namespace),
+      uid: z.string().min(1),
+      resourceVersion: z.string().min(1),
+      labels: z.object({
+        "krun.io/function": z.string(),
+        "krun.io/run-id": runId,
+        "krun.io/created-by": z.literal("e2e"),
+        "app.kubernetes.io/managed-by": z.literal("krun"),
+      }),
     }),
-  }),
-  immutable: z.literal(true),
-  type: z.literal("Opaque"),
-  data: z.object({ token: z.string() }),
-});
+    immutable: z.literal(true),
+    type: z.literal("Opaque"),
+    data: z.object({ token: z.string() }),
+  });
 
 // These values must never leave this test process,including error diagnostics.
 // WATCH can precede the CreateRun response;bind only that actual response's ID.
-export const runCredentials = (functionName: string, forbidden: Set<string>) => {
+export const runCredentials = (
+  functionName: string,
+  forbidden: Set<string>,
+  namespace = "krun-jobs",
+) => {
+  const schema = ownedSecret(namespace);
   const observed = new Map<string, { uid: string; token: string }>();
   const bound = new Set<string>();
   const identity = (resource: string) => {
@@ -33,7 +39,7 @@ export const runCredentials = (functionName: string, forbidden: Set<string>) => 
   };
   return {
     observe(value: unknown) {
-      const parsed = ownedSecret.safeParse(value);
+      const parsed = schema.safeParse(value);
       if (!parsed.success) throw new Error("Invalid owned Run credential witness");
       const secret = parsed.data;
       const id = secret.metadata.labels["krun.io/run-id"];

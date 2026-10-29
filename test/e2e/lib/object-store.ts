@@ -16,6 +16,47 @@ const witness = z.looseObject({
   }),
 });
 
+const platformSecrets = new Set([
+  "krun-test-minio-credentials",
+  "krun-test-postgres",
+  "krun-e2e-keys",
+  "krun-e2e-webhook-keys",
+]);
+// Inspect reference fields,not substrings: a fresh jobs namespace legitimately
+// contains "krun-test-postgres",but may never reference the platform DB Secret.
+const platformSecretReference = (value: unknown): boolean => {
+  if (Array.isArray(value)) return value.some(platformSecretReference);
+  if (!value || typeof value !== "object") return false;
+  for (const [key, child] of Object.entries(value)) {
+    if (key === "secretName" && typeof child === "string" && platformSecrets.has(child))
+      return true;
+    if (
+      ["secretKeyRef", "secretRef", "secret", "nodePublishSecretRef"].includes(key) &&
+      child &&
+      typeof child === "object" &&
+      "name" in child &&
+      typeof child.name === "string" &&
+      platformSecrets.has(child.name)
+    )
+      return true;
+    if (
+      key === "imagePullSecrets" &&
+      Array.isArray(child) &&
+      child.some(
+        (reference) =>
+          reference &&
+          typeof reference === "object" &&
+          "name" in reference &&
+          typeof reference.name === "string" &&
+          platformSecrets.has(reference.name),
+      )
+    )
+      return true;
+    if (platformSecretReference(child)) return true;
+  }
+  return false;
+};
+
 // D107 requires this one capability in the Function environment. Do not exempt
 // other fields, other containers, foreign keys, input, or inline credentials.
 export const privatePodManifest = (
@@ -45,7 +86,7 @@ export const privatePodManifest = (
     functions.length !== 1 ||
     !container ||
     container.env.some((env) => /^(?:KRUN_S3_|MINIO_ROOT_)/.test(env.name)) ||
-    content.includes("krun-test-minio-credentials")
+    platformSecretReference(pod.spec)
   )
     return fail();
   const uploads = container.env.filter((env) => env.name === "KRUN_RESULT_UPLOAD_URL");

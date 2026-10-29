@@ -13,9 +13,14 @@ export const receiverSnapshotSchema = z.array(
   }),
 );
 
-export const webhookResources = (name: string, image: string, source: string) => {
+export const webhookResources = (
+  name: string,
+  image: string,
+  source: string,
+  namespace = "krun",
+) => {
   const labels = { "krun.io/e2e-receiver": name };
-  const metadata = { name, namespace: "krun", labels };
+  const metadata = { name, namespace, labels };
   return {
     apiVersion: "v1",
     kind: "List",

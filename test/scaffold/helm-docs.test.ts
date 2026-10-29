@@ -320,7 +320,7 @@ it("documents the actual embedded PVC/database paths from the rendered container
 });
 
 it.each(["postgres", "embedded"])(
-  "qualifies unwired storage/webhook values against actual %s serving env",
+  "documents wired storage/webhook values against actual %s serving env",
   (mode) => {
     const settings = {
       apiKeys: { existingSecret: "krun-test-docs-keys" },
@@ -362,10 +362,23 @@ it.each(["postgres", "embedded"])(
               "KRUN_S3_SECRET_KEY",
             ].includes(env.name) || env.name.startsWith("KRUN_WEBHOOK_"),
         ),
-      ).toEqual([]);
+      ).toHaveLength(container.name === "scheduler" ? 8 : 7);
+      expect(
+        container.env.find((env: { name: string }) => env.name === "KRUN_S3_REGION").value,
+      ).toBe("us-east-1");
+      expect(
+        container.env.find((env: { name: string }) => env.name === "KRUN_WEBHOOK_SECRET"),
+      ).toEqual(
+        container.name === "scheduler"
+          ? {
+              name: "KRUN_WEBHOOK_SECRET",
+              valueFrom: { secretKeyRef: { name: "krun-test-docs-webhook", key: "secret" } },
+            }
+          : undefined,
+      );
     }
     const readme = text(root, `${chart}/README.md`);
-    expect(readme).toContain("Storage and webhook chart-to-runtime wiring is pending P7.6");
+    expect(readme).toContain("S3 settings are wired into both serving processes");
     expect(readme).toContain("no runtime region default");
     for (const key of [
       "objectStorage.enabled",
@@ -377,7 +390,7 @@ it.each(["postgres", "embedded"])(
       "webhooks.allowedCIDRs",
       "webhooks.existingSecret",
     ]) {
-      expect(rows(readme).get(key)?.description).toContain("not wired");
+      expect(rows(readme).get(key)?.description).not.toContain("not wired");
     }
   },
 );

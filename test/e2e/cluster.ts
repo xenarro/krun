@@ -7,6 +7,7 @@ import { setTimeout } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { parse, parseAllDocuments } from "yaml";
 import { z } from "zod";
+import { chartLayout, chartValues, type DatabaseMode, databaseMode, release } from "./lib/chart.ts";
 import {
   assertRegistryOwner,
   contextArgs,
@@ -24,6 +25,11 @@ const lock = `${stateDir}.lock`;
 const stateSchema = z.object({
   owner: z.literal(owner),
   key: z.string().regex(/^[a-f0-9]{64}$/),
+  mode: databaseMode.optional(),
+  postgresPassword: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
   webhookSecrets: z
     .tuple([z.string().regex(/^[a-f0-9]{64}$/), z.string().regex(/^[a-f0-9]{64}$/)])
     .optional(),
@@ -282,40 +288,6 @@ const up = async () => {
   const pushed = run("docker", ["push", "localhost:5001/krun:e2e"], "push only to local registry");
   state.image = `localhost:5001/krun@${parsePushDigest(pushed.stdout)}`;
   await saveState(state);
-  kube(["apply", "-f", "deploy/crds/functions.krun.io.yaml"], "apply generated Function CRD");
-  kube(
-    ["wait", "--for=condition=Established", "crd/functions.krun.io", "--timeout=60s"],
-    "wait for Function CRD",
-  );
-  const embedded = await readManifest("krun-embedded.yaml", state.image);
-  const namespace = parseAllDocuments(await readFile(embedded, "utf8"))[0]?.toJSON();
-  apply(namespace, "create owned application namespace");
-  kube(["apply", "-f", "test/e2e/jobs-namespace.yaml"], "apply isolated jobs namespace resources");
-  apply(
-    {
-      apiVersion: "v1",
-      kind: "Secret",
-      metadata: { name: "krun-e2e-keys", namespace: "krun" },
-      stringData: {
-        "keys.yaml": JSON.stringify({ keys: [{ name: "e2e", key: state.key, scopes: ["admin"] }] }),
-      },
-    },
-    "apply generated private API key",
-  );
-  apply(
-    {
-      apiVersion: "v1",
-      kind: "Secret",
-      metadata: { name: "krun-e2e-webhook-keys", namespace: "krun" },
-      type: "Opaque",
-      stringData: {
-        current: state.webhookSecrets[0],
-        previous: state.webhookSecrets[1],
-        secrets: state.webhookSecrets.join(","),
-      },
-    },
-    "Apply generated disposable webhook rotation keys",
-  );
   // Reuse D106's checksum-enforced upstream binary fixture, never a fake S3 server.
   run(
     "docker",
@@ -340,7 +312,7 @@ const up = async () => {
     parseAllDocuments(await readFile(minio, "utf8"))[0]?.toJSON(),
     "create owned MinIO namespace",
   );
-  for (const namespace of ["krun", "krun-test-minio"])
+  for (const namespace of ["krun-test-minio"])
     apply(
       {
         apiVersion: "v1",
@@ -384,57 +356,243 @@ const up = async () => {
     ],
     "await real S3 bucket creation",
   );
-  kube(["apply", "-f", "test/e2e/allow-minio.yaml"], "apply narrow jobs-to-MinIO egress");
-  kube(["apply", "-f", embedded], "deploy embedded processes");
-  kube(
-    ["rollout", "status", "deployment/krun", "-n", "krun", "--timeout=180s"],
-    "wait for both serving processes",
-    { timeout: 200_000 },
+  console.log(
+    JSON.stringify({ foundation: "prepared", cluster, image: state.image, minio: "ready" }),
+  );
+};
+
+const helm = (args: string[], operation: string) =>
+  run(
+    "helm",
+    ["--kubeconfig", kubeconfig, "--kube-context", `kind-${cluster}`, ...args],
+    operation,
+    { timeout: 300_000 },
+  );
+
+const install = async (mode: DatabaseMode) => {
+  const state = await loadState();
+  if (!state?.image || !state.webhookSecrets || !state.minioSecrets)
+    throw new StepFailure("Run kind-up before chart installation");
+  if (state.mode)
+    throw new StepFailure("Uninstall the active owned chart before a fresh mode install");
+  await guardContext();
+  const layout = chartLayout(mode);
+  for (const namespace of [
+    layout.namespace,
+    layout.jobsNamespace,
+    layout.monitoringNamespace,
+    layout.outsiderNamespace,
+  ]) {
+    if (
+      kube(
+        ["get", "namespace", namespace, "--ignore-not-found", "-o", "name"],
+        "check fresh namespace",
+      ).stdout.trim()
+    )
+      throw new StepFailure("Chart acceptance requires fresh owned namespaces");
+  }
+  state.mode = mode;
+  await saveState(state); // Own partial setup before the first resource is created.
+  for (const namespace of [layout.namespace, layout.monitoringNamespace, layout.outsiderNamespace])
+    apply(
+      {
+        apiVersion: "v1",
+        kind: "Namespace",
+        metadata: {
+          name: namespace,
+          labels: {
+            "krun.io/e2e-owner": owner,
+            ...(namespace === layout.monitoringNamespace
+              ? { "krun.io/e2e-monitoring": "true" }
+              : {}),
+            "pod-security.kubernetes.io/enforce": "restricted",
+            "pod-security.kubernetes.io/enforce-version": "v1.33",
+          },
+        },
+      },
+      "create fresh restricted test namespace",
+    );
+  for (const [name, stringData] of [
+    [
+      "krun-e2e-keys",
+      {
+        "keys.yaml": JSON.stringify({ keys: [{ name: "e2e", key: state.key, scopes: ["admin"] }] }),
+      },
+    ],
+    [
+      "krun-e2e-webhook-keys",
+      {
+        current: state.webhookSecrets[0],
+        previous: state.webhookSecrets[1],
+        secret: state.webhookSecrets.join(","),
+      },
+    ],
+    [
+      "krun-test-minio-credentials",
+      { accessKey: state.minioSecrets[0], secretKey: state.minioSecrets[1] },
+    ],
+  ] as const)
+    apply(
+      {
+        apiVersion: "v1",
+        kind: "Secret",
+        type: "Opaque",
+        metadata: { name, namespace: layout.namespace },
+        stringData,
+      },
+      "create private prerequisite Secret references",
+    );
+  if (mode === "postgres") {
+    const password = randomBytes(32).toString("hex");
+    state.postgresPassword = password;
+    await saveState(state);
+    apply(
+      {
+        apiVersion: "v1",
+        kind: "Secret",
+        type: "Opaque",
+        metadata: { name: "krun-test-postgres", namespace: layout.namespace },
+        stringData: {
+          password,
+          dsn: `postgresql://krun:${password}@krun-test-postgres.${layout.namespace}.svc:5432/krun`,
+        },
+      },
+      "create private disposable database settings",
+    );
+    for (const doc of parseAllDocuments(
+      (await readFile(join(root, "test/e2e/postgres.yaml"), "utf8")).replaceAll(
+        "__KRUN_E2E_NAMESPACE__",
+        layout.namespace,
+      ),
+    ))
+      apply(doc.toJSON(), "deploy plain restricted Postgres");
+    kube(
+      [
+        "rollout",
+        "status",
+        "deployment/krun-test-postgres",
+        "-n",
+        layout.namespace,
+        "--timeout=180s",
+      ],
+      "await disposable Postgres",
+      { timeout: 200_000 },
+    );
+  }
+  const values = join(stateDir, `values-${mode}.json`);
+  await writeFile(values, JSON.stringify(chartValues(mode, state.image)), { mode: 0o600 });
+  helm(
+    [
+      "install",
+      release,
+      "deploy/helm/krun",
+      "--namespace",
+      layout.namespace,
+      "--values",
+      values,
+      "--wait=watcher",
+      "--timeout=240s",
+    ],
+    "install actual chart into fresh restricted namespace",
   );
   kube(
-    ["apply", "-f", await readManifest("function.yaml", state.image)],
-    "apply foundation Function",
+    ["wait", "--for=condition=Established", "crd/functions.krun.io", "--timeout=60s"],
+    "await chart-managed Function CRD",
   );
-  const functionSchema = z.object({
-    metadata: z.object({ generation: z.number() }),
-    status: z
-      .object({
-        observedGeneration: z.number().optional(),
-        conditions: z.array(z.object({ type: z.string(), status: z.string() })).optional(),
-      })
-      .optional(),
-  });
+  const fn = parse(
+    (await readFile(join(root, "test/e2e/function.yaml"), "utf8")).replaceAll(
+      "__KRUN_E2E_IMAGE__",
+      state.image,
+    ),
+  );
+  fn.metadata.namespace = layout.namespace;
+  apply(fn, "apply foundation Function to chart-installed processes");
   await eventually(
     async () =>
-      functionSchema.parse(
-        JSON.parse(
-          kube(
-            ["get", "function", "foundation", "-n", "krun", "-o", "json"],
-            "observe foundation Function",
-          ).stdout,
-        ),
+      JSON.parse(
+        kube(
+          ["get", "function", "foundation", "-n", layout.namespace, "-o", "json"],
+          "observe chart foundation Function",
+        ).stdout,
       ),
     (fn) => {
       if (fn.status?.observedGeneration !== fn.metadata.generation) return "wait";
-      const ready = fn.status.conditions?.find((condition) => condition.type === "Ready");
+      const ready = fn.status?.conditions?.find((c: { type: string }) => c.type === "Ready");
       return ready?.status === "True" ? "done" : ready?.status === "False" ? "fail" : "wait";
     },
-    "foundation Function readiness",
+    "chart-installed Function readiness",
   );
   console.log(
     JSON.stringify({
-      foundation: "deployed",
-      cluster,
-      image: state.image,
-      processes: ["gateway", "scheduler"],
-      function: "foundation",
+      chart: "installed",
+      mode,
+      namespace: layout.namespace,
+      jobsNamespace: layout.jobsNamespace,
+      psa: "restricted",
+      source: "deploy/helm/krun",
+      revision: 1,
     }),
   );
 };
 
+const uninstall = async () => {
+  const state = await loadState();
+  if (!state?.mode) throw new StepFailure("No owned chart mode to uninstall");
+  await guardContext();
+  const layout = chartLayout(state.mode);
+  const releases = JSON.parse(
+    helm(["list", "-n", layout.namespace, "-o", "json"], "read owned chart inventory").stdout,
+  );
+  if (releases.some((r: { name: string }) => r.name === release))
+    helm(
+      ["uninstall", release, "-n", layout.namespace, "--wait=watcher", "--timeout=120s"],
+      "uninstall owned chart",
+    );
+  for (const namespace of [
+    layout.namespace,
+    layout.monitoringNamespace,
+    layout.outsiderNamespace,
+  ]) {
+    const text = kube(
+      ["get", "namespace", namespace, "--ignore-not-found", "-o", "json"],
+      "read owned namespace before cleanup",
+    ).stdout;
+    if (text.trim()) {
+      if (JSON.parse(text).metadata.labels?.["krun.io/e2e-owner"] !== owner)
+        throw new StepFailure("Refusing non-owned namespace cleanup");
+      kube(
+        ["delete", "namespace", namespace, "--wait=true", "--timeout=120s"],
+        "remove exact owned mode namespace",
+        { timeout: 130_000 },
+      );
+    }
+  }
+  for (const namespace of [
+    layout.namespace,
+    layout.jobsNamespace,
+    layout.monitoringNamespace,
+    layout.outsiderNamespace,
+  ])
+    if (
+      kube(
+        ["get", "namespace", namespace, "--ignore-not-found", "-o", "name"],
+        "confirm fresh mode cleanup",
+      ).stdout.trim()
+    )
+      throw new StepFailure("Owned chart namespace cleanup was not confirmed");
+  console.log(
+    JSON.stringify({ chart: "uninstalled", mode: state.mode, freshNamespacesRemoved: true }),
+  );
+  state.mode = undefined;
+  state.postgresPassword = undefined;
+  await saveState(state);
+};
+
 const verify = async () => {
   const state = await loadState();
-  if (!state?.image) throw new StepFailure("Run kind-up before foundation verification");
+  if (!state?.image || !state.mode)
+    throw new StepFailure("Install a chart mode before foundation verification");
+  const layout = chartLayout(state.mode);
   await guardContext();
   const pins = imageSchema.parse(
     JSON.parse(await readFile(join(root, "test/e2e/images.json"), "utf8")),
@@ -480,8 +638,8 @@ const verify = async () => {
                 args: [
                   "-e",
                   name === "server"
-                    ? "require('node:http').createServer((_,r)=>r.end('ok')).listen(8080,'0.0.0.0')"
-                    : "setInterval(()=>{},60000)",
+                    ? "process.once('SIGTERM',()=>process.exit(0));require('node:http').createServer((_,r)=>r.end('ok')).listen(8080,'0.0.0.0')"
+                    : "process.once('SIGTERM',()=>process.exit(0));setInterval(()=>{},60000)",
                 ],
                 securityContext: {
                   allowPrivilegeEscalation: false,
@@ -553,8 +711,8 @@ const verify = async () => {
         "exec",
         "-i",
         "-n",
-        "krun",
-        "deployment/krun",
+        layout.namespace,
+        layout.gateway,
         "-c",
         "gateway",
         "--",
@@ -569,7 +727,14 @@ const verify = async () => {
       throw new StepFailure("Unexpected public API verification outcome");
     for (const container of ["gateway", "scheduler"]) {
       const logs = kube(
-        ["logs", "-n", "krun", "deployment/krun", "-c", container],
+        [
+          "logs",
+          "-n",
+          layout.namespace,
+          container === "gateway" ? layout.gateway : layout.scheduler,
+          "-c",
+          container,
+        ],
         "check process credential privacy",
       ).stdout;
       if (logs.includes(state.key))
@@ -616,7 +781,7 @@ const diagnostics = async () => {
   if (!(await loadState())) return;
   await guardContext();
   const result = kube(
-    ["get", "pods", "-n", "krun", "-o", "json"],
+    ["get", "pods", "-A", "-l", "app.kubernetes.io/name=krun", "-o", "json"],
     "read sanitized pod diagnostics",
     { allowFailure: true },
   );
@@ -646,8 +811,14 @@ const diagnostics = async () => {
 };
 
 const command = process.argv[2];
-if (process.argv.length !== 3 || !["up", "down", "verify", "diagnostics"].includes(command ?? "")) {
-  console.error("Usage: cluster.ts up|down|verify|diagnostics");
+const mode = databaseMode.safeParse(process.argv[3]);
+if (
+  (command === "install"
+    ? process.argv.length !== 4 || !mode.success
+    : process.argv.length !== 3) ||
+  !["up", "down", "verify", "diagnostics", "install", "uninstall"].includes(command ?? "")
+) {
+  console.error("Usage: cluster.ts up|down|verify|diagnostics|uninstall|install embedded|postgres");
   process.exitCode = 1;
 } else {
   await mkdir(stateDir, { recursive: true, mode: 0o700 });
@@ -655,7 +826,9 @@ if (process.argv.length !== 3 || !["up", "down", "verify", "diagnostics"].includ
   try {
     await mkdir(lock, { mode: 0o700 });
     locked = true;
-    if (command === "up") await up();
+    if (command === "install" && mode.success) await install(mode.data);
+    else if (command === "uninstall") await uninstall();
+    else if (command === "up") await up();
     else if (command === "down") await down();
     else if (command === "verify") await verify();
     else await diagnostics();

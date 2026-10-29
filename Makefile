@@ -34,8 +34,12 @@ kind-down:
 	node test/e2e/cluster.ts down
 
 e2e: kind-up
-	node test/e2e/cluster.ts verify
-	pnpm exec vitest run --config test/e2e/vitest.config.ts
+	@set -eu; for mode in embedded postgres; do \
+		node test/e2e/cluster.ts install "$$mode"; \
+		node test/e2e/cluster.ts verify; \
+		pnpm exec vitest run --config test/e2e/vitest.config.ts; \
+		node test/e2e/cluster.ts uninstall; \
+	done
 
 helm-lint:
 	helm lint deploy/helm/krun --set apiKeys.existingSecret=krun-lint-api-keys --set db.postgres.existingSecret=krun-lint-db

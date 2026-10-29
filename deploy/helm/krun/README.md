@@ -10,9 +10,9 @@ an optional Litestream restore/replication sidecar. It does not provision a
 database, credentials, object-storage bucket, Function resources or a Gateway.
 
 This reference documents current templates, not a completed production release.
-Full chart-installed serving, CNI/data-plane, upgrade and rollback acceptance is
-still P7.6; PodMonitor/PrometheusRule rendering and the complete Phase 7 gate
-remain P7.7. The `metrics.*` values are reserved until that implementation.
+Chart-installed serving, CNI/data-plane, upgrade and rollback acceptance is
+exercised by `make e2e` in P7.6; PodMonitor/PrometheusRule rendering and the complete
+Phase 7 gate remain P7.7. The `metrics.*` values are reserved until that implementation.
 
 ## Prerequisites and Secret references
 
@@ -30,20 +30,20 @@ remain P7.7. The `metrics.*` values are reserved until that implementation.
   LimitRange and ResourceQuota. Compare its Pod budget with `config.maxRunning`
   yourself. The job ServiceAccount, RBAC and enabled digest admission policy
   still render. Author/viewer Roles are deliberately not bound automatically.
-- Storage and webhook chart-to-runtime wiring is pending P7.6. The current
-  chart validates their required reference names and renders enabled storage
-  egress, but does not inject S3 connection/Secret settings or webhook
-  allowlists/signing settings into either serving process. Setting these chart
-  values alone leaves object storage and webhook delivery disabled. This is a
-  tracked prerequisite, not working chart-installed integration.
-- That future wiring requires an operator-provisioned bucket, endpoint, signing
-  region and release-namespace Secret with `accessKey` and `secretKey`. There is
+- S3 settings are wired into both serving processes when `objectStorage.enabled`
+  is true. Provide an operator-provisioned bucket, endpoint, signing region and
+  release-namespace Secret with `accessKey` and `secretKey`. There is
   no runtime region default: partial S3 configuration with region omitted fails
   `ConfigInvalid(KRUN_S3_REGION)`. Explicit storage egress peers must match actual
-  destinations; an empty peer list permits none. Webhooks require an existing
-  release-namespace signing Secret with key `secret` and callback host/CIDR
-  allowlists. No platform egress grants are added for them. Do not place S3
-  account credentials in function pods when this prerequisite is implemented.
+  destinations; an empty peer list permits none. S3 account credentials never
+  enter migration, restore, Litestream or function containers; function uploads
+  use only their existing per-Run signed capability.
+- Webhook host/CIDR allowlists are wired into gateway validation and scheduler
+  delivery when `webhooks.allowedHosts` is nonempty. Provide an existing
+  release-namespace Secret with key `secret`, containing comma-separated
+  rotation signing keys. Only the scheduler receives that signing Secret
+  reference. Empty hosts disable chart-configured delivery without injecting
+  unused allowlists or credentials. No platform egress grants are added.
 
 ## Inspect and install from source
 
@@ -113,12 +113,14 @@ restoring those controls before allowing untrusted Jobs. Embedded PVC data has
 its own lifecycle; do not assume `helm uninstall` is a database backup.
 
 Use `helm upgrade` for changes. Migrations are forward-only expand/contract;
-one-minor `helm rollback` compatibility is the specified policy, not a completed
-P7.6 chart-installed rollback claim. Keep scheduler downtime below
+one-minor `helm rollback` compatibility is the specified policy. P7.6 exercises
+a configuration-only upgrade and rollback to revision 1 with the current-source
+image; it does not prove compatibility of future different binary releases.
+Keep scheduler downtime below
 `config.ttlAfterFinished` so finished Job observations remain available.
 See [operations](../../../docs/OPERATIONS.md) for migration, recovery, retained
-ownership and first checks. The full Phase 7 gate must pass before claiming
-chart-installed serving/security/upgrade acceptance.
+ownership and first checks. Local chart-installed acceptance is separate from
+independent review, hosted delivery, P7.7 monitoring and the full Phase 7 gate.
 
 ## Optional integrations and isolation
 
@@ -243,12 +245,12 @@ regeneration does not install a chart, contact a cluster or publish artifacts.
 | metrics.prometheusRule.thresholds.queueWaitP95Seconds | int | `60` | Planned P7.7 high queue-wait alert p95 threshold in seconds. |
 | metrics.prometheusRule.thresholds.quotaRejectionsPerMinute | int | `1` | Planned P7.7 sustained quota-rejection alert threshold per minute. |
 | networkPolicy.metricsFrom | object | `{}` | Namespace selector permitted to reach platform admin/metrics ports. Empty matches all source namespaces; it is not a disabled scrape policy. |
-| objectStorage.bucket | string | `""` | Operator-provisioned S3-compatible bucket name; not wired into serving env yet (P7.6 prerequisite). The chart does not create the bucket. |
+| objectStorage.bucket | string | `""` | Operator-provisioned S3-compatible bucket name wired into both serving processes. The chart does not create the bucket. |
 | objectStorage.egress | list | `[]` | NetworkPolicyPeer list for enabled object-storage egress on the endpoint port. Empty grants no storage destinations; CNI and external-destination rules remain operator responsibilities. |
-| objectStorage.enabled | bool | `false` | Controls storage validation and jobs egress only; serving S3 settings are not wired yet (P7.6 prerequisite), so this does not currently enable chart-installed external results. |
-| objectStorage.endpoint | string | `""` | S3-compatible HTTP(S) endpoint used to derive the chart-owned jobs egress port; the runtime endpoint is not wired yet (P7.6 prerequisite). |
-| objectStorage.existingSecret | string | `""` | Expected release-namespace Secret with accessKey and secretKey; its serving references are not wired yet (P7.6 prerequisite). Function pods must receive no S3 account credentials. |
-| objectStorage.region | string | `""` | Required runtime S3 signing region with no runtime region default; not wired into serving env yet (P7.6 prerequisite). Empty cannot complete runtime S3 configuration. |
+| objectStorage.enabled | bool | `false` | Enable the existing S3 adapters in both serving processes and scoped jobs egress; requires a real operator-provisioned bucket and complete runtime settings. |
+| objectStorage.endpoint | string | `""` | S3-compatible HTTP(S) endpoint wired into both serving processes and used to derive the chart-owned jobs egress port. |
+| objectStorage.existingSecret | string | `""` | Existing release-namespace Secret with accessKey and secretKey, referenced only by both serving processes. Function pods receive no S3 account credentials. |
+| objectStorage.region | string | `""` | Required S3 signing region wired into both serving processes, with no runtime region default. Empty fails sanitized runtime acquisition when storage is enabled. |
 | observability.otlpEndpoint | string | `""` | OTLP/HTTP trace endpoint for serving gateway/scheduler only; empty adds no overrides and drops traces. No trace configuration reaches migrate, restore, Litestream or function containers. |
 | observability.tracesSampleRatio | string | `"0.1"` | Parent-based root trace sampling ratio from zero to one, preserved as a string, including zero; used only with a non-empty OTLP endpoint. |
 | priorityClassName | string | `""` | Existing platform Pod priority class; empty omits priorityClassName. |
@@ -257,9 +259,9 @@ regeneration does not install a chart, contact a cluster or publish artifacts.
 | scheduler.resources.requests.cpu | string | `"100m"` | Scheduler CPU request, also used by the one-shot migrate container. |
 | scheduler.resources.requests.memory | string | `"128Mi"` | Scheduler memory request, also used by the one-shot migrate container. |
 | terminationGracePeriodSeconds | int | `30` | Platform Pod termination grace in seconds; retain enough time for the configured drain and shutdown. |
-| webhooks.allowedCIDRs | list | `[]` | Callback destination CIDRs for the runtime SSRF guard; not wired into serving env yet (P7.6 prerequisite). This creates no platform egress NetworkPolicies. |
-| webhooks.allowedHosts | list | `[]` | Callback host allowlist, not wired into serving env yet (P7.6 prerequisite); current chart-installed delivery stays disabled. Nonempty still validates the signing Secret name. |
-| webhooks.existingSecret | string | `""` | Expected release-namespace Secret with key secret containing comma-separated rotation keys; not wired into serving env yet (P7.6 prerequisite). Its name is validated when allowedHosts is nonempty. |
+| webhooks.allowedCIDRs | list | `[]` | Callback destination CIDRs wired into both serving processes for the runtime SSRF guard when hosts are configured. This creates no platform egress NetworkPolicies. |
+| webhooks.allowedHosts | list | `[]` | Callback host allowlist wired into gateway validation and scheduler delivery; empty disables chart-configured webhooks. Nonempty requires the signing Secret name. |
+| webhooks.existingSecret | string | `""` | Existing release-namespace Secret with key secret containing comma-separated rotation keys; referenced by the scheduler only when allowedHosts is nonempty. |
 
 ----------------------------------------------
 Autogenerated from chart metadata using [helm-docs v1.14.2](https://github.com/norwoodj/helm-docs/releases/v1.14.2)

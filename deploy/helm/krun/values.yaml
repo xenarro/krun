@@ -193,24 +193,24 @@ metrics:
       quotaRejectionsPerMinute: 1
 
 objectStorage:
-  # -- Controls storage validation and jobs egress only; serving S3 settings are not wired yet (P7.6 prerequisite), so this does not currently enable chart-installed external results.
+  # -- Enable the existing S3 adapters in both serving processes and scoped jobs egress; requires a real operator-provisioned bucket and complete runtime settings.
   enabled: false
-  # -- S3-compatible HTTP(S) endpoint used to derive the chart-owned jobs egress port; the runtime endpoint is not wired yet (P7.6 prerequisite).
+  # -- S3-compatible HTTP(S) endpoint wired into both serving processes and used to derive the chart-owned jobs egress port.
   endpoint: ""
-  # -- Operator-provisioned S3-compatible bucket name; not wired into serving env yet (P7.6 prerequisite). The chart does not create the bucket.
+  # -- Operator-provisioned S3-compatible bucket name wired into both serving processes. The chart does not create the bucket.
   bucket: ""
-  # -- Required runtime S3 signing region with no runtime region default; not wired into serving env yet (P7.6 prerequisite). Empty cannot complete runtime S3 configuration.
+  # -- Required S3 signing region wired into both serving processes, with no runtime region default. Empty fails sanitized runtime acquisition when storage is enabled.
   region: ""
-  # -- Expected release-namespace Secret with accessKey and secretKey; its serving references are not wired yet (P7.6 prerequisite). Function pods must receive no S3 account credentials.
+  # -- Existing release-namespace Secret with accessKey and secretKey, referenced only by both serving processes. Function pods receive no S3 account credentials.
   existingSecret: ""
   # -- NetworkPolicyPeer list for enabled object-storage egress on the endpoint port. Empty grants no storage destinations; CNI and external-destination rules remain operator responsibilities.
   egress: []
   # existingSecret keys: accessKey, secretKey; endpoint, bucket and existingSecret required when enabled
 webhooks:
-  # -- Callback host allowlist, not wired into serving env yet (P7.6 prerequisite); current chart-installed delivery stays disabled. Nonempty still validates the signing Secret name.
+  # -- Callback host allowlist wired into gateway validation and scheduler delivery; empty disables chart-configured webhooks. Nonempty requires the signing Secret name.
   allowedHosts: []
-  # -- Callback destination CIDRs for the runtime SSRF guard; not wired into serving env yet (P7.6 prerequisite). This creates no platform egress NetworkPolicies.
+  # -- Callback destination CIDRs wired into both serving processes for the runtime SSRF guard when hosts are configured. This creates no platform egress NetworkPolicies.
   allowedCIDRs: []
-  # -- Expected release-namespace Secret with key secret containing comma-separated rotation keys; not wired into serving env yet (P7.6 prerequisite). Its name is validated when allowedHosts is nonempty.
+  # -- Existing release-namespace Secret with key secret containing comma-separated rotation keys; referenced by the scheduler only when allowedHosts is nonempty.
   existingSecret: ""
   # existingSecret key: secret (comma-separated); required when allowedHosts is set

@@ -8,6 +8,7 @@ import { isDeepStrictEqual } from "node:util";
 import { parse } from "yaml";
 import { z } from "zod";
 import { publicSchemas } from "../../../apps/gateway/src/public-contracts.js";
+import { chartLayout, databaseMode, release } from "./chart.js";
 import { contextArgs, parsePushDigest } from "./contracts.js";
 import {
   largeResult,
@@ -47,7 +48,10 @@ const decode = <T>(schema: z.ZodType<T>, value: unknown, message: string): T => 
 };
 const terminal = (run: Run) => ["SUCCEEDED", "FAILED", "CANCELLED"].includes(run.state);
 
-export const scenario = (mode: Mode) => {
+export const scenario = (mode: Mode, client?: { namespace: string; pod: string }) => {
+  let layout = chartLayout("embedded");
+  let namespace = "";
+  let jobsNamespace = "";
   const name = `krun-test-${mode.replaceAll("_", "-")}-${randomBytes(5).toString("hex")}`;
   const selector = `krun.io/function=${name}`;
   const kubeconfig = join(privateDir, "kubeconfig");
@@ -58,7 +62,7 @@ export const scenario = (mode: Mode) => {
   const forbidden = new Set<string>();
   const uploadCapabilities = new Set<string>();
   let objectStoreAccessKeyId = "";
-  const credentials = runCredentials(name, forbidden);
+  let credentials = runCredentials(name, forbidden);
   const podContents = new Set<string>();
   let key = "";
   let url = "";
@@ -82,7 +86,9 @@ export const scenario = (mode: Mode) => {
       ...(input === undefined ? {} : { input }),
     });
     if (result.error || result.status !== 0)
-      throw new Error(`${operation} failed; private output withheld`);
+      throw new Error(
+        `${operation} failed; private output withheld (exit ${result.status ?? "unavailable"}, signal ${result.signal ?? "none"})`,
+      );
     return result.stdout;
   };
   const kube = (args: string[], operation: string, input?: string) =>
@@ -124,6 +130,44 @@ export const scenario = (mode: Mode) => {
     body?: unknown,
     timeout = 3000,
   ): Promise<Run> => {
+    if (client) {
+      const raw = command(
+        "kubectl",
+        [
+          ...contextArgs(kubeconfig),
+          "exec",
+          "-i",
+          "-n",
+          client.namespace,
+          client.pod,
+          "--",
+          "/nodejs/bin/node",
+          "--input-type=module",
+          "-e",
+          `import {readFileSync} from "node:fs";const p=JSON.parse(readFileSync(0,"utf8"));try {const r=await fetch(p.url,{method:p.method,headers:{authorization:"Bearer "+p.key,...(p.body===undefined?{}:{"content-type":"application/json"})},...(p.body===undefined?{}:{body:JSON.stringify(p.body)}),signal:AbortSignal.timeout(p.timeout)});process.stdout.write(JSON.stringify({status:r.status,body:await r.json()}));}catch{process.exitCode=1;}`,
+        ],
+        "Chart public API through stable in-cluster client",
+        JSON.stringify({
+          url: `http://${release}.${namespace}.svc:8080/v1/${path}`,
+          method,
+          body,
+          key,
+          timeout,
+        }),
+        timeout + 10_000,
+      );
+      const reply = decode(
+        z.object({ status: z.number(), body: z.unknown() }),
+        json(raw),
+        "Invalid native public transport response",
+      );
+      const create = method === "POST" && !path.endsWith(":cancel") && !path.endsWith(":wait");
+      check(
+        reply.status === (create ? 201 : 200),
+        `Public API returned HTTP ${reply.status}; private body withheld`,
+      );
+      return decode(runSchema, reply.body, "Public API response violates the Run contract");
+    }
     let response: Response;
     try {
       response = await fetch(`${url}/v1/${path}`, {
@@ -156,7 +200,7 @@ export const scenario = (mode: Mode) => {
       z.object({ metadata: z.object({ resourceVersion: z.string() }) }),
       json(
         kube(
-          ["get", "pods", "-n", "krun-jobs", "-l", selector, "-o", "json"],
+          ["get", "pods", "-n", jobsNamespace, "-l", selector, "-o", "json"],
           "Anchor native Pod watch",
         ),
       ),
@@ -171,7 +215,12 @@ export const scenario = (mode: Mode) => {
     });
     const child = spawn(
       "kubectl",
-      [...contextArgs(kubeconfig), "get", "--raw", `/api/v1/namespaces/krun-jobs/pods?${query}`],
+      [
+        ...contextArgs(kubeconfig),
+        "get",
+        "--raw",
+        `/api/v1/namespaces/${jobsNamespace}/pods?${query}`,
+      ],
       { stdio: ["ignore", "pipe", "pipe"] },
     );
     children.push(child);
@@ -239,7 +288,7 @@ export const scenario = (mode: Mode) => {
       }),
       json(
         kube(
-          ["get", "secrets", "-n", "krun-jobs", "-l", selector, "-o", "json"],
+          ["get", "secrets", "-n", jobsNamespace, "-l", selector, "-o", "json"],
           "Anchor private Run credential watch",
         ),
       ),
@@ -254,7 +303,12 @@ export const scenario = (mode: Mode) => {
     });
     const child = spawn(
       "kubectl",
-      [...contextArgs(kubeconfig), "get", "--raw", `/api/v1/namespaces/krun-jobs/secrets?${query}`],
+      [
+        ...contextArgs(kubeconfig),
+        "get",
+        "--raw",
+        `/api/v1/namespaces/${jobsNamespace}/secrets?${query}`,
+      ],
       { stdio: ["ignore", "pipe", "pipe"] },
     );
     children.push(child);
@@ -314,7 +368,7 @@ export const scenario = (mode: Mode) => {
       "Run lacks its owned Job name",
     );
     return kube(
-      ["get", "job", jobName, "-n", "krun-jobs", "--ignore-not-found", "-o", "json"],
+      ["get", "job", jobName, "-n", jobsNamespace, "--ignore-not-found", "-o", "json"],
       "Observe owned Job",
     );
   };
@@ -323,6 +377,8 @@ export const scenario = (mode: Mode) => {
       const state = decode(
         z.object({
           owner: z.literal(owner),
+          mode: databaseMode,
+          postgresPassword: z.string().optional(),
           key: z.string().regex(/^[a-f0-9]{64}$/),
           image: z.string(),
           webhookSecrets: z.tuple([z.string(), z.string()]),
@@ -345,8 +401,19 @@ export const scenario = (mode: Mode) => {
         ),
         "Non-loopback Kubernetes configuration",
       );
+      layout = chartLayout(state.mode);
+      namespace = layout.namespace;
+      jobsNamespace = layout.jobsNamespace;
+      credentials = runCredentials(name, forbidden, jobsNamespace);
       key = state.key;
       forbidden.add(key);
+      if (state.postgresPassword) {
+        forbidden.add(state.postgresPassword);
+        forbidden.add(Buffer.from(state.postgresPassword).toString("base64"));
+        forbidden.add(
+          `postgresql://krun:${state.postgresPassword}@krun-test-postgres.${namespace}.svc:5432/krun`,
+        );
+      }
       objectStoreAccessKeyId = state.minioSecrets[0];
       for (const secret of state.minioSecrets) {
         forbidden.add(secret);
@@ -405,15 +472,16 @@ export const scenario = (mode: Mode) => {
               name,
               state.image,
               readFileSync(join(root, "test/e2e/lib/webhook-receiver.ts"), "utf8"),
+              namespace,
             ),
           ),
         );
         kube(
-          ["wait", "-n", "krun", `pod/${name}`, "--for=condition=Ready", "--timeout=90s"],
+          ["wait", "-n", namespace, `pod/${name}`, "--for=condition=Ready", "--timeout=90s"],
           "Await actual receiver readiness",
         );
         safeContent(
-          kube(["get", "pod", name, "-n", "krun", "-o", "json"], "Check receiver Pod privacy"),
+          kube(["get", "pod", name, "-n", namespace, "-o", "json"], "Check receiver Pod privacy"),
         );
       }
       kube(
@@ -422,7 +490,7 @@ export const scenario = (mode: Mode) => {
         JSON.stringify({
           apiVersion: "krun.io/v1alpha1",
           kind: "Function",
-          metadata: { name, namespace: "krun" },
+          metadata: { name, namespace: namespace },
           spec: {
             image,
             inputSchema: { type: "object" },
@@ -435,7 +503,10 @@ export const scenario = (mode: Mode) => {
       await eventually(
         async () =>
           json(
-            kube(["get", "function", name, "-n", "krun", "-o", "json"], "Read scenario Function"),
+            kube(
+              ["get", "function", name, "-n", namespace, "-o", "json"],
+              "Read scenario Function",
+            ),
           ),
         (value) => {
           const fn = decode(
@@ -461,38 +532,40 @@ export const scenario = (mode: Mode) => {
         },
         `${mode} current Function readiness`,
       );
-      let failed = false;
-      const forward = spawn(
-        "kubectl",
-        [
-          ...contextArgs(kubeconfig),
-          "port-forward",
-          "-n",
-          "krun",
-          "service/krun-gateway",
-          ":8080",
-          "--address=127.0.0.1",
-        ],
-        { stdio: ["ignore", "pipe", "pipe"] },
-      );
-      children.push(forward);
-      forward.stderr?.resume();
-      forward.on("error", () => {
-        failed = true;
-      });
-      forward.on("exit", () => {
-        failed = true;
-      });
-      forward.stdout?.setEncoding("utf8").on("data", (chunk: string) => {
-        const match = chunk.match(/Forwarding from 127\.0\.0\.1:(\d+) ->/);
-        if (match) url = `http://127.0.0.1:${match[1]}`;
-      });
-      await eventually(
-        async () => ({ url, failed }),
-        (v) => (v.failed ? "fail" : v.url ? "done" : "wait"),
-        "Private public-API port-forward",
-        10_000,
-      );
+      if (!client) {
+        let failed = false;
+        const forward = spawn(
+          "kubectl",
+          [
+            ...contextArgs(kubeconfig),
+            "port-forward",
+            "-n",
+            namespace,
+            `service/${release}`,
+            ":8080",
+            "--address=127.0.0.1",
+          ],
+          { stdio: ["ignore", "pipe", "pipe"] },
+        );
+        children.push(forward);
+        forward.stderr?.resume();
+        forward.on("error", () => {
+          failed = true;
+        });
+        forward.on("exit", () => {
+          failed = true;
+        });
+        forward.stdout?.setEncoding("utf8").on("data", (chunk: string) => {
+          const match = chunk.match(/Forwarding from 127\.0\.0\.1:(\d+) ->/);
+          if (match) url = `http://127.0.0.1:${match[1]}`;
+        });
+        await eventually(
+          async () => ({ url, failed }),
+          (v) => (v.failed ? "fail" : v.url ? "done" : "wait"),
+          "Private public-API port-forward",
+          10_000,
+        );
+      }
       watchCredentials();
       watchPods();
     },
@@ -513,7 +586,7 @@ export const scenario = (mode: Mode) => {
           ...(options.callback
             ? {
                 callback: {
-                  url: `http://${name}.krun.svc.cluster.local:8080/hook?canary=${marker}`,
+                  url: `http://${name}.${namespace}.svc.cluster.local:8080/hook?canary=${marker}`,
                 },
               }
             : {}),
@@ -523,6 +596,9 @@ export const scenario = (mode: Mode) => {
       credentials.bind(run.name);
       runs.push(run);
       return run;
+    },
+    get(run: Run) {
+      return api(run.name);
     },
     wait(run: Run) {
       return api(`${run.name}:wait`, "POST", { timeout: "30s" }, 35_000);
@@ -538,7 +614,7 @@ export const scenario = (mode: Mode) => {
                 [
                   "exec",
                   "-n",
-                  "krun",
+                  namespace,
                   `pod/${name}`,
                   "--",
                   "/nodejs/bin/node",
@@ -583,10 +659,10 @@ export const scenario = (mode: Mode) => {
           first.traceparent !== second.traceparent,
         "Retry did not carry its own valid attempt trace context",
       );
-      safeContent(kube(["logs", "-n", "krun", `pod/${name}`], "Check receiver log privacy"));
+      safeContent(kube(["logs", "-n", namespace, `pod/${name}`], "Check receiver log privacy"));
       console.log(
         JSON.stringify({
-          scenario: mode,
+          scenario: client ? "chart" : mode,
           nativeReceiver: true,
           attempts: receipts.length,
           responseStatuses: receipts.map((r) => r.responseStatus),
@@ -603,7 +679,7 @@ export const scenario = (mode: Mode) => {
       const value = await until(run, (value) => value.state === state, timeout);
       console.log(
         JSON.stringify({
-          scenario: mode,
+          scenario: client ? "chart" : mode,
           state: value.state,
           failureReason: value.failureReason,
           jobReason: value.jobStatus?.reason,
@@ -666,8 +742,8 @@ export const scenario = (mode: Mode) => {
                 "exec",
                 "-i",
                 "-n",
-                "krun",
-                "deployment/krun",
+                namespace,
+                layout.gateway,
                 "-c",
                 "gateway",
                 "--",
@@ -704,7 +780,7 @@ export const scenario = (mode: Mode) => {
       );
       console.log(
         JSON.stringify({
-          scenario: mode,
+          scenario: client ? "chart" : mode,
           resultBytes: actual.bytes,
           rawResultSha256Matched: true,
           resultUriPersisted: true,
@@ -746,7 +822,7 @@ export const scenario = (mode: Mode) => {
       );
       console.log(
         JSON.stringify({
-          scenario: mode,
+          scenario: client ? "chart" : mode,
           nativeExitCode: code,
           terminalDetectionMs: Math.ceil(elapsed),
         }),
@@ -762,7 +838,10 @@ export const scenario = (mode: Mode) => {
         "Heartbeat terminal detection violated its real-time bound",
       );
       console.log(
-        JSON.stringify({ scenario: mode, acceptedReportToFailureMs: Math.ceil(elapsed) }),
+        JSON.stringify({
+          scenario: client ? "chart" : mode,
+          acceptedReportToFailureMs: Math.ceil(elapsed),
+        }),
       );
     },
     async jobExists(run: Run) {
@@ -819,7 +898,15 @@ export const scenario = (mode: Mode) => {
       for (const container of ["gateway", "scheduler"])
         safeContent(
           kube(
-            ["logs", "-n", "krun", "deployment/krun", "-c", container],
+            [
+              "logs",
+              "-n",
+              namespace,
+              container === "gateway" ? layout.gateway : layout.scheduler,
+              "--all-pods=true",
+              "-c",
+              container,
+            ],
             "Check process log privacy",
           ),
         );
@@ -831,7 +918,7 @@ export const scenario = (mode: Mode) => {
       );
       console.log(
         JSON.stringify({
-          scenario: mode,
+          scenario: client ? "chart" : mode,
           privatePodManifest: true,
           privateObjectStoreLogs: true,
           scopedUploadCapabilityWitnessed: true,
@@ -873,7 +960,7 @@ export const scenario = (mode: Mode) => {
                 "delete",
                 "jobs,secrets",
                 "-n",
-                "krun-jobs",
+                jobsNamespace,
                 "-l",
                 selector,
                 "--wait=true",
@@ -886,7 +973,7 @@ export const scenario = (mode: Mode) => {
                 z.object({ items: z.array(z.unknown()) }),
                 json(
                   kube(
-                    ["get", "jobs,secrets,pods", "-n", "krun-jobs", "-l", selector, "-o", "json"],
+                    ["get", "jobs,secrets,pods", "-n", jobsNamespace, "-l", selector, "-o", "json"],
                     "Read back scenario cleanup",
                   ),
                 ),
@@ -903,12 +990,12 @@ export const scenario = (mode: Mode) => {
           }
           try {
             kube(
-              ["delete", "function", name, "-n", "krun", "--wait=true", "--timeout=60s"],
+              ["delete", "function", name, "-n", namespace, "--wait=true", "--timeout=60s"],
               "Clean only this scenario Function",
             );
             check(
               !kube(
-                ["get", "function", name, "-n", "krun", "--ignore-not-found", "-o", "json"],
+                ["get", "function", name, "-n", namespace, "--ignore-not-found", "-o", "json"],
                 "Read back Function deletion",
               ).trim(),
               "Scenario Function deletion was not confirmed",
@@ -927,7 +1014,7 @@ export const scenario = (mode: Mode) => {
                 "delete",
                 resources,
                 "-n",
-                "krun",
+                namespace,
                 "-l",
                 receiverSelector,
                 "--wait=true",
@@ -939,7 +1026,7 @@ export const scenario = (mode: Mode) => {
               z.object({ items: z.array(z.unknown()) }),
               json(
                 kube(
-                  ["get", resources, "-n", "krun", "-l", receiverSelector, "-o", "json"],
+                  ["get", resources, "-n", namespace, "-l", receiverSelector, "-o", "json"],
                   "Read back receiver cleanup",
                 ),
               ),

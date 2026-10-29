@@ -1,7 +1,8 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
-import { parse, parseAllDocuments } from "yaml";
+import { parse } from "yaml";
+import { chartValues } from "../e2e/lib/chart.js";
 import { webhookResources } from "../e2e/lib/webhook-fixture.js";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
@@ -12,6 +13,7 @@ it("requires every Phase4, Phase5 and Phase6 scenario file and refuses an empty 
       .filter((path) => path.endsWith(".e2e.ts"))
       .sort(),
   ).toEqual([
+    "chart.e2e.ts",
     "exit_code.e2e.ts",
     "exit_code_status.e2e.ts",
     "heartbeat_timeout.e2e.ts",
@@ -35,24 +37,18 @@ it("pins curl fixtures and uses strict shell errors plus contract-specific retri
   expect(read("test/e2e/functions/exit_code_status.sh")).toContain("exit 3");
 });
 
-it("allows only the disposable receiver host glob and actual kind Pod/Service CIDRs in both processes", () => {
+it("allows only the disposable receiver host glob and actual kind CIDRs in each chart mode", () => {
   const kind = parse(read("test/e2e/kind.yaml"));
-  const workload = parseAllDocuments(read("test/e2e/krun-embedded.yaml"))
-    .map((doc) => doc.toJSON())
-    .find((doc) => doc.kind === "Deployment");
-  for (const container of workload.spec.template.spec.containers) {
-    const env = Object.fromEntries(
-      container.env.map((value: { name: string }) => [value.name, value]),
-    );
-    expect(env.KRUN_WEBHOOK_ALLOWED_HOSTS.value).toBe("krun-test-webhook-*.krun.svc.cluster.local");
-    expect(env.KRUN_WEBHOOK_ALLOWED_CIDRS.value.split(",")).toEqual([
+  for (const mode of ["embedded", "postgres"] as const) {
+    const values = chartValues(mode, `localhost:5001/krun@sha256:${"a".repeat(64)}`);
+    expect(values.webhooks.allowedHosts).toEqual([
+      `krun-test-webhook-*.krun-test-${mode}.svc.cluster.local`,
+    ]);
+    expect(values.webhooks.allowedCIDRs).toEqual([
       kind.networking.podSubnet,
       kind.networking.serviceSubnet,
     ]);
-    expect(env.KRUN_WEBHOOK_SECRET).toEqual({
-      name: "KRUN_WEBHOOK_SECRET",
-      valueFrom: { secretKeyRef: { name: "krun-e2e-webhook-keys", key: "secrets" } },
-    });
+    expect(values.webhooks.existingSecret).toBe("krun-e2e-webhook-keys");
   }
 });
 

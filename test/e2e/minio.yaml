@@ -98,13 +98,22 @@ spec:
     - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: krun
+              kubernetes.io/metadata.name: krun-test-embedded
           podSelector:
             matchLabels:
               app.kubernetes.io/name: krun
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: krun-jobs
+              kubernetes.io/metadata.name: krun-test-embedded-jobs
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: krun-test-postgres
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: krun
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: krun-test-postgres-jobs
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: krun-test-minio-init

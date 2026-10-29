@@ -120,6 +120,9 @@ jobs:
           install_only: true
       - name: Install locked dependencies
         run: pnpm install --frozen-lockfile
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v4.3.0
       - name: Verify disposable kind foundation and e2e scenarios
         env:
           TMPDIR: ${{ runner.temp }}
