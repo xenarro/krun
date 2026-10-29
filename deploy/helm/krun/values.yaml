@@ -1,90 +1,216 @@
-image: { repository: ghcr.io/xenarro/krun, tag: "" }   # tag defaults to appVersion
+image:
+  # -- Platform gateway, scheduler and migration image repository. This chart does not publish or verify a registry release.
+  repository: ghcr.io/xenarro/krun
+  # -- Platform image tag; empty uses Chart.appVersion. Select an available, trusted image for installation.
+  tag: ""
+  # tag defaults to appVersion
 
 gateway:
+  # -- Postgres gateway replica count. Embedded mode shares one pod and requires this value at most one.
   replicas: 2
-  resources: { requests: { cpu: 100m, memory: 128Mi }, limits: { memory: 512Mi } }
+  resources:
+    requests:
+      # -- Gateway CPU request, also applied to the embedded gateway container.
+      cpu: 100m
+      # -- Gateway memory request, also applied to the embedded gateway container.
+      memory: 128Mi
+    limits:
+      # -- Gateway memory limit; the chart deliberately sets no default CPU limit.
+      memory: 512Mi
 scheduler:
-  replicas: 1          # extra replicas are standby
-  resources: { requests: { cpu: 100m, memory: 128Mi }, limits: { memory: 512Mi } }
+  # -- Postgres scheduler replicas; additional replicas are standby under the shared Lease. Embedded requires at most one.
+  replicas: 1 # extra replicas are standby
+  resources:
+    requests:
+      # -- Scheduler CPU request, also used by the one-shot migrate container.
+      cpu: 100m
+      # -- Scheduler memory request, also used by the one-shot migrate container.
+      memory: 128Mi
+    limits:
+      # -- Scheduler and migrate memory limit; no default CPU limit.
+      memory: 512Mi
+# -- Existing platform Pod priority class; empty omits priorityClassName.
 priorityClassName: ""
+# -- Platform Pod termination grace in seconds; retain enough time for the configured drain and shutdown.
 terminationGracePeriodSeconds: 30
 
-config:                 # one camelCase key per section 12 tunable, rendered as env on both processes
+config:
+  # one camelCase key per section 12 tunable, rendered as env on both processes
+  # -- Maximum concurrently active function runs; must not exceed the jobs Pod quota when the chart creates that namespace.
   maxRunning: 100
+  # -- Maximum queued runs before submission is rejected.
   maxQueued: 1000
+  # -- Default maximum input body size in bytes; runtime validation enforces the SPEC hard cap.
   maxInputBytes: 262144
+  # -- Default maximum inline result body size in bytes; runtime validation enforces the SPEC hard cap.
   maxResultBytes: 262144
+  # -- Maximum synchronous CreateRun/WaitRun wait duration, expressed as a runtime duration.
   maxWait: 60s
+  # -- Gateway readiness/drain delay before stopping listeners, expressed as a runtime duration.
   shutdownDelay: 5s
+  # -- Per-key submission token-bucket refill rate per second.
   rateLimitRps: 10
+  # -- Per-key submission token-bucket burst capacity.
   rateLimitBurst: 50
+  # -- Maximum allowed Function activeDeadlineSeconds; not a platform Pod deadline.
   maxActiveDeadline: 86400
+  # -- Comma-separated Function service-account allowlist. The default tokenless job account is created independently of namespace ownership.
   allowedServiceAccounts: krun-job-default
+  # -- Maximum concurrent scheduler Kubernetes API operations.
   k8sConcurrency: 8
+  # -- Function Job TTL in seconds. Keep scheduler downtime below this interval to avoid losing finished Jobs.
   ttlAfterFinished: 86400
+  # -- Terminal Run retention as a runtime duration; swept by the elected scheduler.
   retention: 720h
+  # -- Comma-separated Function image registry allowlist; empty applies no registry restriction beyond the other image policy.
   allowedRegistries: ""
-  s3PresignTtl: ""      # empty means unset: the run's activeDeadlineSeconds
+  # -- Empty uses each Function active deadline for signed result uploads; an explicit runtime duration must fit the S3 signing ceiling.
+  s3PresignTtl: "" # empty means unset: the run's activeDeadlineSeconds
+  # -- Serving process log level, parsed by the existing runtime configuration.
   logLevel: info
 
 db:
-  mode: postgres        # postgres | embedded
+  # -- Database mode: postgres or embedded. Embedded runs exactly one shared StatefulSet Pod and PVC.
+  mode: postgres # postgres | embedded
   postgres:
-    existingSecret: ""  # key: dsn; required in postgres mode, chart fails when empty
+    # -- Existing release-namespace Secret name with key dsn; required for postgres. The chart never creates database credentials.
+    existingSecret: "" # key: dsn; required in postgres mode, chart fails when empty
   embedded:
+    # -- Embedded SQLite PVC storage request; retained data is separate from the generated chart documentation.
     storage: 1Gi
-    storageClass: ""    # empty omits storageClassName (an empty string would disable dynamic provisioning)
+    # -- Embedded PVC storage class; empty omits storageClassName so the cluster default can provision storage.
+    storageClass: "" # empty omits storageClassName (an empty string would disable dynamic provisioning)
     litestream:
+      # -- Enable restore plus continuous native-sidecar replication in embedded mode; requires the image and credential Secret references.
       enabled: false
-      image: ""         # pinned by digest; required when enabled
+      # -- Litestream image reference pinned by digest; required when replication is enabled.
+      image: "" # pinned by digest; required when enabled
+      # -- Litestream replica destination; change the illustrative bucket to an operator-owned destination.
       url: s3://bucket/krun
-      existingSecret: ""   # keys: LITESTREAM_ACCESS_KEY_ID, LITESTREAM_SECRET_ACCESS_KEY; required when enabled
+      # -- Existing release-namespace Secret with LITESTREAM_ACCESS_KEY_ID and LITESTREAM_SECRET_ACCESS_KEY for Litestream only.
+      existingSecret: "" # keys: LITESTREAM_ACCESS_KEY_ID, LITESTREAM_SECRET_ACCESS_KEY; required when enabled
       # rendered as a native sidecar: an init container with restartPolicy: Always
 
 crds:
-  install: true         # CRD templated into the release
-  keep: true            # helm.sh/resource-policy: keep on the CRD
+  # -- Manage the Function CRD as a Helm template, including upgrades. If false, apply the generated CRD yourself before every install or upgrade.
+  install: true # CRD templated into the release
+  # -- Keep the Function CRD on uninstall. Deleting it deletes all Function resources; retained Helm ownership affects reinstall.
+  keep: true # helm.sh/resource-policy: keep on the CRD
 apiKeys:
-  existingSecret: ""    # key: keys.yaml; required
+  # -- Required release-namespace Secret name containing keys.yaml. API-key material is never a chart value or generated resource.
+  existingSecret: "" # key: keys.yaml; required
 
 jobsNamespace:
+  # -- Namespace used for function Jobs and their runtime Secrets; distinct release and jobs namespaces are recommended.
   name: krun-jobs
+  # -- Create jobs Namespace, PSA labels, LimitRange, ResourceQuota and jobs NetworkPolicies. False transfers those prerequisites to the operator, not the job account, RBAC or enabled admission policy.
   create: true
-  keep: true            # helm.sh/resource-policy: keep on the Namespace
+  # -- Keep only the jobs Namespace on uninstall, including its Secrets and in-flight Jobs. Chart-managed budgets and NetworkPolicies are still removed.
+  keep: true # helm.sh/resource-policy: keep on the Namespace
+  # -- Pinned restricted Pod Security Admission version on a chart-created jobs Namespace.
   podSecurityVersion: v1.33
+  # -- Render the digest-requiring Job/Pod ValidatingAdmissionPolicy and namespace binding, independent of jobsNamespace.create.
   admissionPolicy: true # ValidatingAdmissionPolicy requiring digest-pinned images
+  # -- Set function-pod hostUsers false through scheduler configuration only; requires compatible Kubernetes, CRI, kernel and storage support.
   userNamespaces: false # hostUsers: false on function pods; see section 9
-  quota: { pods: "200", requests.cpu: "50", requests.memory: 100Gi, requests.ephemeral-storage: 100Gi }
+  quota:
+    # -- Jobs ResourceQuota Pod budget; compared as an exact Kubernetes quantity with config.maxRunning when creating the namespace.
+    pods: "200"
+    # -- Jobs ResourceQuota aggregate CPU requests budget.
+    requests.cpu: "50"
+    # -- Jobs ResourceQuota aggregate memory requests budget.
+    requests.memory: 100Gi
+    # -- Jobs ResourceQuota aggregate ephemeral-storage requests budget.
+    requests.ephemeral-storage: 100Gi
   limitRange:
-    defaultRequest: { cpu: 100m, memory: 128Mi, ephemeral-storage: 256Mi }
-    default:        { cpu: "1",  memory: 1Gi,   ephemeral-storage: 2Gi }
-    max:            { cpu: "4",  memory: 8Gi,   ephemeral-storage: 20Gi }
-  dnsEgress:            # NetworkPolicyPeer list for UDP and TCP 53
-    - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
-      podSelector: { matchLabels: { k8s-app: kube-dns } }
-  egressCIDRs: []       # ipBlock objects { cidr, except: [] }, extra egress for all functions
+    defaultRequest:
+      # -- Default function-container CPU request when omitted by the Function.
+      cpu: 100m
+      # -- Default function-container memory request when omitted by the Function.
+      memory: 128Mi
+      # -- Default function-container ephemeral-storage request.
+      ephemeral-storage: 256Mi
+    default:
+      # -- Default function-container CPU limit.
+      cpu: "1"
+      # -- Default function-container memory limit.
+      memory: 1Gi
+      # -- Default function-container ephemeral-storage limit.
+      ephemeral-storage: 2Gi
+    max:
+      # -- Maximum function-container CPU limit admitted by the jobs LimitRange.
+      cpu: "4"
+      # -- Maximum function-container memory limit admitted by the jobs LimitRange.
+      memory: 8Gi
+      # -- Maximum function-container ephemeral-storage limit admitted by the jobs LimitRange.
+      ephemeral-storage: 20Gi
+  # -- NetworkPolicyPeer list for function DNS egress on UDP/TCP 53. Select the actual cluster DNS pods; namespace and pod selectors in one peer are ANDed. Empty denies DNS destinations.
+  dnsEgress:
+    # NetworkPolicyPeer list for UDP and TCP 53
+    [ { namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }, podSelector: { matchLabels: { k8s-app: kube-dns } } } ]
+  # -- Extra ipBlock objects with cidr and optional except entries, applied to every function. Empty adds no egress; unrestricted IPv4/IPv6 ranges defeat isolation and trigger NOTES warnings.
+  egressCIDRs: [] # ipBlock objects { cidr, except: [] }, extra egress for all functions
 
 networkPolicy:
-  metricsFrom: {}       # namespaceSelector allowed to scrape the admin ports; empty allows all
+  # -- Namespace selector permitted to reach platform admin/metrics ports. Empty matches all source namespaces; it is not a disabled scrape policy.
+  metricsFrom: {} # namespaceSelector allowed to scrape the admin ports; empty allows all
 
 gatewayApi:
-  httpRoute:            # Gateway API HTTPRoute for the public API (port 8080)
+  httpRoute:
+    # Gateway API HTTPRoute for the public API (port 8080)
+    # -- Render one Gateway API v1 HTTPRoute to the public Service on port 8080. Operator supplies CRDs, controller, Gateway and allowedRoutes.
     enabled: false
-    parentRefs: []      # Gateway references
+    # -- HTTPRoute parent references, preserved as supplied; empty renders an explicit empty list with no Gateway attachment.
+    parentRefs: [] # Gateway references
+    # -- HTTPRoute hostnames; empty omits hostnames. Configure TLS, long-wait and SSE timeouts on the external Gateway/controller.
     hostnames: []
 
 observability:
-  otlpEndpoint: ""      # OTEL_EXPORTER_OTLP_ENDPOINT on both processes; empty drops traces
+  # -- OTLP/HTTP trace endpoint for serving gateway/scheduler only; empty adds no overrides and drops traces. No trace configuration reaches migrate, restore, Litestream or function containers.
+  otlpEndpoint: "" # OTEL_EXPORTER_OTLP_ENDPOINT on both processes; empty drops traces
+  # -- Parent-based root trace sampling ratio from zero to one, preserved as a string, including zero; used only with a non-empty OTLP endpoint.
   tracesSampleRatio: "0.1"
 
 metrics:
-  podMonitor: { enabled: false, labels: {} }
-  prometheusRule:
+  podMonitor:
+    # -- Enable the specified PodMonitor in P7.7; currently reserved and not rendered. Requires operator-installed Prometheus Operator CRDs when implemented.
     enabled: false
+    # -- Additional PodMonitor labels for Prometheus selection; reserved until P7.7.
     labels: {}
-    thresholds: { queueWaitP95Seconds: 60, jobLostPerHour: 1, heartbeatTimeoutsPerHour: 5, quotaRejectionsPerMinute: 1 }
+  prometheusRule:
+    # -- Enable the specified PrometheusRule in P7.7; currently reserved and not rendered. Do not rely on chart-managed alerts yet.
+    enabled: false
+    # -- Additional PrometheusRule labels for Prometheus selection; reserved until P7.7.
+    labels: {}
+    thresholds:
+      # -- Planned P7.7 high queue-wait alert p95 threshold in seconds.
+      queueWaitP95Seconds: 60
+      # -- Planned P7.7 lost-job alert threshold over one hour.
+      jobLostPerHour: 1
+      # -- Planned P7.7 heartbeat-timeout alert threshold over one hour.
+      heartbeatTimeoutsPerHour: 5
+      # -- Planned P7.7 sustained quota-rejection alert threshold per minute.
+      quotaRejectionsPerMinute: 1
 
-objectStorage: { enabled: false, endpoint: "", bucket: "", region: "", existingSecret: "", egress: [] }
+objectStorage:
+  # -- Controls storage validation and jobs egress only; serving S3 settings are not wired yet (P7.6 prerequisite), so this does not currently enable chart-installed external results.
+  enabled: false
+  # -- S3-compatible HTTP(S) endpoint used to derive the chart-owned jobs egress port; the runtime endpoint is not wired yet (P7.6 prerequisite).
+  endpoint: ""
+  # -- Operator-provisioned S3-compatible bucket name; not wired into serving env yet (P7.6 prerequisite). The chart does not create the bucket.
+  bucket: ""
+  # -- Required runtime S3 signing region with no runtime region default; not wired into serving env yet (P7.6 prerequisite). Empty cannot complete runtime S3 configuration.
+  region: ""
+  # -- Expected release-namespace Secret with accessKey and secretKey; its serving references are not wired yet (P7.6 prerequisite). Function pods must receive no S3 account credentials.
+  existingSecret: ""
+  # -- NetworkPolicyPeer list for enabled object-storage egress on the endpoint port. Empty grants no storage destinations; CNI and external-destination rules remain operator responsibilities.
+  egress: []
   # existingSecret keys: accessKey, secretKey; endpoint, bucket and existingSecret required when enabled
-webhooks: { allowedHosts: [], allowedCIDRs: [], existingSecret: "" }
+webhooks:
+  # -- Callback host allowlist, not wired into serving env yet (P7.6 prerequisite); current chart-installed delivery stays disabled. Nonempty still validates the signing Secret name.
+  allowedHosts: []
+  # -- Callback destination CIDRs for the runtime SSRF guard; not wired into serving env yet (P7.6 prerequisite). This creates no platform egress NetworkPolicies.
+  allowedCIDRs: []
+  # -- Expected release-namespace Secret with key secret containing comma-separated rotation keys; not wired into serving env yet (P7.6 prerequisite). Its name is validated when allowedHosts is nonempty.
+  existingSecret: ""
   # existingSecret key: secret (comma-separated); required when allowedHosts is set
