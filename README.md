@@ -212,10 +212,18 @@ next single POST;Pod readiness alone is not Service data-plane convergence. Sche
 handover is bounded by the configured Job TTL, without claiming an exact outage.
 
 See [the harness](test/e2e/README.md) and `test/e2e/chart.e2e.ts` for commands and
-assertions. This is not a production installation, committed/hosted delivery,
-PLAN closure or complete Phase 7 claim. Independent review/delivery and P7.7
-monitoring remain mandatory; configuration rollback does not prove future
-one-minor binary-release compatibility.
+assertions. P7.6 source acceptance is delivered in [PR #80](https://github.com/xenarro/krun/pull/80)
+at [b70014c](https://github.com/xenarro/krun/commit/b70014c75378dd8a6b24bce0fe9704750d8c9fab), with
+[exact-source hosted CI](https://github.com/xenarro/krun/actions/runs/40837470935) passing
+2,109 TypeScript tests, one Python test and all 22 chart-installed native tests.
+The hosted matrix used one existing status-test retry; all deadlines, worker,
+security and retry policies remain unchanged. Independent source review and
+reproduced repairs are complete; tracking receives its own exact-head CI.
+
+PR #80 targets still-unmerged PR #79 (`docs/helm-values-reference`); pushed and
+green is not merged-main acceptance. This is not a production installation or
+complete Phase 7 claim. P7.7 monitoring and the full phase gate remain mandatory;
+configuration rollback does not prove future one-minor binary-release compatibility.
 
 ## Generated Helm value reference (P7.5)
 
