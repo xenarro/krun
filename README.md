@@ -200,10 +200,24 @@ Additional resource labels cannot overwrite fixed chart identity labels.
 `make helm-lint` lints enabled monitoring in both modes and runs 24 render/contract
 controls, including eight real `promtool check rules` invocations over default,
 zero, fractional and custom thresholds. Helm 4 and promtool 3.15.1 must be on PATH;
-CI installs checksum-pinned upstream binaries. The complete local Phase 7 gate
-also requires the fresh two-mode chart-installed `make e2e` below. These are local
-implementation checks, not independent review, hosted delivery, PLAN closure,
-production scrape/alert-delivery proof or future cross-binary rollback proof.
+CI installs checksum-pinned upstream binaries. Both independent reviews and
+repair/integration acceptance are complete with the reviewed source preserved.
+[PR #81](https://github.com/xenarro/krun/pull/81) targets main at
+[source f38ffdb](https://github.com/xenarro/krun/commit/f38ffdb4c4c9b05320cf442f6fcaadd6b89bd5a5);
+[exact-source CI](https://github.com/xenarro/krun/actions/runs/40857833404)
+passes 2,133 TypeScript tests, one Python test and the complete fresh two-mode
+chart-installed Phase 7 gate: 22 native tests and 22 privacy observations over
+24 actual Run credential contexts, with no retry observed in that hosted run.
+The PLAN/README tracking update receives its own fresh full check and exact-head CI.
+
+Additional native monitoring acceptance installs the complete stock chart with
+official Prometheus Operator v0.94.2 CRDs in both modes, reads back the actual
+resources and Ready named admin ports, checks controlled negative selectors and
+real promtool, and verifies disable/rollback recreation plus normal cleanup.
+This is not a live Prometheus Operator/controller/server, scrape or alert-delivery
+test, production installation or future cross-binary rollback proof. PR #81
+remains open pending required independent repository approval; green delivery
+is not merged-main acceptance. No auto-merge or protection bypass is enabled.
 
 ## Chart-installed native acceptance (P7.6)
 
@@ -243,11 +257,13 @@ The hosted matrix used one existing status-test retry; all deadlines, worker,
 security and retry policies remain unchanged. Independent source review and
 reproduced repairs are complete; tracking receives its own exact-head CI.
 
-PR #80 targets still-unmerged PR #79 (`docs/helm-values-reference`); pushed and
-green is not merged-main acceptance. This is not a production installation or
-complete Phase 7 delivery claim. P7.7 monitoring source and its local checks are
-described above; independent review, delivery and the complete phase gate remain mandatory;
-configuration rollback does not prove future one-minor binary-release compatibility.
+PRs #80 and #79 subsequently merged with independent approval. P7.7 reconciles
+their byte-identical cumulative source with main through a normal ancestry merge;
+its monitoring and complete Phase 7 source acceptance are documented above.
+This is not a production installation, and configuration rollback does not prove
+future one-minor binary-release compatibility. P8.1 starts with the approved
+physical migration from `packages/sdk-node` to `sdk/node` before new SDK behavior;
+the migration and Phase 8 template/image/native gates remain mandatory.
 
 ## Generated Helm value reference (P7.5)
 
