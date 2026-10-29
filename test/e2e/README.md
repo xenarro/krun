@@ -4,43 +4,76 @@ This harness is local infrastructure, not a production installer. It creates
 only the `krun-test-e2e` cluster and an ownership-labelled `kind-registry`
 container, bound to `127.0.0.1:5001`. Do not reuse these names for other work.
 
-Prerequisites: Docker, kubectl 1.37, the exact kind version in `.kind-version`,
-Node from `.node-version`, and the repository's locked pnpm dependencies.
-`images.json` pins the Kubernetes node and registry manifests by digest. CI uses
-SHA-pinned `helm/kind-action` with `version_file: .kind-version` and runs the
-same Make targets. kind 0.33 includes enforcing kindnetd; no Helm chart or
-additional CNI installation is needed for this foundation.
+Prerequisites: Docker, kubectl 1.37, Helm4.3.0, the exact kind version in
+`.kind-version`, Node from `.node-version` and locked pnpm dependencies.
+`images.json` pins the Kubernetes node, registry and curl manifests by digest.
+CI installs the same pinned Helm and kind; kind0.33 includes enforcing kindnetd.
+No third-party CNI or database operator is installed.
 
-    make kind-up
     make e2e
     make kind-down
 
-`kind-up` is repeatable: it creates/reuses owned infrastructure, writes
-`/etc/containerd/certs.d/localhost:5001/hosts.toml` on every kind node, joins the
-registry to the kind Docker network, and publishes the standard
-`kube-public/local-registry-hosting` ConfigMap. It builds the current Dockerfile,
-pushes only to the local registry, and deploys the acknowledged digest. It then
-applies the generated Function CRD, raw jobs isolation/RBAC/resource manifests,
-and one embedded Pod containing the real gateway and scheduler. An init
-container runs explicit SQLite migrations on their shared `emptyDir`. Both
-serving containers must become ready, and `function.yaml` must reach current
-`Ready=True` before setup succeeds. `kind-up` itself submits no Run;
-`make e2e` then submits the eight Phase 4/5/6 behavioural workloads.
-The foundation also builds the genuine checksum-pinned MinIO fixture,deploys
-its restricted ephemeral namespace, initializes the real private bucket, and
-configures both serving processes through generated Secret references.
-`allow-minio.yaml` adds only TCP9000 egress to the selected MinIO Pods; the
-existing jobs default deny, DNS and gateway allows are retained.
+`kind-up` creates/reuses only owned infrastructure, configures every node's
+loopback-registry mirror and standard discovery ConfigMap, builds the current
+Dockerfile and pushes only to that registry. The acknowledged manifest digest
+is authoritative. It also builds/deploys the genuine checksum-pinned MinIO
+fixture in its restricted namespace and initializes the private bucket. It does
+not install the application or submit Runs.
 
-`make e2e` always runs the mandatory infrastructure verification before invoking
-the separate Vitest configuration. Verification uses two restricted Pods in a
-fresh `krun-test-probe-*` namespace: a real connection succeeds, default-deny
-must block it, and removing that policy must restore the same connection.
-Only an explicit remote client timeout counts as denial; kubectl/API/exec
-failures never count as enforcement. The scratch namespace is removed even
-when verification fails. An authenticated request also checks the gateway's
-real Function projection, and both process logs are checked against the
-generated API credential without printing it.
+`make e2e` installs the actual chart twice, sequentially: embedded in a fresh
+`krun-test-embedded` namespace and postgres in a fresh `krun-test-postgres`
+namespace, each with its own fresh `-jobs`, `-monitoring` and `-outsider`
+namespaces. Platform PSA is explicitly enforced as `restricted`;the chart
+owns jobs PSA/RBAC/budgets/policies/admission. Test-only `crds.keep=false` and
+`jobsNamespace.keep=false` allow complete removal before the other mode. The
+chart installs the CRD, not a parallel raw platform manifest. All prerequisite
+Secret contents are generated privately and sent through stdin,never values or
+argv. Only references enter the Helm release. Embedded uses its real PVC;
+postgres uses `postgres.yaml`, an ordinary restricted Postgres18 Deployment and
+Service with generated existing-Secret credentials, not an operator.
+
+Both serving processes receive S3 settings and account Secret references from
+the chart,callback host/CIDR allowlists are scoped to the actual test namespace
+and kind Pod/Service CIDRs,and only scheduler receives the signing Secret.
+`objectStorage.egress` selects only the genuine MinIO namespace/server on9000.
+There are no raw platform, jobs-policy or separate MinIO-egress manifests.
+
+For each mode the mandatory open/deny/reopen scratch probe still runs before
+Vitest. Only an explicit remote client timeout counts as denial; kubectl,API
+and exec errors fail. A native API projection and process log privacy smoke
+remain mandatory. The separate runner then executes the eight earlier
+execution/wait/webhook/large-result scenarios and `chart.e2e.ts`.
+
+The chart scenario proves jobs-to-internal8081 and no jobs-to-public8080,
+including actual embedded Pod labels,monitoring-selection open/deny/recovery
+for every real admin port,and outsider denial. Removing/restoring only the
+chart storage allow proves real MinIO egress enforcement. A pinned admission
+control passes;an actual hand-created tag-only Job is rejected by
+`krun-jobs-digest` and confirmed absent. Postgres runs two Ready schedulers with
+one actual leader gauge matching the single Lease.
+
+The lifecycle test executes `helm upgrade --reuse-values --set
+config.logLevel=debug`,then `helm rollback e2e 1`,with both rollouts Ready,new
+Pod UIDs and a successful Run after each. After exact Ready Pod convergence,a
+bounded unauthenticated GET must observe401 through the actual public Service
+before the next single POST;mutating requests are never replayed. Embedded's pre-upgrade FULL Run must
+remain identical/readable across both changes. Postgres also submits a Run
+while old and new serving Pods coexist during each actual rollout,checks the
+successful native Helm migrate-hook execution receipt on upgrade,and observes
+the same Lease plus a single leader gauge on a new scheduler Pod. The measured
+handover upper bound must remain below the configured Job TTL;it is not
+presented as an exact outage duration. A dedicated in-cluster public client
+survives gateway replacement without replaying POSTs;credentials travel only
+on stdin. Existing function-Pod/run-credential and all-replica process-log
+privacy oracles still run. Every test uses the existing runner budgets and
+visible single retry;no application timeout,retry,worker or isolation policy is
+relaxed. Per-mode chart uninstall and namespace absence are read back;CI always
+also invokes complete owned cluster/registry cleanup,including on failure.
+
+This is the local P7.6 implementation gate,not independent review,hosted
+acceptance,PLAN closure,production use or publication. P7.7 monitoring/full
+Phase7 remain separate. The historical sections below record the earlier
+raw-foundation gates;the chart procedure above is the current entrypoint.
 
 ## Phase 4 scenarios (P4.13)
 

@@ -1,7 +1,7 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "includeEntryExports": true,
-  "ignoreBinaries": ["make", "helm", "kubectl"],
+  "ignoreBinaries": ["make", "helm", "helm-docs", "kubectl"],
   "workspaces": {
     ".": {
       "entry": [
@@ -10,6 +10,7 @@
         "test/e2e/functions/large_result.ts",
         "test/**/*.test.ts",
         "scripts/gen-crd.ts",
+        "scripts/gen-helm-docs.ts",
         "scripts/gen-openapi.ts",
         "scripts/smoke-validate.ts",
         "scripts/smoke-gateway.ts"

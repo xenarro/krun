@@ -108,3 +108,26 @@ it("rejects another function's Run resource without normalizing its identifier",
   );
   expect(() => witness.bind(resource.toUpperCase())).toThrow("Foreign Run credential binding");
 });
+
+for (const mode of ["embedded", "postgres"]) {
+  it(`fences actual ${mode} Run credentials to that fresh chart jobs namespace`, () => {
+    const namespace = `krun-test-${mode}-jobs`;
+    const forbidden = new Set<string>();
+    const witness = runCredentials(fn, forbidden, namespace);
+    const value = token();
+    const object = secret(value);
+    object.metadata.namespace = namespace;
+    witness.bind(resource);
+    expect(() => witness.observe(secret(value))).toThrow("Invalid owned Run credential witness");
+    expect(forbidden.has(value)).toBe(false);
+    witness.observe(object);
+    expect(witness.ready(resource)).toBe(true);
+    expect(forbidden.has(value)).toBe(true);
+    expect(() =>
+      witness.observe({
+        ...object,
+        metadata: { ...object.metadata, namespace: "krun-test-other-jobs" },
+      }),
+    ).toThrow("Invalid owned Run credential witness");
+  });
+}

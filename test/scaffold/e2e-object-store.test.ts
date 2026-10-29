@@ -1,12 +1,33 @@
+import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
 import { parseAllDocuments } from "yaml";
 import { GatewayEnv, SchedulerEnv } from "../../packages/shared/src/config/index.js";
+import { chartLayout, chartValues, type DatabaseMode } from "../e2e/lib/chart.js";
 import { largeResult, privatePodManifest } from "../e2e/lib/object-store.js";
 
 const read = (name: string) => readFileSync(new URL(`../e2e/${name}`, import.meta.url), "utf8");
 const documents = (name: string) => parseAllDocuments(read(name)).map((doc) => doc.toJSON());
+const rendered = (mode: DatabaseMode) => {
+  const result = spawnSync(
+    "helm",
+    [
+      "template",
+      "e2e",
+      "deploy/helm/krun",
+      "--namespace",
+      chartLayout(mode).namespace,
+      "--set-json",
+      JSON.stringify(chartValues(mode, `localhost:5001/krun@sha256:${"a".repeat(64)}`)),
+    ],
+    { encoding: "utf8" },
+  );
+  expect(result.status, result.stderr).toBe(0);
+  return parseAllDocuments(result.stdout)
+    .map((doc) => doc.toJSON())
+    .filter(Boolean);
+};
 const id = "0192f000-0000-7000-8000-000000000001";
 const accessKeyId = randomBytes(16).toString("hex");
 const signed = `http://krun-test-minio.krun-test-minio.svc.cluster.local:9000/krun-test-results/runs/${id}/result.json?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=${accessKeyId}%2F20261028%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20261028T000000Z&X-Amz-SignedHeaders=host&X-Amz-Expires=120&X-Amz-Signature=${"a".repeat(64)}`;
@@ -167,32 +188,34 @@ it("rejects account credentials and account Secret references in the Function Po
   }
 });
 
-it("keeps the jobs default deny and adds only namespace+Pod+TCP9000 MinIO egress", () => {
-  const deny = documents("jobs-namespace.yaml").find(
-    (doc) => doc.metadata.name === "krun-jobs-deny-all",
-  );
-  expect(deny.spec).toEqual({ podSelector: {}, policyTypes: ["Ingress", "Egress"] });
-  const [allow] = documents("allow-minio.yaml");
-  expect(allow.kind).toBe("NetworkPolicy");
-  expect(allow.metadata.namespace).toBe("krun-jobs");
-  expect(allow.spec).toEqual({
-    podSelector: {},
-    policyTypes: ["Egress"],
-    egress: [
-      {
-        to: [
-          {
-            namespaceSelector: {
-              matchLabels: { "kubernetes.io/metadata.name": "krun-test-minio" },
+it.each(["embedded", "postgres"] as const)(
+  "keeps chart %s jobs default deny and only namespace+Pod+TCP9000 MinIO egress",
+  (mode) => {
+    const docs = rendered(mode);
+    const deny = docs.find((doc) => doc.metadata.name === "krun-jobs-deny-all");
+    expect(deny.spec).toEqual({ podSelector: {}, policyTypes: ["Ingress", "Egress"] });
+    const allow = docs.find((doc) => doc.metadata.name === "krun-jobs-allow-object-storage");
+    expect(allow.kind).toBe("NetworkPolicy");
+    expect(allow.metadata.namespace).toBe(chartLayout(mode).jobsNamespace);
+    expect(allow.spec).toEqual({
+      podSelector: {},
+      policyTypes: ["Egress"],
+      egress: [
+        {
+          to: [
+            {
+              namespaceSelector: {
+                matchLabels: { "kubernetes.io/metadata.name": "krun-test-minio" },
+              },
+              podSelector: { matchLabels: { "app.kubernetes.io/name": "krun-test-minio" } },
             },
-            podSelector: { matchLabels: { "app.kubernetes.io/name": "krun-test-minio" } },
-          },
-        ],
-        ports: [{ protocol: "TCP", port: 9000 }],
-      },
-    ],
-  });
-});
+          ],
+          ports: [{ protocol: "TCP", port: 9000 }],
+        },
+      ],
+    });
+  },
+);
 
 it("deploys the genuine checksum-pinned fixture as a restricted non-root server, never production storage", () => {
   const docs = documents("minio.yaml");
@@ -211,33 +234,88 @@ it("deploys the genuine checksum-pinned fixture as a restricted non-root server,
   expect(docs.find((doc) => doc.kind === "Service").spec.type).toBeUndefined();
 });
 
-it("configures both real process graphs with explicit generated S3 secrets and an internal endpoint", () => {
-  const spec = documents("krun-embedded.yaml").find((doc) => doc.kind === "Deployment").spec
-    .template.spec;
-  for (const container of spec.containers) {
-    const values = Object.fromEntries(
-      container.env.map((entry: { name: string; value?: string }) => [
-        entry.name,
-        entry.value ?? "krun-test-placeholder",
-      ]),
-    );
-    const schema = container.name === "gateway" ? GatewayEnv : SchedulerEnv;
-    const parsed = schema.safeParse(values);
-    expect(parsed.success).toBe(true);
-    if (!parsed.success) throw new Error("Native process fixture violates canonical configuration");
-    expect(parsed.data.KRUN_S3_ACCESS_KEY).toBe("krun-test-placeholder");
-    expect(parsed.data.KRUN_S3_SECRET_KEY).toBe("krun-test-placeholder");
-    const env = Object.fromEntries(
-      container.env.map((entry: { name: string }) => [entry.name, entry]),
-    );
-    expect(env.KRUN_S3_ENDPOINT.value).toBe(
-      "http://krun-test-minio.krun-test-minio.svc.cluster.local:9000",
-    );
-    expect(env.KRUN_S3_BUCKET.value).toBe("krun-test-results");
-    expect(env.KRUN_S3_REGION.value).toBe("us-east-1");
-    for (const name of ["KRUN_S3_ACCESS_KEY", "KRUN_S3_SECRET_KEY"]) {
-      expect(env[name].value).toBeUndefined();
-      expect(env[name].valueFrom.secretKeyRef.name).toBe("krun-test-minio-credentials");
+it.each(["embedded", "postgres"] as const)(
+  "configures both %s chart process graphs with explicit generated S3 Secret refs",
+  (mode) => {
+    const containers = rendered(mode)
+      .filter((doc) => ["Deployment", "StatefulSet"].includes(doc.kind))
+      .flatMap((doc) => doc.spec.template.spec.containers);
+    expect(containers).toHaveLength(2);
+    for (const container of containers) {
+      const values = Object.fromEntries(
+        container.env.map((entry: { name: string; value?: string }) => [
+          entry.name,
+          entry.value ?? "krun-test-placeholder",
+        ]),
+      );
+      const schema = container.name === "gateway" ? GatewayEnv : SchedulerEnv;
+      const parsed = schema.safeParse(values);
+      expect(parsed.success).toBe(true);
+      if (!parsed.success)
+        throw new Error("Native process fixture violates canonical configuration");
+      expect(parsed.data.KRUN_S3_ACCESS_KEY).toBe("krun-test-placeholder");
+      expect(parsed.data.KRUN_S3_SECRET_KEY).toBe("krun-test-placeholder");
+      const env = Object.fromEntries(
+        container.env.map((entry: { name: string }) => [entry.name, entry]),
+      );
+      expect(env.KRUN_S3_ENDPOINT.value).toBe(
+        "http://krun-test-minio.krun-test-minio.svc.cluster.local:9000",
+      );
+      expect(env.KRUN_S3_BUCKET.value).toBe("krun-test-results");
+      expect(env.KRUN_S3_REGION.value).toBe("us-east-1");
+      for (const name of ["KRUN_S3_ACCESS_KEY", "KRUN_S3_SECRET_KEY"]) {
+        expect(env[name].value).toBeUndefined();
+        expect(env[name].valueFrom.secretKeyRef.name).toBe("krun-test-minio-credentials");
+      }
     }
-  }
+  },
+);
+
+it("does not confuse the fresh postgres jobs namespace with a platform Secret reference", () => {
+  const original = pod();
+  const value = {
+    ...original,
+    metadata: { ...original.metadata, namespace: "krun-test-postgres-jobs" },
+  };
+  expect(() => privatePodManifest(JSON.stringify(value))).not.toThrow();
 });
+
+for (const secretName of ["krun-e2e-keys", "krun-e2e-webhook-keys", "krun-test-postgres"]) {
+  for (const location of ["function-env", "init-env", "envFrom", "volume", "projected-volume"]) {
+    it(`rejects platform Secret reference ${secretName} in ${location} without rejecting the per-Run Secret`, () => {
+      const original = pod();
+      const reference = {
+        name: "UNRELATED",
+        valueFrom: { secretKeyRef: { name: secretName, key: "credential" } },
+      };
+      const candidate = {
+        ...original,
+        spec: {
+          ...original.spec,
+          containers: original.spec.containers.map((container) => ({
+            ...container,
+            env: [...container.env, ...(location === "function-env" ? [reference] : [])],
+            ...(location === "envFrom" ? { envFrom: [{ secretRef: { name: secretName } }] } : {}),
+          })),
+          ...(location === "init-env"
+            ? { initContainers: [{ name: "init", env: [reference] }] }
+            : {}),
+          ...(location === "volume"
+            ? { volumes: [{ name: "platform", secret: { secretName } }] }
+            : {}),
+          ...(location === "projected-volume"
+            ? {
+                volumes: [
+                  { name: "platform", projected: { sources: [{ secret: { name: secretName } }] } },
+                ],
+              }
+            : {}),
+        },
+      };
+      expect(() => privatePodManifest(JSON.stringify(candidate))).toThrow(
+        "Invalid native upload URL witness",
+      );
+      expect(() => privatePodManifest(JSON.stringify(original))).not.toThrow();
+    });
+  }
+}

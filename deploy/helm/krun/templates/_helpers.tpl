@@ -102,6 +102,32 @@ livenessProbe:
   value: {{ .root.Values.jobsNamespace.name | quote }}
 - name: KRUN_GATEWAY_INTERNAL_URL
   value: {{ printf "http://krun-gateway-internal.%s.svc:8081" .root.Release.Namespace | quote }}
+{{- if .root.Values.objectStorage.enabled }}
+{{- range $entry := list (dict "env" "KRUN_S3_ENDPOINT" "value" .root.Values.objectStorage.endpoint) (dict "env" "KRUN_S3_BUCKET" "value" .root.Values.objectStorage.bucket) (dict "env" "KRUN_S3_REGION" "value" .root.Values.objectStorage.region) }}
+- name: {{ $entry.env }}
+  value: {{ $entry.value | quote }}
+{{- end }}
+{{- range $entry := list (dict "env" "KRUN_S3_ACCESS_KEY" "key" "accessKey") (dict "env" "KRUN_S3_SECRET_KEY" "key" "secretKey") }}
+- name: {{ $entry.env }}
+  valueFrom:
+    secretKeyRef:
+      name: {{ $.root.Values.objectStorage.existingSecret | quote }}
+      key: {{ $entry.key }}
+{{- end }}
+{{- end }}
+{{- if .root.Values.webhooks.allowedHosts }}
+- name: KRUN_WEBHOOK_ALLOWED_HOSTS
+  value: {{ join "," .root.Values.webhooks.allowedHosts | quote }}
+- name: KRUN_WEBHOOK_ALLOWED_CIDRS
+  value: {{ join "," .root.Values.webhooks.allowedCIDRs | quote }}
+{{- if eq .component "scheduler" }}
+- name: KRUN_WEBHOOK_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ .root.Values.webhooks.existingSecret | quote }}
+      key: secret
+{{- end }}
+{{- end }}
 {{- if .root.Values.observability.otlpEndpoint }}
 - name: OTEL_EXPORTER_OTLP_ENDPOINT
   value: {{ .root.Values.observability.otlpEndpoint | quote }}

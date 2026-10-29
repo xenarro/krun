@@ -252,6 +252,20 @@ for owned ephemeral webhook TLS receiver certificates; the Node trust
 store is restored and the generated key/certificate are deleted after
 each test. It is not an application runtime dependency or a TLS bypass.
 
+Chart reference generation uses helm-docs 1.14.2, invoked by
+`scripts/gen-helm-docs.ts` through the existing `make generate` discovery loop.
+CI verifies the official Linux x86_64 archive SHA256 before extracting it;
+other platforms use the matching verified upstream release asset. Descriptions
+live in native `# --` values comments and operator prose in
+`deploy/helm/krun/README.md.gotmpl`. The generator independently renders a private
+native reference with complete descriptions, then requires the editable
+template output to retain its chart heading and exact complete values table.
+It rejects warnings, empty or incomplete output before replacing the README: helm-docs 1.14.2 can otherwise report parse/render
+failures with exit status zero. Its legacy strict-mode checker does not
+recognize native auto-descriptions, so do not substitute that flag for the
+actual template guard and complete key/default/type coverage tests. No new
+application dependency is introduced (SPEC D120).
+
 ## 4. How the pieces fit
 
 ### 4.1 Process shape
