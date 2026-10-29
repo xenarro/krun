@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: krun-test-postgres
+  namespace: __KRUN_E2E_NAMESPACE__
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app.kubernetes.io/name: krun-test-postgres}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: krun-test-postgres}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: postgres
+          image: postgres:18@sha256:edb0c08dc33befd0262ab3b5cf1c4f3f8cfd8b09e88c05b45adee29d6761ddb6
+          env:
+            - {name: POSTGRES_USER, value: krun}
+            - {name: POSTGRES_DB, value: krun}
+            - {name: POSTGRES_PASSWORD, valueFrom: {secretKeyRef: {name: krun-test-postgres, key: password}}}
+            - {name: PGDATA, value: /var/lib/postgresql/18/docker}
+          ports: [{name: postgres, containerPort: 5432}]
+          readinessProbe:
+            exec: {command: [pg_isready, -U, krun, -d, krun]}
+            periodSeconds: 2
+            timeoutSeconds: 3
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          resources: {requests: {cpu: 100m, memory: 128Mi}, limits: {memory: 512Mi}}
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/postgresql}
+            - {name: socket, mountPath: /var/run/postgresql}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - {name: data, emptyDir: {}}
+        - {name: socket, emptyDir: {}}
+        - {name: tmp, emptyDir: {}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: krun-test-postgres
+  namespace: __KRUN_E2E_NAMESPACE__
+spec:
+  selector: {app.kubernetes.io/name: krun-test-postgres}
+  ports: [{name: postgres, port: 5432, targetPort: postgres}]

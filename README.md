@@ -4,7 +4,7 @@ HTTP-triggered functions, executed as one-off Kubernetes Jobs. Callers submit JS
 
 ## Development status
 
-Core function execution,the Phase5 wait/signed-webhook gate and Phase6 MinIO large-result acceptance pass locally and in exact source-head hosted CI. P6.3 source `55df490` is delivered in [PR #69](https://github.com/xenarro/krun/pull/69) against its immediate unmerged P6.2 parent. Independent source reviews and reproduced privacy-oracle/bucket-initializer repairs are complete;hosted `verify` and `kind` pass for that exact source head. The PLAN/README-only tracking update receives its own fresh local check and exact-head hosted verification. This is pushed/green,not merged or a complete production-ready release:SDK runtime behaviour,production Helm and release acceptance remain later work. P7.1 now adds a locally linted and render-tested common Helm foundation; mode-specific lifecycle, RBAC/isolation and chart-installed embedded/Postgres acceptance remain later Phase 7 tasks.
+Core function execution,the Phase5 wait/signed-webhook gate and Phase6 MinIO large-result acceptance pass locally and in exact source-head hosted CI. P6.3 source `55df490` is delivered in [PR #69](https://github.com/xenarro/krun/pull/69) against its immediate unmerged P6.2 parent. Independent source reviews and reproduced privacy-oracle/bucket-initializer repairs are complete;hosted `verify` and `kind` pass for that exact source head. The PLAN/README-only tracking update receives its own fresh local check and exact-head hosted verification. This is pushed/green,not merged or a complete production-ready release:SDK runtime behaviour,production Helm and release acceptance remain later work. The chart now includes both mode lifecycles, restricted namespace/RBAC/isolation controls and a generated value reference. P7.6 switches the native gate to actual chart installs in both modes; this is implementation-local scope, with independent review/delivery and P7.7 monitoring/full Phase 7 acceptance still separate.
 
 - Strict TypeScript workspace on Node.js 26, with Effect 4 process entrypoints.
 - Zod configuration schemas and Effect services for gateway and scheduler settings.
@@ -182,6 +182,49 @@ dependencies,with no auto-merge or protection bypass. P7.1 starts from the
 current committed verified lineage after refreshing parent/main state,not an
 obsolete main checkout. Production chart,SDK and release acceptance remain later.
 
+## Chart-installed native acceptance (P7.6)
+
+`make e2e` now installs the actual chart in two fresh restricted platform/jobs
+namespace pairs, embedded first and postgres second. Embedded uses its chart PVC;
+postgres uses an ordinary restricted Postgres18 Deployment from
+`test/e2e/postgres.yaml`, with two schedulers and two gateways. There is no raw
+parallel platform/jobs policy definition or database operator. Helm4.3.0 is
+installed in the hosted kind job as well as the source-verification job.
+
+The gate retains all eight execution/wait/webhook/one-MiB-result scenarios and
+adds actual chart data-plane, digest admission, upgrade and rollback cases.
+Jobs must reach internal8081 and not public8080; every admin endpoint must follow
+monitoring-namespace selection, including real deny/recovery witnesses. MinIO
+requires only the chart-selected namespace/Pod/9000 allow. S3 settings reference
+existing Secrets on serving processes only; only scheduler gets webhook signing
+keys. Function Pods exclude all known platform Secret references, and process
+privacy is checked on every replica before upgrade, while debug Pods are live,
+and after rollback, using the actual per-Run credentials.
+
+Both configuration changes require new Ready Pods and a successful Run. Embedded
+retains an identical pre-upgrade Run across both changes. Postgres proves an
+executed migration hook, successful submissions during each observed rollout,
+and one leader gauge matching the same Lease on a new scheduler Pod. Native
+readiness waits for the exact Ready/current-UID Pod set rather than treating a
+Deployment rollout acknowledgement as immediate old-Pod deletion. A bounded
+unauthenticated GET must also observe401 through the public Service before the
+next single POST;Pod readiness alone is not Service data-plane convergence. Scheduler
+handover is bounded by the configured Job TTL, without claiming an exact outage.
+
+See [the harness](test/e2e/README.md) and `test/e2e/chart.e2e.ts` for commands and
+assertions. P7.6 source acceptance is delivered in [PR #80](https://github.com/xenarro/krun/pull/80)
+at [b70014c](https://github.com/xenarro/krun/commit/b70014c75378dd8a6b24bce0fe9704750d8c9fab), with
+[exact-source hosted CI](https://github.com/xenarro/krun/actions/runs/40837470935) passing
+2,109 TypeScript tests, one Python test and all 22 chart-installed native tests.
+The hosted matrix used one existing status-test retry; all deadlines, worker,
+security and retry policies remain unchanged. Independent source review and
+reproduced repairs are complete; tracking receives its own exact-head CI.
+
+PR #80 targets still-unmerged PR #79 (`docs/helm-values-reference`); pushed and
+green is not merged-main acceptance. This is not a production installation or
+complete Phase 7 claim. P7.7 monitoring and the full phase gate remain mandatory;
+configuration rollback does not prove future one-minor binary-release compatibility.
+
 ## Generated Helm value reference (P7.5)
 
 [The chart reference](deploy/helm/krun/README.md) is generated by actual
@@ -189,8 +232,9 @@ helm-docs 1.14.2 through the existing `make generate` loop. All 83 scalar,
 empty-map and complete-list entries derive their defaults/types from the
 unchanged values tree and descriptions from native `# --` comments. Edit
 `deploy/helm/krun/README.md.gotmpl` for operator prose, not the generated README.
-The reference explicitly tracks missing storage/webhook chart env/Secret wiring
-as a P7.6 prerequisite, with no implied runtime region default, and follows the
+At P7.5 delivery the reference explicitly tracked missing storage/webhook chart
+env/Secret wiring as a P7.6 prerequisite, with no implied runtime region default.
+The P7.6 implementation completes that wiring;the reference follows the
 actual embedded `/data` PVC and `/data/krun.db` database paths.
 It covers Secret-name prerequisites, both offline mode examples,
 retained CRD/jobs-namespace ownership and reinstall/adoption, the plain generated
@@ -839,15 +883,14 @@ acceptance are still later work.
 
 ## Disposable kind foundation (P4.12)
 
-`make kind-up` now builds and deploys the current hardened image into the owned
-`krun-test-e2e` cluster. `.kind-version` pins kind 0.33.0, and `test/e2e/images.json`
-pins its Kubernetes 1.37 node and registry:2 manifests by digest. The local
-registry follows kind's localhost:5001 recipe, including per-node containerd
-mirrors and the discovery ConfigMap. Both real processes share embedded SQLite,
-with explicit init-container migrations, restricted security contexts, separate
-admin ports and the scheduler's downward-API Lease identity. The generated CRD
-and raw jobs namespace isolation/RBAC/limits/quota are applied before a
-kubectl-applied Function reaches current `Ready=True`.
+`make kind-up` prepares the owned `krun-test-e2e` cluster, current hardened
+image, genuine MinIO and local registry. `.kind-version` pins kind0.33.0;
+`test/e2e/images.json` pins Kubernetes1.37, registry:2 and author curl manifests.
+The localhost:5001 recipe keeps per-node mirrors and discovery. Current
+`make e2e` installs the actual chart in both modes as described in P7.6 above;
+it no longer applies the earlier raw embedded/jobs manifests. The historical
+P4.12 evidence below established the original embedded foundation before that
+chart switch.
 
 P4.12 established the locally and hosted-verified zero-scenario foundation.
 Before the behavioural Vitest runner, infrastructure verification proves a real pod-to-pod connection opens, default-deny blocks
