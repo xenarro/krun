@@ -102,7 +102,21 @@ livenessProbe:
   value: {{ .root.Values.jobsNamespace.name | quote }}
 - name: KRUN_GATEWAY_INTERNAL_URL
   value: {{ printf "http://krun-gateway-internal.%s.svc:8081" .root.Release.Namespace | quote }}
+{{- if .root.Values.observability.otlpEndpoint }}
+- name: OTEL_EXPORTER_OTLP_ENDPOINT
+  value: {{ .root.Values.observability.otlpEndpoint | quote }}
+- name: OTEL_SERVICE_NAME
+  value: {{ printf "krun-%s" .component | quote }}
+- name: OTEL_TRACES_SAMPLER
+  value: "parentbased_traceidratio"
+- name: OTEL_TRACES_SAMPLER_ARG
+  value: {{ .root.Values.observability.tracesSampleRatio | quote }}
+{{- end }}
 {{- if eq .component "scheduler" }}
+{{- if .root.Values.jobsNamespace.userNamespaces }}
+- name: KRUN_JOB_HOST_USERS
+  value: "false"
+{{- end }}
 - name: KRUN_POD_NAME
   valueFrom:
     fieldRef:

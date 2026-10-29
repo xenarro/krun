@@ -539,6 +539,51 @@ At source acceptance the PR is OPEN/REVIEW_REQUIRED: pushed/green is not merged.
 This PLAN/README tracking update requires its own fresh check and exact-head CI.
 No auto-merge, protection bypass, publication or production write is claimed.
 
+## Chart optional integrations (P7.4d, local implementation)
+
+`gatewayApi.httpRoute.enabled=true` renders one Gateway API v1 HTTPRoute in
+this release namespace. Its one backend is the actual public Service on 8080,
+including DNS-safe Service names for dotted release names; internal 8081 and
+admin ports are never routed. Given `parentRefs` and non-empty `hostnames` are
+preserved. Empty hostnames are omitted. The operator supplies Gateway API
+CRDs/controller and a Gateway whose `allowedRoutes` admits this namespace;
+choose a CRD version supporting the supplied parent-reference fields. The chart
+creates no Gateway, GatewayClass, ReferenceGrant or additional network grant.
+Configure Gateway timeouts for long waits and SSE streams; no controller-specific
+timeout policy is invented here.
+
+A non-empty `observability.otlpEndpoint` injects the standard OTLP endpoint,
+`krun-gateway`/`krun-scheduler` service names, `parentbased_traceidratio`, and the
+string-valued `tracesSampleRatio` into both serving processes. Zero is preserved,
+not replaced by the default 0.1. Empty endpoint emits no OTEL override and the
+existing runtime drops traces. Migration, restore and Litestream containers get
+none of these variables. Metrics remain on the existing admin ports.
+
+`jobsNamespace.userNamespaces=true` injects only scheduler
+`KRUN_JOB_HOST_USERS="false"`. The existing parsed config and Job constructor
+then put `hostUsers: false` on function pods, not on platform pods. Disabled
+leaves the override absent. Enable only on nodes meeting SPEC section 9's
+Kubernetes/runtime/kernel requirements; this does not assert ID-mapped execution
+on every cluster. Admission policy remains independently enabled by
+`jobsNamespace.admissionPolicy`, including for external jobs namespaces.
+
+All 47 optional-feature render controls pass in both modes, alongside four
+actual chart-env/config/Job-builder/native-serializer boundary cases. An owned
+kind cluster with the official Gateway API v1.4.0 HTTPRoute CRD passes both-mode
+route/public-Service readback, full source workload server dry runs, and actual
+CREATE rejection of hand-written tag-only Jobs by the chart digest policy.
+Digest-pinned suspended controls and both user-namespace settings are admitted;
+the policy also denies tag-only init containers and does not deny the same tag
+outside the jobs namespace. Resources, cluster and private inputs are removed.
+The original older-CRD parent-reference fixture failure is retained; no product
+field is stripped or validation relaxed to make it pass.
+
+This is an uncommitted implementation awaiting independent review and delivery;
+PLAN remains open. The full chart-installed serving, CNI traffic, data-plane,
+upgrade/rollback and Phase 7 gate remain later P7.6 work. API acceptance of a
+route is not Gateway-controller attachment or HTTP traffic proof, and suspended
+Job acceptance is not execution of a user-namespace function.
+
 ## Gateway waits (P5.1)
 
 `CreateRun?wait=<duration>` retains status 201. `POST /v1/functions/{function}/runs/{run}:wait`
