@@ -43,3 +43,6 @@ e2e: kind-up
 
 helm-lint:
 	helm lint deploy/helm/krun --set apiKeys.existingSecret=krun-lint-api-keys --set db.postgres.existingSecret=krun-lint-db
+	helm lint deploy/helm/krun --set apiKeys.existingSecret=krun-lint-api-keys --set db.postgres.existingSecret=krun-lint-db --set metrics.podMonitor.enabled=true --set metrics.prometheusRule.enabled=true
+	helm lint deploy/helm/krun --set apiKeys.existingSecret=krun-lint-api-keys --set db.mode=embedded --set gateway.replicas=1 --set metrics.podMonitor.enabled=true --set metrics.prometheusRule.enabled=true
+	pnpm exec vitest run --project tooling test/scaffold/helm-monitoring.test.ts

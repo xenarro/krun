@@ -173,23 +173,23 @@ observability:
 
 metrics:
   podMonitor:
-    # -- Enable the specified PodMonitor in P7.7; currently reserved and not rendered. Requires operator-installed Prometheus Operator CRDs when implemented.
+    # -- Render a same-release PodMonitor with named admin endpoints (admin plus embedded admin-sched). Requires operator-installed Prometheus Operator CRDs and an allowed metricsFrom namespace.
     enabled: false
-    # -- Additional PodMonitor labels for Prometheus selection; reserved until P7.7.
+    # -- Additional PodMonitor labels for Prometheus selection; fixed chart identity labels take precedence on collision.
     labels: {}
   prometheusRule:
-    # -- Enable the specified PrometheusRule in P7.7; currently reserved and not rendered. Do not rely on chart-managed alerts yet.
+    # -- Render the seven SPEC alert rules as a PrometheusRule; requires operator-installed Prometheus Operator CRDs and Prometheus rule selection.
     enabled: false
-    # -- Additional PrometheusRule labels for Prometheus selection; reserved until P7.7.
+    # -- Additional PrometheusRule labels for Prometheus selection; fixed chart identity labels take precedence on collision.
     labels: {}
     thresholds:
-      # -- Planned P7.7 high queue-wait alert p95 threshold in seconds.
+      # -- High queue-wait alert p95 threshold in seconds over a ten-minute histogram rate.
       queueWaitP95Seconds: 60
-      # -- Planned P7.7 lost-job alert threshold over one hour.
+      # -- Lost-job alert threshold for the summed failed-run counter increase over one hour.
       jobLostPerHour: 1
-      # -- Planned P7.7 heartbeat-timeout alert threshold over one hour.
+      # -- Heartbeat-timeout alert threshold for the summed failed-run counter increase over one hour.
       heartbeatTimeoutsPerHour: 5
-      # -- Planned P7.7 sustained quota-rejection alert threshold per minute.
+      # -- Sustained quota-rejection alert threshold per minute using a five-minute rate.
       quotaRejectionsPerMinute: 1
 
 objectStorage:
