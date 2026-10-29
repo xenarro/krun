@@ -1,0 +1,22 @@
+{{- if .Values.metrics.podMonitor.enabled }}
+{{- $labels := mergeOverwrite (dict) .Values.metrics.podMonitor.labels (fromYaml (include "krun.labels" .)) }}
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ include "krun.fullname" . | quote }}
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- toYaml $labels | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: krun
+      app.kubernetes.io/instance: {{ .Release.Name | quote }}
+  podMetricsEndpoints:
+    - port: admin
+      path: /metrics
+    {{- if eq .Values.db.mode "embedded" }}
+    - port: admin-sched
+      path: /metrics
+    {{- end }}
+{{- end }}

@@ -266,6 +266,14 @@ recognize native auto-descriptions, so do not substitute that flag for the
 actual template guard and complete key/default/type coverage tests. No new
 application dependency is introduced (SPEC D120).
 
+Monitoring acceptance uses the existing promtool toolchain, pinned to Prometheus
+3.15.1 in CI with its official Linux amd64 archive SHA256 checked before
+extracting only promtool. Both `make check` and `make helm-lint` run actual
+`promtool check rules` against the rendered PrometheusRule `.spec` in private
+temporary files. Helm 4 and promtool must be on PATH for local chart tests;
+no Prometheus server, Operator deployment or application dependency is added
+(SPEC D122).
+
 ## 4. How the pieces fit
 
 ### 4.1 Process shape

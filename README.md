@@ -182,6 +182,29 @@ dependencies,with no auto-merge or protection bypass. P7.1 starts from the
 current committed verified lineage after refreshing parent/main state,not an
 obsolete main checkout. Production chart,SDK and release acceptance remain later.
 
+## Optional chart monitoring (P7.7)
+
+The chart now renders opt-in `monitoring.coreos.com/v1` PodMonitor and
+PrometheusRule resources from the existing `metrics.*` values. Both remain off
+by default. Install the Prometheus Operator CRDs and a Prometheus server yourself,
+configure their resource selectors through the additional labels, and allow the
+Prometheus namespace through `networkPolicy.metricsFrom`. No monitoring Service,
+new network permission, Operator or server is provisioned by this chart.
+
+The PodMonitor selects this release only: `admin` for both Postgres Deployments,
+or `admin` and `admin-sched` for the embedded gateway/scheduler containers.
+The seven alert names, expressions, durations and severity match SPEC section 13
+and the OPERATIONS table; only the four existing numeric thresholds vary.
+Additional resource labels cannot overwrite fixed chart identity labels.
+
+`make helm-lint` lints enabled monitoring in both modes and runs 24 render/contract
+controls, including eight real `promtool check rules` invocations over default,
+zero, fractional and custom thresholds. Helm 4 and promtool 3.15.1 must be on PATH;
+CI installs checksum-pinned upstream binaries. The complete local Phase 7 gate
+also requires the fresh two-mode chart-installed `make e2e` below. These are local
+implementation checks, not independent review, hosted delivery, PLAN closure,
+production scrape/alert-delivery proof or future cross-binary rollback proof.
+
 ## Chart-installed native acceptance (P7.6)
 
 `make e2e` now installs the actual chart in two fresh restricted platform/jobs
@@ -222,7 +245,8 @@ reproduced repairs are complete; tracking receives its own exact-head CI.
 
 PR #80 targets still-unmerged PR #79 (`docs/helm-values-reference`); pushed and
 green is not merged-main acceptance. This is not a production installation or
-complete Phase 7 claim. P7.7 monitoring and the full phase gate remain mandatory;
+complete Phase 7 delivery claim. P7.7 monitoring source and its local checks are
+described above; independent review, delivery and the complete phase gate remain mandatory;
 configuration rollback does not prove future one-minor binary-release compatibility.
 
 ## Generated Helm value reference (P7.5)

@@ -4,6 +4,7 @@
   "ignoreBinaries": ["make", "helm", "helm-docs", "kubectl"],
   "workspaces": {
     ".": {
+      "ignoreBinaries": ["promtool"],
       "entry": [
         "bin/krun.js",
         "test/e2e/cluster.ts",

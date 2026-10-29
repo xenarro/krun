@@ -1,0 +1,43 @@
+{{- if .Values.metrics.prometheusRule.enabled }}
+{{- $thresholds := .Values.metrics.prometheusRule.thresholds }}
+{{- $labels := mergeOverwrite (dict) .Values.metrics.prometheusRule.labels (fromYaml (include "krun.labels" .)) }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "krun.fullname" . | quote }}
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- toYaml $labels | nindent 4 }}
+spec:
+  groups:
+    - name: krun
+      rules:
+        - alert: KrunNoLeader
+          expr: max(krun_scheduler_leader) == 0 or absent(krun_scheduler_leader)
+          for: 2m
+          labels: {severity: critical}
+        - alert: KrunFunctionsNotSynced
+          expr: min(krun_functions_synced) == 0
+          for: 2m
+          labels: {severity: critical}
+        - alert: KrunJobLost
+          expr: sum(increase(krun_runs_failed_total{reason="job_lost"}[1h])) > {{ $thresholds.jobLostPerHour }}
+          for: 0m
+          labels: {severity: warning}
+        - alert: KrunHeartbeatTimeouts
+          expr: sum(increase(krun_runs_failed_total{reason="heartbeat_timeout"}[1h])) > {{ $thresholds.heartbeatTimeoutsPerHour }}
+          for: 0m
+          labels: {severity: warning}
+        - alert: KrunDeliveriesDead
+          expr: increase(krun_deliveries_total{state="dead"}[1h]) > 0
+          for: 0m
+          labels: {severity: warning}
+        - alert: KrunQuotaRejections
+          expr: sum(rate(krun_quota_rejections_total[5m])) * 60 > {{ $thresholds.quotaRejectionsPerMinute }}
+          for: 10m
+          labels: {severity: warning}
+        - alert: KrunQueueWaitHigh
+          expr: histogram_quantile(0.95, sum(rate(krun_queue_wait_seconds_bucket[10m])) by (le)) > {{ $thresholds.queueWaitP95Seconds }}
+          for: 10m
+          labels: {severity: warning}
+{{- end }}

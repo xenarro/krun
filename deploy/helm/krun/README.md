@@ -11,8 +11,9 @@ database, credentials, object-storage bucket, Function resources or a Gateway.
 
 This reference documents current templates, not a completed production release.
 Chart-installed serving, CNI/data-plane, upgrade and rollback acceptance is
-exercised by `make e2e` in P7.6; PodMonitor/PrometheusRule rendering and the complete
-Phase 7 gate remain P7.7. The `metrics.*` values are reserved until that implementation.
+exercised by `make e2e`. P7.7 adds opt-in PodMonitor/PrometheusRule rendering
+and real promtool rule checks. Local chart acceptance is not independent review,
+committed/hosted delivery or a production release.
 
 ## Prerequisites and Secret references
 
@@ -120,7 +121,33 @@ Keep scheduler downtime below
 `config.ttlAfterFinished` so finished Job observations remain available.
 See [operations](../../../docs/OPERATIONS.md) for migration, recovery, retained
 ownership and first checks. Local chart-installed acceptance is separate from
-independent review, hosted delivery, P7.7 monitoring and the full Phase 7 gate.
+independent review, hosted delivery and production monitoring operation.
+
+## Monitoring and alerts
+
+Both monitoring resources are disabled by default. Install the Prometheus Operator
+`monitoring.coreos.com/v1` CRDs yourself before enabling either; the chart does
+not install an Operator or a Prometheus server and does not silently hide enabled
+resources based on discovery. Configure Prometheus to select the resources using
+`metrics.podMonitor.labels` and `metrics.prometheusRule.labels`. Additional labels
+cannot replace standard chart identity labels.
+
+The PodMonitor selects this release's name/instance labels in its own namespace.
+Postgres uses one `/metrics` endpoint named `admin`, covering both Deployments;
+embedded adds `admin-sched` for the scheduler on 9091 alongside gateway `admin`
+on 9090. These are container port names, not a new Service. Select the actual
+Prometheus namespace in `networkPolicy.metricsFrom`; rendering a PodMonitor does
+not grant network access, prove a successful scrape or enable remote-write.
+
+The PrometheusRule contains exactly the seven SPEC section 13 alerts, with their
+specified expressions, durations and severity. Its four `thresholds` values may
+be overridden, including zero; no implicit fallback replaces zero. See the
+[operations alert table](../../../docs/OPERATIONS.md#alerts-and-first-checks)
+for first checks. `make helm-lint` renders enabled resources in both modes and
+uses real promtool 3.15.1 to validate the extracted rule `.spec`, including
+nondefault thresholds. Local chart tests require Helm 4 and promtool on PATH;
+CI installs checksum-pinned upstream tooling. This is syntax/contract validation,
+not an installed Prometheus/Operator alert-delivery or scrape-controller test.
 
 ## Optional integrations and isolation
 
@@ -236,14 +263,14 @@ regeneration does not install a chart, contact a cluster or publish artifacts.
 | jobsNamespace.quota."requests.memory" | string | `"100Gi"` | Jobs ResourceQuota aggregate memory requests budget. |
 | jobsNamespace.quota.pods | string | `"200"` | Jobs ResourceQuota Pod budget; compared as an exact Kubernetes quantity with config.maxRunning when creating the namespace. |
 | jobsNamespace.userNamespaces | bool | `false` | Set function-pod hostUsers false through scheduler configuration only; requires compatible Kubernetes, CRI, kernel and storage support. |
-| metrics.podMonitor.enabled | bool | `false` | Enable the specified PodMonitor in P7.7; currently reserved and not rendered. Requires operator-installed Prometheus Operator CRDs when implemented. |
-| metrics.podMonitor.labels | object | `{}` | Additional PodMonitor labels for Prometheus selection; reserved until P7.7. |
-| metrics.prometheusRule.enabled | bool | `false` | Enable the specified PrometheusRule in P7.7; currently reserved and not rendered. Do not rely on chart-managed alerts yet. |
-| metrics.prometheusRule.labels | object | `{}` | Additional PrometheusRule labels for Prometheus selection; reserved until P7.7. |
-| metrics.prometheusRule.thresholds.heartbeatTimeoutsPerHour | int | `5` | Planned P7.7 heartbeat-timeout alert threshold over one hour. |
-| metrics.prometheusRule.thresholds.jobLostPerHour | int | `1` | Planned P7.7 lost-job alert threshold over one hour. |
-| metrics.prometheusRule.thresholds.queueWaitP95Seconds | int | `60` | Planned P7.7 high queue-wait alert p95 threshold in seconds. |
-| metrics.prometheusRule.thresholds.quotaRejectionsPerMinute | int | `1` | Planned P7.7 sustained quota-rejection alert threshold per minute. |
+| metrics.podMonitor.enabled | bool | `false` | Render a same-release PodMonitor with named admin endpoints (admin plus embedded admin-sched). Requires operator-installed Prometheus Operator CRDs and an allowed metricsFrom namespace. |
+| metrics.podMonitor.labels | object | `{}` | Additional PodMonitor labels for Prometheus selection; fixed chart identity labels take precedence on collision. |
+| metrics.prometheusRule.enabled | bool | `false` | Render the seven SPEC alert rules as a PrometheusRule; requires operator-installed Prometheus Operator CRDs and Prometheus rule selection. |
+| metrics.prometheusRule.labels | object | `{}` | Additional PrometheusRule labels for Prometheus selection; fixed chart identity labels take precedence on collision. |
+| metrics.prometheusRule.thresholds.heartbeatTimeoutsPerHour | int | `5` | Heartbeat-timeout alert threshold for the summed failed-run counter increase over one hour. |
+| metrics.prometheusRule.thresholds.jobLostPerHour | int | `1` | Lost-job alert threshold for the summed failed-run counter increase over one hour. |
+| metrics.prometheusRule.thresholds.queueWaitP95Seconds | int | `60` | High queue-wait alert p95 threshold in seconds over a ten-minute histogram rate. |
+| metrics.prometheusRule.thresholds.quotaRejectionsPerMinute | int | `1` | Sustained quota-rejection alert threshold per minute using a five-minute rate. |
 | networkPolicy.metricsFrom | object | `{}` | Namespace selector permitted to reach platform admin/metrics ports. Empty matches all source namespaces; it is not a disabled scrape policy. |
 | objectStorage.bucket | string | `""` | Operator-provisioned S3-compatible bucket name wired into both serving processes. The chart does not create the bucket. |
 | objectStorage.egress | list | `[]` | NetworkPolicyPeer list for enabled object-storage egress on the endpoint port. Empty grants no storage destinations; CNI and external-destination rules remain operator responsibilities. |
