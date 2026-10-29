@@ -1,0 +1,105 @@
+{{- if .Values.jobsNamespace.create }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: krun-jobs-deny-all
+  namespace: {{ .Values.jobsNamespace.name | quote }}
+  labels:
+    {{- include "krun.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: krun-jobs-allow-dns
+  namespace: {{ .Values.jobsNamespace.name | quote }}
+  labels:
+    {{- include "krun.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  {{- if .Values.jobsNamespace.dnsEgress }}
+  egress:
+    - to:
+        {{- toYaml .Values.jobsNamespace.dnsEgress | nindent 8 }}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+  {{- else }}
+  egress: []
+  {{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: krun-jobs-allow-gateway
+  namespace: {{ .Values.jobsNamespace.name | quote }}
+  labels:
+    {{- include "krun.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace | quote }}
+          podSelector:
+            matchLabels:
+              krun.io/gateway: "true"
+      ports:
+        - {protocol: TCP, port: 8081}
+{{- if .Values.objectStorage.enabled }}
+{{/* Match runtime WHATWG authority boundaries without Go-only host restrictions. */}}
+{{- $rawEndpoint := regexReplaceAll `^[\x00-\x20]+|[\x00-\x20]+$` .Values.objectStorage.endpoint "" -}}
+{{- $rawEndpoint = $rawEndpoint | replace "\t" "" | replace "\r" "" | replace "\n" "" -}}
+{{- $authorityEndpoint := regexReplaceAll `(?i)^https?:[\\/]*` $rawEndpoint "" -}}
+{{- $host := regexFind `^[^/?#]*` (replace "\\" "/" $authorityEndpoint) -}}
+{{- $port := ternary 443 80 (hasPrefix "https:" (lower $rawEndpoint)) }}
+{{- $explicit := regexFind ":[0-9]+$" $host }}
+{{- if $explicit }}
+{{- $port = atoi (trimPrefix ":" $explicit) }}
+{{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: krun-jobs-allow-object-storage
+  namespace: {{ .Values.jobsNamespace.name | quote }}
+  labels:
+    {{- include "krun.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  {{- if .Values.objectStorage.egress }}
+  egress:
+    - to:
+        {{- toYaml .Values.objectStorage.egress | nindent 8 }}
+      ports:
+        - {protocol: TCP, port: {{ $port }}}
+  {{- else }}
+  egress: []
+  {{- end }}
+{{- end }}
+{{- with .Values.jobsNamespace.egressCIDRs }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: krun-jobs-allow-egress-cidrs
+  namespace: {{ $.Values.jobsNamespace.name | quote }}
+  labels:
+    {{- include "krun.labels" $ | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        {{- range . }}
+        - ipBlock:
+            {{- toYaml . | nindent 12 }}
+        {{- end }}
+{{- end }}
+{{- end }}

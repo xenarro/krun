@@ -488,6 +488,57 @@ merged. No automatic merge, protection bypass, publication or production write.
 NetworkPolicies, optional features and the full Phase7 chart-installed
 serving/data-plane/upgrade gate remain later tasks.
 
+## Chart NetworkPolicies (P7.4c)
+
+With `jobsNamespace.create=true`, jobs receive namespace-wide default deny for
+both directions, DNS egress on UDP/TCP 53 to `dnsEgress`, and TCP 8081 egress to
+gateway-labelled pods in the release namespace. The gateway peer combines its
+namespace and pod selectors in one object (AND, not OR). Enabled object storage
+adds only its configured peers on the endpoint's explicit port or HTTP/HTTPS
+80/443 default; URL paths, queries and IPv6 address colons are not ports.
+Port extraction matches the runtime's accepted HTTP(S) forms, including short,
+single-slash and backslash authorities, ASCII whitespace preprocessing and
+percent-encoded hostnames. It does not rewrite endpoint values or impose Go URL
+parser restrictions on otherwise valid runtime configuration.
+Extra `egressCIDRs` become `ipBlock` peers with their `except` lists and no port
+restriction. Empty explicit DNS/storage peer lists grant no destinations.
+
+Four release-namespace ingress policies always render, including when jobs are
+externally managed. They select only this release's name/instance: default deny,
+public TCP 8080 on gateway-labelled pods from anywhere, internal TCP 8081 from
+the jobs namespace, and admin TCP 9090 (also 9091 in embedded mode) from the
+`metricsFrom` namespace selector. Empty `metricsFrom` allows all admin sources as
+specified. There is no release egress policy, API-server grant or per-function
+extra rule. With `create=false`, the platform team supplies jobs namespace
+policies; the chart renders no jobs-scope policy. Release ingress policies still
+render when the namespace names coincide; distinct purpose-specific names avoid
+resource-identity collisions.
+
+Helm NOTES warns about either `0.0.0.0/0` or `::/0` in `egressCIDRs` without
+exceptions, even for an external jobs namespace. Peer objects and exceptions are
+preserved, not expanded into broader rules. D118 records implementation mechanics
+without changing section 9 or the values contract.
+
+All 92 render/NOTES controls and 267 combined chart/generator controls pass,
+with both Helm mode lints and deterministic generators twice. The NOTES controls
+use real Helm client-only dry runs with no cluster connection. Eighteen permanent
+adapter/chart boundary tests also verify actual signed-origin ports and six
+real HEAD requests to scoped ephemeral loopback servers; signed capabilities
+and credentials are not retained. API acceptance is
+not traffic-enforcement proof: CNI reachability, complete chart-installed serving
+in both modes and upgrade/rollback remain the mandatory P7.6/Phase 7 gate. This
+implementation has independent reviews and a scoped parser repair.
+Source commit [`25b809d`](https://github.com/xenarro/krun/commit/25b809d2d85c966240573995732a2f7be1fbabf6)
+is pushed in [PR #77](https://github.com/xenarro/krun/pull/77) against main after normal ancestry
+reconciliation with the merged parent. Fresh local and
+[exact source CI](https://github.com/xenarro/krun/actions/runs/40789149949) pass 1,992 TypeScript tests plus
+one Python test; hosted `verify` and `kind` also pass current-source image/security
+gates and eight existing raw-manifest scenarios/privacy oracles. Local task-resource
+API acceptance passes six matrices and 44 exact policy readbacks with cleanup.
+At source acceptance the PR is OPEN/REVIEW_REQUIRED: pushed/green is not merged.
+This PLAN/README tracking update requires its own fresh check and exact-head CI.
+No auto-merge, protection bypass, publication or production write is claimed.
+
 ## Gateway waits (P5.1)
 
 `CreateRun?wait=<duration>` retains status 201. `POST /v1/functions/{function}/runs/{run}:wait`

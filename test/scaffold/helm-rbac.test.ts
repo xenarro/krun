@@ -162,7 +162,6 @@ for (const mode of ["postgres", "embedded"]) {
           "Secret",
           "ConfigMap",
           "Function",
-          "NetworkPolicy",
         ]).not.toContain(d.kind);
       for (const d of bindings) {
         expect(d.roleRef.name).not.toBe("krun-function-author");
@@ -171,8 +170,11 @@ for (const mode of ["postgres", "embedded"]) {
           expect(["krun-job-default", "krun-migrate", "default"]).not.toContain(s.name);
       }
       if (!create) {
-        for (const kind of ["Namespace", "LimitRange", "ResourceQuota", "NetworkPolicy"])
+        for (const kind of ["Namespace", "LimitRange", "ResourceQuota"])
           expect(docs.filter((d) => d.kind === kind)).toEqual([]);
+        expect(
+          docs.filter((d) => d.kind === "NetworkPolicy" && d.metadata.namespace === jobs),
+        ).toEqual([]);
         expect(
           docs.find((d) => d.kind === "ServiceAccount" && d.metadata.name === "krun-job-default")
             .automountServiceAccountToken,
