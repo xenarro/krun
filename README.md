@@ -578,8 +578,18 @@ outside the jobs namespace. Resources, cluster and private inputs are removed.
 The original older-CRD parent-reference fixture failure is retained; no product
 field is stripped or validation relaxed to make it pass.
 
-This is an uncommitted implementation awaiting independent review and delivery;
-PLAN remains open. The full chart-installed serving, CNI traffic, data-plane,
+Both independent reviews report no material scoped defect; repair preserves the
+five reviewed product paths. Source [`99090a1`](https://github.com/xenarro/krun/commit/99090a1b37a8e41c42d5a7242241f54a5ff9147e)
+is pushed in [PR #78](https://github.com/xenarro/krun/pull/78) against main after normal merged-parent ancestry
+reconciliation. Fresh local and [exact source CI](https://github.com/xenarro/krun/actions/runs/40799749550)
+pass 2,039 TypeScript tests and one Python test. Hosted verify/kind also pass
+current-source container/security checks and eight existing raw-manifest
+scenarios/privacy oracles. Only P7.4d closes after source hosted acceptance;
+the PLAN/README-only tracking update receives its own fresh full check and
+exact-head hosted CI. PR #78 remains OPEN/REVIEW_REQUIRED at source acceptance,
+not merged; no auto-merge, protection bypass, publication or tags.
+
+The full chart-installed serving, CNI traffic, data-plane,
 upgrade/rollback and Phase 7 gate remain later P7.6 work. API acceptance of a
 route is not Gateway-controller attachment or HTTP traffic proof, and suspended
 Job acceptance is not execution of a user-namespace function.
