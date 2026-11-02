@@ -381,8 +381,18 @@ reproducible builds. A Function named `krun` also installs and passes its tests.
 CLI regression tests cover Python file packaging, schema/string-name
 preservation, overwrite refusal, hidden-file preservation, TTY selection and
 real signal/acquisition/retry cleanup including nested test directories. This
-is implementation-local evidence pending independent review and delivery;
-P8.5 stays open in PLAN. No full Phase8, publication or production claim.
+is now independently reviewed and delivered as source `d230db6d09ef3da73f61a8445042c9d74fc50771` in
+[PR88](https://github.com/xenarro/krun/pull/88), stacked against still-unmerged
+`feat/node-init-template`/PR87. Both reviews have no material findings; fresh
+integration and delivery gates resolve their execution-budget/artifact limits.
+Exact [source CI](https://github.com/xenarro/krun/actions/runs/41446430696)
+passes all six jobs: 2,342 TypeScript + 110 Python, including 115 CLI cases,
+SDK runtime matrices, generation, current-source image/identity/security,
+Helm/audit and 22 existing two-mode native regressions. Only P8.5 closes after
+source acceptance; this PLAN/README tracking update receives its own fresh
+local and exact-head hosted checks. PR88 is pushed/green, not merged. Actual
+SDK-built bilingual kind Functions and deploy/full Phase8 remain P8.6/P8.7.
+No auto-merge, publication, tags or production use is claimed.
 
 ## Optional chart monitoring (P7.7)
 
