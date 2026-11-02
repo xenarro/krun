@@ -421,9 +421,21 @@ all-replica process/object-store log privacy witnesses. Both per-mode namespace
 removals and complete owned cluster/registry cleanup are confirmed. Runner
 workers, retries, test/hook deadlines and security policies are unchanged.
 
-This is implementation-local evidence, not independent review, a commit,
-hosted CI, publication or production acceptance. The listed SDK/template Phase 8
-gate passes locally; `krun deploy` remains P8.7 and Phase 8 is not finished.
+Both independent reviews report no material scoped defect; repair and delivery
+preserve all fourteen reviewed source paths. Source `cdc854ff27d4ff248014a9b79e311bd2b663ceea` is
+pushed in [PR90](https://github.com/xenarro/krun/pull/90), targeting main after
+normal reconciliation with merged PR87/PR88. Fresh precommit `make check` passes
+2,347 TypeScript and 110 Python tests. [Exact source CI](https://github.com/xenarro/krun/actions/runs/41482158341)
+passes all six jobs: both SDK runtime matrices, generation, current-source
+image/smokes/identity/security, Helm/audit and all 34 native tests, including
+twelve SDK case/privacy observations and owned cleanup. Earlier failed attempts
+and existing-policy retries remain recorded; no causal or no-flake claim is made.
+
+Only P8.6 closes after source CI. This PLAN/README-only tracking update receives
+its own fresh precommit check and exact-head hosted acceptance. PR90 is
+pushed/green, not merged; required independent repository review still applies.
+The listed SDK/template Phase 8 gate passes; `krun deploy` remains P8.7 and
+Phase 8 is not finished. No auto-merge, publication, tags or production use.
 
 ## Optional chart monitoring (P7.7)
 
