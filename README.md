@@ -498,8 +498,36 @@ accepted run uses per-command `ionice -c 2 -n 0`; no assertion, test/hook deadli
 worker, runtime or supply-chain policy changes. Isolated unchanged gateway/query
 qualifications also pass. This records a successful scoped execution profile,
 not a proven universal timing repair. Independent reviews identified the
-cancellation and shared-tag defects repaired above. Independent repair review
-and Git delivery remain separate; PLAN is not closed in this job.
+cancellation and shared-tag defects repaired above; their reproduced repairs
+and source delivery are recorded below. Required repository review remains
+separate from local and hosted acceptance.
+
+## CLI deploy delivery (P8.7)
+
+Source `27905d7b22b8e35ce4c78fa955b9d919de75a74a` is pushed in
+[PR #91](https://github.com/xenarro/krun/pull/91) against `main`, following normal
+content-preserving reconciliation with the merged/approved P8.6 parent.
+[Exact source CI](https://github.com/xenarro/krun/actions/runs/41531697310) passes
+all six jobs: 2,387 TypeScript and 110 Python tests, 153 CLI cases, Node SDK
+131 cases on each Node22/26 and Python SDK110 on each Python3.11/3.13. Locked
+install, generation, current-source image smokes/identity/critical scan,
+Helm and production audit also pass.
+
+The fresh two-mode native gate passes all 38 tests, including all four real
+language/mode deploy/no-apply cases, independent registry-byte digest readback,
+current-generation Ready and the three printed commands. Both vendored SDK
+projects build/test, twelve SDK privacy observations and two first-status
+acknowledgements pass, and owned cleanup succeeds. No runner retry is observed
+in this source hosted run; no deadline, worker, retry or security policy changes.
+Both review roots are reproduced and repaired with invocation-unique Docker
+references and owned process-group termination plus bounded pipe draining.
+
+Only P8.7 is newly checked after source acceptance. This PLAN/README tracking
+update receives its own fresh `make check` and final exact-head CI. PR91 is
+pushed/green, not merged at source acceptance; required independent repository
+review remains pending and no auto-merge is enabled. The listed Phase8
+SDK/template/deploy gate passes. Capacity/security, benchmark/quick-start and
+release gates remain Phase9; no publication, tags or production use is claimed.
 
 ## Optional chart monitoring (P7.7)
 
