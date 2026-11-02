@@ -182,6 +182,33 @@ dependencies,with no auto-merge or protection bypass. P7.1 starts from the
 current committed verified lineage after refreshing parent/main state,not an
 obsolete main checkout. Production chart,SDK and release acceptance remain later.
 
+## Node function SDK implementation (P8.1)
+
+The Node SDK now lives at [`sdk/node`](sdk/node/README.md), alongside the Python
+SDK. The physical migration preserves `@krun/sdk`, its Node 22+ floor and empty
+runtime dependencies; workspace, lockfile, test/lint/Knip, Docker paths and active
+agent guidance move together. A verified pre-behavior structural snapshot is
+retained for independent review and a separate later delivery commit.
+
+`run(handler)` implements the internal v1 contract: input fetch, bounded latest
+status/heartbeat gate, inline or presigned JSON result, error reporting and exit
+codes. Local mode reads a file or stdin, places only the result on stdout and
+puts status/log/error output on stderr. Importing the SDK does not run a handler.
+Transport diagnostics do not expose credentials, URLs or response bodies.
+
+Build with `pnpm --filter @krun/sdk build`, then run
+`node node_modules/vitest/vitest.mjs run --project sdk-node sdk/node`.
+The suite uses actual local HTTP listeners and child processes against built
+SDK output, including real ten-second timeouts and fixed retry backoff.
+The `sdk-node` CI job tests Node 22 and 26; tooling install/build stays on the
+workspace Node 26 version before switching the runtime under test. Packing is
+local only; no package ownership or publication prerequisite is waived.
+
+This source remains subject to independent review and delivery. It does not
+implement the Python runtime, shared bilingual conformance table, CLI templates
+or SDK-built native kind Functions. Those P8.2-P8.7 gates remain mandatory; no
+complete Phase 8 or production/release acceptance is claimed.
+
 ## Optional chart monitoring (P7.7)
 
 The chart now renders opt-in `monitoring.coreos.com/v1` PodMonitor and
