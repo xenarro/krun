@@ -1,5 +1,5 @@
 import { lstat, mkdir, open, readdir, readFile, rmdir, unlink } from "node:fs/promises";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { isCancel, select } from "@clack/prompts";
 import {
@@ -19,16 +19,28 @@ export class InitFailure extends Data.TaggedError("InitFailure")<{
 const failure = (message: string, hint = "Run krun init --help.") =>
   new InitFailure({ message, hint, exitCode: 1 });
 const usage = "Usage: krun init [--help] --lang node|python [--name <function>] <dir>";
-const files = [
-  "handler.js",
-  "handler.test.js",
-  "package.json",
-  "Dockerfile",
-  ".dockerignore",
-  ".gitignore",
-  "function.yaml",
-  "README.md",
-];
+const files = {
+  node: [
+    "handler.js",
+    "handler.test.js",
+    "package.json",
+    "Dockerfile",
+    ".dockerignore",
+    ".gitignore",
+    "function.yaml",
+    "README.md",
+  ],
+  python: [
+    "handler.py",
+    "tests/test_handler.py",
+    "pyproject.toml",
+    "Dockerfile",
+    ".dockerignore",
+    ".gitignore",
+    "function.yaml",
+    "README.md",
+  ],
+};
 const starterSchema = functionResourceSchema.extend({
   spec: functionSpecSchema.extend({ image: z.literal("REPLACE_WITH_DIGEST") }),
 });
@@ -80,6 +92,7 @@ export const InitFilesLive = Layer.succeed(InitFiles, {
         try: (signal) => {
           const transaction = (async () => {
             const owned: string[] = [];
+            const directories: string[] = [];
             let created = false;
             try {
               const info = await lstat(directory).catch((error: unknown) => {
@@ -105,6 +118,11 @@ export const InitFilesLive = Layer.succeed(InitFiles, {
               for (const [name, text] of content) {
                 signal.throwIfAborted();
                 const file = join(directory, name);
+                const parent = dirname(file);
+                if (parent !== directory && !directories.includes(parent)) {
+                  await mkdir(parent);
+                  directories.push(parent);
+                }
                 const handle = await open(file, "wx");
                 owned.push(file);
                 try {
@@ -124,6 +142,7 @@ export const InitFilesLive = Layer.succeed(InitFiles, {
                 );
             } catch (error) {
               for (const file of owned.reverse()) await unlink(file).catch(() => undefined);
+              for (const path of directories.reverse()) await rmdir(path).catch(() => undefined);
               if (created) await rmdir(directory).catch(() => undefined);
               throw error;
             }
@@ -196,7 +215,9 @@ export const initCommand = (args: readonly string[]) =>
       directory: parsed.positionals[0],
     });
     if (!checked.success || parsed.positionals.length !== 1)
-      return yield* failure("Invalid init arguments; provide --lang node and one directory.");
+      return yield* failure(
+        "Invalid init arguments; provide --lang node|python and one directory.",
+      );
     const options = checked.data;
     let language = options.lang;
     if (language === undefined) {
@@ -215,11 +236,6 @@ export const initCommand = (args: readonly string[]) =>
         });
       language = selected;
     }
-    if (language !== "node")
-      return yield* failure(
-        "The Python template is not implemented yet (P8.5).",
-        "Use --lang node for the available template.",
-      );
     const target = resolve(terminal.cwd, options.directory);
     const name = options.name ?? basename(target);
     if (!functionMetadataSchema.shape.name.safeParse(name).success)
@@ -234,9 +250,12 @@ export const initCommand = (args: readonly string[]) =>
       catch: () => failure("Invalid CLI package version.", "Reinstall the CLI package."),
     });
     const content = new Map<string, string>();
-    for (const file of files) {
+    for (const file of files[language]) {
       const source = yield* fs.read(
-        new URL(`../templates/node/${file === ".gitignore" ? "gitignore" : file}`, import.meta.url),
+        new URL(
+          `../templates/${language}/${file === ".gitignore" ? "gitignore" : file}`,
+          import.meta.url,
+        ),
       );
       content.set(
         file,
@@ -251,8 +270,9 @@ export const initCommand = (args: readonly string[]) =>
     if (!valid)
       return yield* failure("Invalid starter template schema.", "Reinstall the CLI package.");
     yield* fs.publish(target, content);
+    const next = language === "node" ? "npm install; npm test" : "uv sync; uv run pytest";
     yield* terminal.output(
       "stderr",
-      `Created ${JSON.stringify(target)}. Next: cd '${target.replaceAll("'", "'\\''")}'; npm install; npm test. Replace REPLACE_WITH_DIGEST via krun deploy before applying function.yaml.`,
+      `Created ${JSON.stringify(target)}. Next: cd '${target.replaceAll("'", "'\\''")}'; ${next}. Replace REPLACE_WITH_DIGEST via krun deploy before applying function.yaml.`,
     );
   });

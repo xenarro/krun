@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/xenarro/krun/v__KRUN_VERSION__/docs/schemas/function-v1alpha1.json
+apiVersion: krun.io/v1alpha1
+kind: Function
+metadata:
+  name: "__KRUN_NAME__"
+spec:
+  image: REPLACE_WITH_DIGEST
+  inputSchema:
+    type: object
+    required: [name]
+    properties:
+      name:
+        type: string
+        minLength: 1
+    additionalProperties: false
+  heartbeatTimeout: 5m
