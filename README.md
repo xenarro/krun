@@ -269,12 +269,12 @@ worker cleanup are tested without shortening operation budgets. This PLAN/README
 tracking update receives its own fresh local and exact-head hosted acceptance.
 
 PR #83 is pushed and green, not merged; PR #82 still requires independent
-protected-main approval. Neither is auto-merged. Shared bilingual scenarios,
-CLI-generated vendored templates and SDK-built kind Functions remain P8.3-P8.7;
+protected-main approval. Neither is auto-merged. CLI-generated vendored templates
+and SDK-built kind Functions remain P8.4-P8.7;
 the existing native tests are not the full Phase 8 SDK gate. No publication,
 release tag, production use or complete Phase 8 acceptance is claimed.
 
-## Shared SDK wire conformance implementation (P8.3)
+## Shared SDK wire conformance (P8.3)
 
 [`test/sdk-conformance`](test/sdk-conformance/README.md) now holds one data-only
 19-scenario table consumed by both SDK suites. Both run the real SDK against
@@ -295,8 +295,16 @@ conformance tooling now explicitly installs the existing Node toolchain in CI;
 the Python SDK itself remains dependency-free and neither runtime is changed.
 
 Both independent reviews are consumed and the shared-oracle findings are repaired.
-Source remains uncommitted pending delivery; no new hosted CI or merge/publication
-is claimed. P8.3 remains open in PLAN.
+Source commit `fe7371c765c6c01ff175b679392a6e85e2914ced` is delivered in
+[PR84](https://github.com/xenarro/krun/pull/84), stacked on the still-unmerged
+Python SDK parent PR83. Its exact-head [CI](https://github.com/xenarro/krun/actions/runs/41397400428)
+passes all six jobs: 2,265 TypeScript + 110 Python tests, 131 Node SDK cases on
+22/26, 110 Python SDK cases on 3.11/3.13, generation, current-source platform
+image smokes/identity/security, Helm/audit and 22 existing native regressions.
+Only P8.3 closes after that source acceptance. This PLAN/README tracking commit
+requires its own fresh `make check` and exact-head hosted acceptance. PR84 is
+open, not merged; PR82 still needs protected-main independent review. No
+publication, tags, auto-merge or production use is claimed.
 Vendored generated templates, SDK-built native kind Functions and deploy remain
 P8.4-P8.7; the complete Phase 8 gate is not yet accepted.
 
