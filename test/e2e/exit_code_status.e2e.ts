@@ -7,6 +7,7 @@ afterAll(() => h.close());
 it("retains two accepted statuses then classifies exit 3 within ten seconds", async () => {
   const created = await h.submit();
   const first = await h.until(created, (run) => run.runtimeStatus?.message === "first", 30_000);
+  await h.acknowledgeFirstStatus(first);
   const run = await h.terminal(created, "FAILED");
   expect(run.failureReason).toBe("EXIT_CODE");
   expect(run.jobStatus?.exitCode).toBe(3);

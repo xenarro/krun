@@ -818,6 +818,46 @@ export const scenario = (mode: Mode, client?: { namespace: string; pod: string }
     equalOpaque(actual: unknown, expected: unknown, message: string) {
       check(isDeepStrictEqual(actual, expected), message);
     },
+    async acknowledgeFirstStatus(run: Run) {
+      check(
+        mode === "exit_code_status" &&
+          runs.some((owned) => owned.name === run.name) &&
+          run.runtimeStatus?.message === "first",
+        "Status acknowledgement lacks an owned first-status witness",
+      );
+      const id = run.name.split("/").at(-1);
+      const pod = await eventually(
+        async () => {
+          healthyWatch();
+          return [...pods.values()].find(
+            (value) =>
+              value.metadata.labels["krun.io/run-id"] === id &&
+              value.metadata.labels["krun.io/function"] === name &&
+              value.status?.phase === "Running",
+          );
+        },
+        (value) => (value ? "done" : "wait"),
+        "Owned live first-status producer",
+        5000,
+      );
+      check(pod, "Status acknowledgement lacks its owned producer");
+      kube(
+        [
+          "exec",
+          "-n",
+          jobsNamespace,
+          `pod/${pod.metadata.name}`,
+          "-c",
+          "function",
+          "--",
+          "/bin/sh",
+          "-c",
+          'printf "%s\\n" first-observed > /tmp/krun-e2e-first-status-ack',
+        ],
+        "Acknowledge the observed first status through the owned FIFO",
+      );
+      console.log(JSON.stringify({ scenario: mode, firstStatusAcknowledged: true }));
+    },
     async exitedWithin(run: Run, code: number, limit: number) {
       const pod = await eventually(
         async () => {
