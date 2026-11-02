@@ -11,7 +11,7 @@ must fail that SDK's suite.
 test/sdk-conformance/
   scenarios.json        the table (data only, no code)
   README.md             matcher grammar and how to add a scenario
-packages/sdk-node/src/conformance.test.ts     Vitest; loads ../../../test/sdk-conformance/scenarios.json
+sdk/node/src/conformance.test.ts     Vitest; loads ../../../test/sdk-conformance/scenarios.json
 sdk/python/tests/test_conformance.py          pytest; loads the same file
 ```
 
@@ -109,7 +109,7 @@ broken SDK branch in the tree.
 
 ## Running
 
-- Node: `pnpm exec vitest run packages/sdk-node/src/conformance.test.ts`
+- Node: `pnpm exec vitest run sdk/node/src/conformance.test.ts`
   spawns the fixture as a child process (`process.execPath` on the built
   `dist/`, or on the `.ts` source through Node's type stripping) against
   `http.createServer` fakes bound to `127.0.0.1:0`. Set a per-test timeout

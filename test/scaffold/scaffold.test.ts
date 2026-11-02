@@ -7,13 +7,7 @@ import { describe, expect, it } from "vitest";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const dispatcher = join(root, "bin/krun.js");
-const packages = [
-  "packages/shared",
-  "packages/sdk-node",
-  "packages/cli",
-  "apps/gateway",
-  "apps/scheduler",
-];
+const packages = ["packages/shared", "sdk/node", "packages/cli", "apps/gateway", "apps/scheduler"];
 
 function run(args: string[], cwd = root) {
   return spawnSync(process.execPath, [dispatcher, ...args], {
@@ -111,7 +105,7 @@ describe("scaffold acceptance", () => {
         false,
       );
     }
-    const sdk = JSON.parse(readFileSync(join(root, "packages/sdk-node/package.json"), "utf8"));
+    const sdk = JSON.parse(readFileSync(join(root, "sdk/node/package.json"), "utf8"));
     expect(sdk.dependencies).toBeUndefined();
     expect(sdk.engines.node).toBe(">=22");
   });

@@ -230,7 +230,7 @@ Verified against the `@effect/vitest` 4.0.6 and `effect` 4.0.6 tarballs.
 | `references/e2e-scenarios.md` | scenario catalogue per phase with the assertion each must make |
 | `references/ci-release.md` | build facts (`vitest`, `typescript`, testcontainers engines; no native addons, D36; pnpm `allowBuilds`), Dockerfile, `ci.yml` jobs, Trivy and audit flags, `renovate.json`, `release.yml`, cosign, syft, OIDC, owner preconditions, benchmarks |
 | `references/lessons.md` | KEDA, Knative and Dapr test patterns with source citations and their krun form |
-| `references/properties-and-sdk.md` | fast-check properties; Effect-free SDK and template suites (Vitest fake timers for `packages/sdk-node`, `pytest` + `mypy --strict` for `sdk/python`, `test/sdk-conformance`) |
+| `references/properties-and-sdk.md` | fast-check properties; Effect-free SDK and template suites (Vitest fake timers for `sdk/node`, `pytest` + `mypy --strict` for `sdk/python`, `test/sdk-conformance`) |
 
 ## Pitfalls
 

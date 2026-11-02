@@ -86,7 +86,7 @@ answer a design question.
 | CLI only (`packages/cli`, docs/STACK.md 2.7) | `@clack/prompts` (interactive `krun init`, deploy spinners; never prompts off a TTY), `picocolors`, `tinyexec` (runs `docker`, `kubectl`). Arguments: `node:util` `parseArgs`. `krun init --name` defaults to the target directory name. Missing `--lang`: prompt on a TTY, else fail with a usage message. |
 | Tests | Vitest 5 + `@effect/vitest` (`it.effect`, already scoped in 4.x; `layer(...)`; `TestClock.adjust` from `effect/testing`). fast-check for properties; testcontainers for Postgres and MinIO. Gates run `pnpm exec vitest run <dir>`. No real sleeps, no fake timers for Effect code (PLAN.md:50-52). |
 | Dev tooling (docs/STACK.md section 3, PLAN.md:79-82) | `biome` lint and format. `knip` (unused files, exports, dependencies) runs in `make check`: an unused export or dependency fails the gate. `publint` and `@arethetypeswrong/cli` check `@krun/sdk` and `@krun/cli` exports before publishing (P9.5). Python SDK: `uv`, `ruff`, `pytest`, `hypothesis` (property tests), `mypy --strict`. |
-| SDKs, templates | SDKs (`packages/sdk-node`, `sdk/python`): no dependencies, no Effect. Node SDK tests run under Vitest as a dev dependency. `krun init` templates are the function author's project, not krun: no dependencies; a template's test runs with `node --test`. |
+| SDKs, templates | SDKs (`sdk/node`, `sdk/python`): no dependencies, no Effect. Node SDK tests run under Vitest as a dev dependency. `krun init` templates are the function author's project, not krun: no dependencies; a template's test runs with `node --test`. |
 | Minimum versions (SPEC section 14, docs/STACK.md) | Node.js 26 for krun image and toolchain. Node SDK: Node 22+ (SPEC.md section 14 and 7.1). Python SDK: 3.11+. Kubernetes 1.33+; tests: kind 0.31+ with node image 1.33+ (PLAN.md:53-55). User namespaces: 1.36, or feature gate on 1.33-1.35. Postgres 16+; CI contract suite on Postgres 18. |
 
 Telemetry (SPEC section 11, docs/STACK.md 2.6; detail in
@@ -136,7 +136,7 @@ callback address check.
 
 Files land exactly where PLAN.md section 3 (PLAN.md:98-135) and SPEC paths
 say: `packages/shared/src/{config,store,functions,k8s,auth,health,runtime,objstore,webhook}`,
-`packages/sdk-node`, `packages/cli`, `sdk/python`, `apps/gateway`,
+`sdk/node`, `packages/cli`, `sdk/python`, `apps/gateway`,
 `apps/scheduler`, `deploy/crds`, `deploy/helm/krun`, `scripts`, `docs/api`,
 `test/{e2e,fake-kube,sdk-conformance}`. Effect layers (Config, Logger,
 Database, Kube, ObjectStore, Metrics, Telemetry) and the error-to-envelope

@@ -12,14 +12,14 @@ only packages it into `@krun/cli` and calls it from `deploy`.
 
 | Code | Stack | Why |
 |---|---|---|
-| `packages/sdk-node` | plain TypeScript, no runtime dependencies, no Effect; Vitest as dev dependency | runs inside other teams' images (docs/STACK.md principle 6) |
+| `sdk/node` | plain TypeScript, no runtime dependencies, no Effect; Vitest as dev dependency | runs inside other teams' images (docs/STACK.md principle 6) |
 | `sdk/python/krun` | Python 3.11+ standard library; `uv`, `ruff`, `pytest`, `mypy --strict` for development | same (SPEC.md:660-663) |
 | `packages/cli` | Effect 4 program (`NodeRuntime.runMain`, services, layers, `Clock`) on Node 26, `node:util` `parseArgs`, Zod Function schema, `@clack/prompts`, `picocolors`, `tinyexec` | krun's own process (docs/STACK.md principle 1 and section 2.7, D35, D36) |
 | `packages/cli/templates/*` | function author's project: no dependency besides the SDK; Node test with `node --test`, Python test with pytest | not krun code, on purpose; see `references/templates.md` |
 
 ## When to use
 
-- `packages/sdk-node` (`run()`, context, local mode) or `sdk/python/krun`
+- `sdk/node` (`run()`, context, local mode) or `sdk/python/krun`
   (same contract on `urllib.request` and a daemon thread).
 - `test/sdk-conformance` scenarios, or a suite wired to them.
 - `packages/cli/templates/{node,python}` or the `init`/`deploy` subcommands
@@ -237,7 +237,7 @@ late tick never fires a 401 and never delays exit.
 ## Conformance, templates, deploy
 
 - P8.3: one JSON table under `test/sdk-conformance/`. Both suites (Vitest
-  in `packages/sdk-node`, pytest in `sdk/python`) spawn the
+  in `sdk/node`, pytest in `sdk/python`) spawn the
   SDK as a child process against a local `http.createServer` fake
   (PLAN.md:793) and compare the request sequence in order; reordering one
   SDK's calls fails its suite (PLAN.md:811-818). See `references/conformance.md`.
@@ -310,7 +310,7 @@ late tick never fires a 401 and never delays exit.
   the build output changes: `pnpm --filter @krun/sdk exec publint`, the same
   for `@krun/cli`, and `attw --pack` in each package directory.
 - Run the task's acceptance verbatim:
-  - P8.1: `pnpm exec vitest run packages/sdk-node` with the unit matrix
+  - P8.1: `pnpm exec vitest run sdk/node` with the unit matrix
     against the local fake (PLAN.md:793-805).
   - P8.2: `uv run --directory sdk/python pytest` (PLAN.md:809-810).
   - P8.3: both suites green, a deliberate reordering red (PLAN.md:817-818).

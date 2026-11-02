@@ -8,7 +8,7 @@ Core function execution,the Phase5 wait/signed-webhook gate and Phase6 MinIO lar
 
 - Strict TypeScript workspace on Node.js 26, with Effect 4 process entrypoints.
 - Zod configuration schemas and Effect services for gateway and scheduler settings.
-- Dependency-free Node.js and Python SDK package skeletons; SDK runtime behavior is pending.
+- Dependency-free Node.js function runtime SDK; the Python SDK runtime remains pending.
 - Digest-pinned, non-root distroless container packaging.
 - CI checks for types, formatting, tests, unused code, generated files, container packaging, chart lint and critical vulnerabilities.
 
@@ -182,6 +182,46 @@ dependencies,with no auto-merge or protection bypass. P7.1 starts from the
 current committed verified lineage after refreshing parent/main state,not an
 obsolete main checkout. Production chart,SDK and release acceptance remain later.
 
+## Node function SDK delivery (P8.1)
+
+The Node SDK now lives at [`sdk/node`](sdk/node/README.md), alongside the Python
+SDK. The physical migration preserves `@krun/sdk`, its Node 22+ floor and empty
+runtime dependencies; workspace, lockfile, test/lint/Knip, Docker paths and active
+agent guidance move together. The reviewed physical migration is a separate
+[structural commit](https://github.com/xenarro/krun/commit/35fb56445c44b07753a34905cf3e95de41001c15)
+before [runtime behavior](https://github.com/xenarro/krun/commit/1ddf738cfa6b901074f6f4e7c22c6973e1cb6811),
+delivered in [PR #82](https://github.com/xenarro/krun/pull/82) against main.
+
+`run(handler)` implements the internal v1 contract: input fetch, bounded latest
+status/heartbeat gate, inline or presigned JSON result, error reporting and exit
+codes. Local mode reads a file or stdin, places only the result on stdout and
+puts status/log/error output on stderr. Importing the SDK does not run a handler.
+Transport diagnostics do not expose credentials, URLs or response bodies.
+
+Build with `pnpm --filter @krun/sdk build`, then run
+`node node_modules/vitest/vitest.mjs run --project sdk-node sdk/node`.
+The suite uses actual local HTTP listeners and child processes against built
+SDK output, including real ten-second timeouts and fixed retry backoff.
+The `sdk-node` CI job tests Node 22 and 26; tooling install/build stays on the
+workspace Node 26 version before switching the runtime under test. Packing is
+local only; no package ownership or publication prerequisite is waived.
+
+Independent correctness/contracts reviews and reproduced repairs are complete.
+Local and deployed non-void results now share serialize-once validation; genuine
+null/undefined returns remain void, and mutable Error fields cannot abort bounded
+error reporting. [Exact source-head hosted CI](https://github.com/xenarro/krun/actions/runs/41372761957)
+passes 101 SDK tests on each Node 22 and 26, a full 2,235 TypeScript tests plus one
+Python test, generators, current-source container smokes/identity/security,
+Helm/audit and the existing 22 two-mode native regression tests. Actual offline
+packed consumers and declarations pass on both runtimes; the rebuilt SDK image
+executes under UID 65532 with read-only/network-none restrictions.
+
+PR #82 is pushed and green, not merged; required independent repository approval
+remains separate and no auto-merge is enabled. The Python runtime, shared bilingual
+conformance table, CLI templates and SDK-built native kind Functions remain
+P8.2-P8.7. Existing native regression tests are not the full SDK-built Phase 8
+gate, and no production/release or package-publication acceptance is claimed.
+
 ## Optional chart monitoring (P7.7)
 
 The chart now renders opt-in `monitoring.coreos.com/v1` PodMonitor and
@@ -262,7 +302,7 @@ their byte-identical cumulative source with main through a normal ancestry merge
 its monitoring and complete Phase 7 source acceptance are documented above.
 This is not a production installation, and configuration rollback does not prove
 future one-minor binary-release compatibility. P8.1 starts with the approved
-physical migration from `packages/sdk-node` to `sdk/node` before new SDK behavior;
+physical SDK migration to `sdk/node` before new SDK behavior;
 the migration and Phase 8 template/image/native gates remain mandatory.
 
 ## Generated Helm value reference (P7.5)
