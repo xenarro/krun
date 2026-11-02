@@ -42,6 +42,7 @@ COPY --from=production-dependencies /app/apps/scheduler/node_modules ./apps/sche
 COPY --from=build /app/packages/shared/dist ./packages/shared/dist
 COPY --from=build /app/sdk/node/dist ./sdk/node/dist
 COPY --from=build /app/packages/cli/dist ./packages/cli/dist
+COPY --from=build /app/packages/cli/templates ./packages/cli/templates
 COPY --from=build /app/apps/gateway/dist ./apps/gateway/dist
 COPY --from=build /app/apps/scheduler/dist ./apps/scheduler/dist
 COPY --from=manifests /app/packages/shared/package.json ./packages/shared/package.json

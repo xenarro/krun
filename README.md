@@ -308,6 +308,37 @@ publication, tags, auto-merge or production use is claimed.
 Vendored generated templates, SDK-built native kind Functions and deploy remain
 P8.4-P8.7; the complete Phase 8 gate is not yet accepted.
 
+## Node project initialization implementation (P8.4)
+
+`node bin/krun.js init --lang node [--name <function>] <dir>` now renders a
+version-coupled Node function project. The CLI package also provides a `krun`
+binary for init/validate. Language selection prompts only on a TTY; non-TTY
+invocations require `--lang`. Names use the shared Function name schema.
+Existing visible files, conflicting hidden template files and symlink targets
+are refused rather than overwritten; other hidden entries are preserved.
+
+The Node project includes the SDK-only handler, one subprocess `node --test`
+case, package metadata, pinned multi-stage Dockerfile, ignore files, a starter
+Function and the local/manual-deploy README. The SDK range comes from the CLI
+version. The manifest intentionally retains `REPLACE_WITH_DIGEST`; normal
+`krun validate` rejects it until a real image digest is supplied. Template
+assets are included in the CLI tarball; `gitignore` is renamed on rendering
+because npm excludes literal `.gitignore` assets from packages.
+
+Verified locally: pack the SDK, generate the project, install from `vendor/`
+offline, run its own npm test, build the image and run it with a read-only root,
+no network and UID/GID 65532. The generated Dockerfile copies the whole project
+before installing and never excludes `vendor/`. The rebuilt current-source
+platform image also passes init/help/placeholder validation with a read-only
+root, no network and UID/GID 65532, with module/template hashes matched to source.
+The CLI is executable-only (`bin` with no library exports); package validation
+passes without inventing an import-time API.
+
+This source remains uncommitted pending independent review and delivery;
+P8.4 is not closed in PLAN. No publication, tag or production use is claimed.
+Python initialization, SDK-built kind Functions and `krun deploy` remain
+P8.5-P8.7; the complete Phase 8 gate is not yet accepted.
+
 ## Optional chart monitoring (P7.7)
 
 The chart now renders opt-in `monitoring.coreos.com/v1` PodMonitor and
