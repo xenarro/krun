@@ -25,6 +25,19 @@ it("defines all PLAN target names", () => {
   }
 });
 
+it("isolates workspace process suites without changing their tests or deadlines", () => {
+  const result = spawnSync("make", ["--dry-run", "test"], {
+    cwd: root,
+    encoding: "utf8",
+    timeout: 10_000,
+  });
+  expect(result.status, result.stderr).toBe(0);
+  expect(result.stdout).toContain("pnpm -r --workspace-concurrency=1 exec vitest run");
+  expect(result.stdout).not.toMatch(/--retry|--testTimeout|--hookTimeout|--maxWorkers|--exclude/);
+  expect(result.stdout).toContain("pnpm test");
+  expect(result.stdout).toContain("uv run --directory sdk/python pytest");
+});
+
 it("generation does nothing when absent and propagates a present generator failure", () => {
   const dir = mkdtempSync(join(tmpdir(), "krun-generate-"));
   try {

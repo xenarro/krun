@@ -7,7 +7,8 @@ build:
 	pnpm -r build
 
 test: build
-	pnpm -r exec vitest run
+	# Keep native process deadlines independent of other workspaces' child-process load.
+	pnpm -r --workspace-concurrency=1 exec vitest run
 	pnpm test
 	uv run --directory sdk/python pytest
 
