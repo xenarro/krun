@@ -15,6 +15,8 @@ import {
   probeVerdict,
 } from "./lib/contracts.ts";
 
+import { buildSdkFunctions, sdkFunctionsSchema } from "./lib/sdk-functions.ts";
+
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const cluster = "krun-test-e2e";
 const owner = createHash("sha256").update(root).digest("hex").slice(0, 16);
@@ -24,6 +26,7 @@ const kubeconfig = join(stateDir, "kubeconfig");
 const lock = `${stateDir}.lock`;
 const stateSchema = z.object({
   owner: z.literal(owner),
+  sdkFunctions: sdkFunctionsSchema.optional(),
   key: z.string().regex(/^[a-f0-9]{64}$/),
   mode: databaseMode.optional(),
   postgresPassword: z
@@ -287,6 +290,7 @@ const up = async () => {
   );
   const pushed = run("docker", ["push", "localhost:5001/krun:e2e"], "push only to local registry");
   state.image = `localhost:5001/krun@${parsePushDigest(pushed.stdout)}`;
+  state.sdkFunctions = await buildSdkFunctions(stateDir);
   await saveState(state);
   // Reuse D106's checksum-enforced upstream binary fixture, never a fake S3 server.
   run(

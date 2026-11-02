@@ -28,7 +28,7 @@ generate:
 docker:
 	docker build --tag "$(IMAGE)" .
 
-kind-up:
+kind-up: build
 	node test/e2e/cluster.ts up
 
 kind-down:

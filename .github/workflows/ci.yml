@@ -185,6 +185,12 @@ jobs:
           node-version-file: .node-version
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: "0.13.1"
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: sdk/python/uv.lock
       - name: Install pinned kind and matching Kubernetes client
         uses: helm/kind-action@1544676c07bb3570fcb70166beaa07c4528fd4aa # v1.15.1
         with:

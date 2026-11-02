@@ -18,6 +18,7 @@ import {
 } from "./object-store.js";
 import { podSchema } from "./pod.js";
 import { runCredentials } from "./run-credentials.js";
+import { sdkFunctionsSchema } from "./sdk-functions.js";
 import { eventually } from "./wait.js";
 import { receiverSnapshotSchema, webhookResources } from "./webhook-fixture.js";
 
@@ -33,6 +34,12 @@ const modes = [
   "wait",
   "webhook",
   "large_result",
+  "sdk_node_success",
+  "sdk_python_success",
+  "sdk_node_error",
+  "sdk_python_error",
+  "sdk_node_heartbeat",
+  "sdk_python_heartbeat",
 ] as const;
 type Mode = (typeof modes)[number];
 const runSchema = publicSchemas.Run;
@@ -381,6 +388,7 @@ export const scenario = (mode: Mode, client?: { namespace: string; pod: string }
           postgresPassword: z.string().optional(),
           key: z.string().regex(/^[a-f0-9]{64}$/),
           image: z.string(),
+          sdkFunctions: sdkFunctionsSchema,
           webhookSecrets: z.tuple([z.string(), z.string()]),
           minioSecrets: z.tuple([z.string(), z.string()]),
         }),
@@ -421,8 +429,15 @@ export const scenario = (mode: Mode, client?: { namespace: string; pod: string }
       }
       for (const secret of [...state.webhookSecrets, state.webhookSecrets.join(",")])
         forbidden.add(secret);
-      let image = `localhost:5001/krun-test-e2e-unpullable@sha256:${"0".repeat(64)}`;
-      if (mode !== "image_pull_backoff") {
+      const sdkFunction = mode.startsWith("sdk_node_")
+        ? state.sdkFunctions.node
+        : mode.startsWith("sdk_python_")
+          ? state.sdkFunctions.python
+          : undefined;
+      let image =
+        sdkFunction?.spec.image ??
+        `localhost:5001/krun-test-e2e-unpullable@sha256:${"0".repeat(64)}`;
+      if (mode !== "image_pull_backoff" && !sdkFunction) {
         const curl = decode(
           z.object({ curl: z.string().regex(/^curlimages\/curl:[\d.]+@sha256:[a-f0-9]{64}$/) }),
           json(readFileSync(join(root, "test/e2e/images.json"), "utf8")),
@@ -487,17 +502,24 @@ export const scenario = (mode: Mode, client?: { namespace: string; pod: string }
       kube(
         ["apply", "-f", "-"],
         "Apply scenario Function",
-        JSON.stringify({
-          apiVersion: "krun.io/v1alpha1",
-          kind: "Function",
-          metadata: { name, namespace: namespace },
-          spec: {
-            image,
-            inputSchema: { type: "object" },
-            activeDeadlineSeconds: mode === "image_pull_backoff" ? 60 : 120,
-            ...(mode === "heartbeat_timeout" ? { heartbeatTimeout: "30s" } : {}),
-          },
-        }),
+        JSON.stringify(
+          sdkFunction
+            ? {
+                ...sdkFunction,
+                metadata: { ...sdkFunction.metadata, name, namespace },
+              }
+            : {
+                apiVersion: "krun.io/v1alpha1",
+                kind: "Function",
+                metadata: { name, namespace: namespace },
+                spec: {
+                  image,
+                  inputSchema: { type: "object" },
+                  activeDeadlineSeconds: mode === "image_pull_backoff" ? 60 : 120,
+                  ...(mode === "heartbeat_timeout" ? { heartbeatTimeout: "30s" } : {}),
+                },
+              },
+        ),
       );
       applied = true;
       await eventually(
