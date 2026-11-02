@@ -262,7 +262,7 @@ their byte-identical cumulative source with main through a normal ancestry merge
 its monitoring and complete Phase 7 source acceptance are documented above.
 This is not a production installation, and configuration rollback does not prove
 future one-minor binary-release compatibility. P8.1 starts with the approved
-physical migration from `packages/sdk-node` to `sdk/node` before new SDK behavior;
+physical SDK migration to `sdk/node` before new SDK behavior;
 the migration and Phase 8 template/image/native gates remain mandatory.
 
 ## Generated Helm value reference (P7.5)

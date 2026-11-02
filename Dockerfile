@@ -7,7 +7,7 @@ FROM toolchain AS manifests
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .node-version ./
 COPY patches/ ./patches/
 COPY packages/shared/package.json ./packages/shared/package.json
-COPY packages/sdk-node/package.json ./packages/sdk-node/package.json
+COPY sdk/node/package.json ./sdk/node/package.json
 COPY packages/cli/package.json ./packages/cli/package.json
 COPY apps/gateway/package.json ./apps/gateway/package.json
 COPY apps/scheduler/package.json ./apps/scheduler/package.json
@@ -17,6 +17,7 @@ FROM manifests AS build
 RUN pnpm install --frozen-lockfile
 COPY tsconfig.base.json ./
 COPY packages/ ./packages/
+COPY sdk/node/ ./sdk/node/
 COPY apps/ ./apps/
 RUN pnpm -r build
 
@@ -39,12 +40,12 @@ COPY --from=production-dependencies /app/packages/cli/node_modules ./packages/cl
 COPY --from=production-dependencies /app/apps/gateway/node_modules ./apps/gateway/node_modules
 COPY --from=production-dependencies /app/apps/scheduler/node_modules ./apps/scheduler/node_modules
 COPY --from=build /app/packages/shared/dist ./packages/shared/dist
-COPY --from=build /app/packages/sdk-node/dist ./packages/sdk-node/dist
+COPY --from=build /app/sdk/node/dist ./sdk/node/dist
 COPY --from=build /app/packages/cli/dist ./packages/cli/dist
 COPY --from=build /app/apps/gateway/dist ./apps/gateway/dist
 COPY --from=build /app/apps/scheduler/dist ./apps/scheduler/dist
 COPY --from=manifests /app/packages/shared/package.json ./packages/shared/package.json
-COPY --from=manifests /app/packages/sdk-node/package.json ./packages/sdk-node/package.json
+COPY --from=manifests /app/sdk/node/package.json ./sdk/node/package.json
 COPY --from=manifests /app/packages/cli/package.json ./packages/cli/package.json
 COPY --from=manifests /app/apps/gateway/package.json ./apps/gateway/package.json
 COPY --from=manifests /app/apps/scheduler/package.json ./apps/scheduler/package.json

@@ -1,7 +1,7 @@
 # `run()` sequence: state machine, timeouts, retries, exit codes
 
 Source of truth: SPEC.md:686-729 and docs/INTERNAL-API.md sections 3-5 and
-7 (lines 106-263, 291-306). Same behaviour in `packages/sdk-node` and
+7 (lines 106-263, 291-306). Same behaviour in `sdk/node` and
 `sdk/python/krun`; language notes at the end. Both SDKs are plain code, no
 runtime dependencies, no Effect (docs/STACK.md principle 6). krun's Effect
 `Clock`/`Schedule` rules do not apply inside them; the timings below are
@@ -143,11 +143,11 @@ Prove it with a child process and a deadline on its exit, not in-process.
 - Thrown error: error JSON (same shape as `PUT error`) on stderr, exit 1.
 - Never writes files; never touches `function.yaml`.
 
-## 7. Node specifics (`packages/sdk-node`)
+## 7. Node specifics (`sdk/node`)
 
 - ESM, `"type": "module"`, built to `dist/` by `tsc` for publishing. Tests
   `*.test.ts` sit next to the source and run under Vitest
-  (`pnpm exec vitest run packages/sdk-node`). `vitest` is the only
+  (`pnpm exec vitest run sdk/node`). `vitest` is the only
   `devDependency` that matters; no `dependencies` at all.
 - HTTP: global `fetch` with `signal: AbortSignal.timeout(ms)`. A timeout is
   a `DOMException` named `TimeoutError`; a connection failure is

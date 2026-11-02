@@ -28,7 +28,7 @@
       "entry": ["src/validate.ts"],
       "project": ["src/**/*.ts"]
     },
-    "packages/sdk-node": {
+    "sdk/node": {
       "entry": ["src/index.ts"],
       "project": ["src/**/*.ts"]
     },

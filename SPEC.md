@@ -725,7 +725,7 @@ working at the terminal transition.
 ### 7.1 Function SDKs
 
 Two SDKs implement docs/INTERNAL-API.md: `@krun/sdk` for Node.js 22 or
-newer (`sdk/node`, npm; migration from the initial `packages/sdk-node` scaffold is scheduled at the start of PLAN P8.1) and `krun` for Python 3.11 or newer
+newer (`sdk/node`, npm) and `krun` for Python 3.11 or newer
 (`sdk/python`, PyPI). Neither has runtime dependencies beyond the standard
 library. Both are optional: the contract is plain HTTP.
 
@@ -1582,7 +1582,7 @@ the number is unused.
 | D12 | API keys reload by a 30 second poll on the mounted file's content hash, not a file watcher | Secret mounts update through a symlink swap; polling is enough and needs no dependency |
 | D13 | A failed run stores a log tail; a successful run stores no logs | enough to debug a failure without a log pipeline |
 | D14 | Target workload: runs of tens of seconds to hours | Job-per-run cold start and API server load make sub-second or high-rate functions a poor fit |
-| D15 | TypeScript 7 on Node.js 26, ES modules, one pnpm workspace (`packages/shared`, `packages/sdk-node`, `packages/cli`, `apps/gateway`, `apps/scheduler`), one container image with the `gateway`, `scheduler`, `migrate` and `validate` entrypoints. docs/STACK.md is the normative list of libraries | one language across services, CLI and SDK; Node 26 is LTS to April 2029 |
+| D15 | TypeScript 7 on Node.js 26, ES modules, one pnpm workspace (`packages/shared`, `sdk/node`, `packages/cli`, `apps/gateway`, `apps/scheduler`), one container image with the `gateway`, `scheduler`, `migrate` and `validate` entrypoints. docs/STACK.md is the normative list of libraries | one language across services, CLI and SDK; Node 26 is LTS to April 2029 |
 | D16 | Job pods fetch input, report status and write results or errors through the gateway's internal API with a per-run token from a per-run Secret (docs/INTERNAL-API.md) | input and result sizes are not bound by Secret or termination-message limits; runtime status reaches callers; the token is scoped to one run and dies at its end |
 | D17 | Function definitions are a CRD (`functions.krun.io`, `v1alpha1`) read by an informer in the gateway and the scheduler | one etcd object per function with no aggregate size cap, per-team RBAC, apply-time validation through OpenAPI and CEL, status on the resource, propagation within a second |
 | D18 | Run `state` and `jobStatus` derive from Job and Pod informers only; `running` means the pod phase is `Running`; `runtimeStatus` never drives state | a function that ignores the contract is still tracked; a pod stuck before start is visible on the run |

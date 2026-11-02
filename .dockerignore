@@ -13,6 +13,9 @@
 !packages/**
 !apps/
 !apps/**
+!sdk/
+!sdk/node/
+!sdk/node/**
 
 **/node_modules
 **/dist

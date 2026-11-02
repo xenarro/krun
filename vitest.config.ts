@@ -6,6 +6,7 @@ export default defineConfig({
     projects: [
       "packages/*/vitest.config.ts",
       "apps/*/vitest.config.ts",
+      "sdk/node/vitest.config.ts",
       {
         test: {
           name: "tooling",

@@ -27,7 +27,7 @@ grammar, address checks. `fast-check` 4.10.2: one runtime dependency
 
 ## SDK and template suites (Effect-free)
 
-- `packages/sdk-node`: Vitest as a dev dependency, plain `it`, no
+- `sdk/node`: Vitest as a dev dependency, plain `it`, no
   `@effect/vitest`, no Effect in sources (STACK.md:30-31). The one place
   Vitest fake timers are right: `vi.useFakeTimers()` plus
   `vi.advanceTimersByTimeAsync` for the 1-per-second status gate and the
@@ -47,7 +47,7 @@ grammar, address checks. `fast-check` 4.10.2: one runtime dependency
     thread, so tests advance time instead of sleeping. Assert the
     heartbeat thread is a daemon.
   - Run once on Python 3.11 in CI (`uv run --python 3.11`).
-- `packages/sdk-node` supports Node 22 or newer (SPEC.md section 14).
+- `sdk/node` supports Node 22 or newer (SPEC.md section 14).
   Keep its `tsconfig` target and APIs within Node 22; the CI `sdk-node`
   matrix (Node 22 and 26, `ci-release.md`) fails on an API Node 22 lacks.
   `attw --pack` and `publint` (P9.5) check the package shape.

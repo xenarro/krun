@@ -162,7 +162,7 @@ command and what "green" means.
       not a krun test and does not run under Vitest.
 - [ ] `sdk/python` passes `pytest` (including its `hypothesis` properties),
       `ruff check` and `mypy --strict` (STACK.md section 3).
-      `packages/sdk-node` `package.json` lists no `dependencies`
+      `sdk/node` `package.json` lists no `dependencies`
       (PLAN.md:803-805).
 - [ ] `test/sdk-conformance` passes in both suites (Node SDK under Vitest,
       Python under pytest). Reordering one SDK's calls fails its suite
