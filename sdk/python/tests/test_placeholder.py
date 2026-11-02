@@ -1,10 +1,8 @@
-"""Acceptance for the SDK package skeleton, not its future run contract."""
+"""Public package imports expose the runtime without executing a handler."""
 
 import krun
 
 
-def test_placeholder_package_is_importable() -> None:
-    assert (
-        krun.__doc__ == "krun function SDK package; runtime implementation is pending."
-    )
-    assert not hasattr(krun, "run")
+def test_package_exports() -> None:
+    assert krun.__all__ == ["Context", "Handler", "run"]
+    assert callable(krun.run)

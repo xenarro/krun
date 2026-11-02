@@ -217,10 +217,44 @@ packed consumers and declarations pass on both runtimes; the rebuilt SDK image
 executes under UID 65532 with read-only/network-none restrictions.
 
 PR #82 is pushed and green, not merged; required independent repository approval
-remains separate and no auto-merge is enabled. The Python runtime, shared bilingual
-conformance table, CLI templates and SDK-built native kind Functions remain
-P8.2-P8.7. Existing native regression tests are not the full SDK-built Phase 8
-gate, and no production/release or package-publication acceptance is claimed.
+remains separate and no auto-merge is enabled. The Python runtime implementation
+is described below; the shared bilingual conformance table, CLI templates and
+SDK-built native kind Functions remain P8.3-P8.7. Existing native regression
+tests are not the full SDK-built Phase 8 gate, and no production/release or
+package-publication acceptance is claimed.
+
+## Python function SDK implementation (P8.2)
+
+[`sdk/python`](sdk/python/README.md) now provides the matching standard-library
+`run(handle)` runtime for Python 3.11 or newer. It is a plain call under
+`if __name__ == "__main__"`, never a decorator; importing the handler does
+nothing. Local mode reads a file or stdin and keeps result stdout separate from
+status/log/error stderr. Non-None results use strict compact JSON; invalid
+non-void results report `ResultWriteError` in both modes.
+
+Deployed execution uses `urllib.request`, exact internal v1 operation success
+codes, fixed 1/2/4-second retry delays and no following redirects. One
+condition-driven daemon thread owns the latest-status gate and heartbeats,
+including during input and terminal writes, without delaying process exit.
+Cancellation from a background 401 or SIGTERM terminates the whole process.
+Presigned uploads carry exact UTF-8 Content-Length and no bearer/checksum header;
+transport diagnostics do not echo endpoints, response bodies or credentials.
+
+Run `uv sync --directory sdk/python --frozen`, then
+`uv run --directory sdk/python pytest`. The real HTTP/process suite covers
+unscaled timeouts/backoff, concurrency, status/error byte limits, uploads,
+void/error exits, inert imports and stream separation. The workflow defines an
+`sdk-python` job for Python 3.11 and 3.13 with Ruff, strict mypy and distribution
+builds. `make test` already includes the suite. `uv build sdk/python` uses the
+pinned build-only uv backend; wheels carry typed SDK code and no runtime
+dependencies. Local installed-wheel consumers pass on Python 3.11.17 and
+3.13.15, and the rebuilt SDK test image exercises local/deployed behavior under
+UID 65532 with a read-only root filesystem.
+
+This is an uncommitted implementation pending independent review and delivery,
+not a new hosted-CI, merge, publication or full Phase 8 acceptance claim. The
+P8.2 PLAN checkbox remains open. The shared scenario table, templates and
+SDK-built kind gate are still separate required work.
 
 ## Optional chart monitoring (P7.7)
 
