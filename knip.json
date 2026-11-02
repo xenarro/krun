@@ -8,6 +8,8 @@
       "entry": [
         "bin/krun.js",
         "test/e2e/cluster.ts",
+        "test/sdk-conformance/runner.ts",
+        "test/sdk-conformance/fixture-node.ts",
         "test/e2e/functions/large_result.ts",
         "test/**/*.test.ts",
         "scripts/gen-crd.ts",

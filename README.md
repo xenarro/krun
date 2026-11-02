@@ -274,6 +274,32 @@ CLI-generated vendored templates and SDK-built kind Functions remain P8.3-P8.7;
 the existing native tests are not the full Phase 8 SDK gate. No publication,
 release tag, production use or complete Phase 8 acceptance is claimed.
 
+## Shared SDK wire conformance implementation (P8.3)
+
+[`test/sdk-conformance`](test/sdk-conformance/README.md) now holds one data-only
+19-scenario table consumed by both SDK suites. Both run the real SDK against
+the same loopback Node HTTP fake; expected request order and JSON bodies are
+strict, including identical loading/progress heartbeat payloads, the one-second
+status gate, void completion, heartbeats during pending input/result I/O,
+Unicode truncation, retries, uploads and cancellation.
+
+The repaired adapters contain 30 cases per language: 19 wire scenarios,
+a real reversed-status-call control, nine native media-type controls and shared
+matcher negatives. Upload lengths use received bytes, not Node re-serialization;
+equivalent exponent spellings pass in both languages. Internal media checks
+match the gateway, including JSON parameters and optional GET media headers.
+Server response/handler barriers are event-driven; SDK operation
+budgets, backoff and heartbeat clocks are not scaled. Per-language runtime,
+local-mode, package and deadline/resource acceptance remains in place. Python
+conformance tooling now explicitly installs the existing Node toolchain in CI;
+the Python SDK itself remains dependency-free and neither runtime is changed.
+
+Both independent reviews are consumed and the shared-oracle findings are repaired.
+Source remains uncommitted pending delivery; no new hosted CI or merge/publication
+is claimed. P8.3 remains open in PLAN.
+Vendored generated templates, SDK-built native kind Functions and deploy remain
+P8.4-P8.7; the complete Phase 8 gate is not yet accepted.
+
 ## Optional chart monitoring (P7.7)
 
 The chart now renders opt-in `monitoring.coreos.com/v1` PodMonitor and
