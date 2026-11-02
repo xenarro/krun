@@ -434,8 +434,72 @@ and existing-policy retries remain recorded; no causal or no-flake claim is made
 Only P8.6 closes after source CI. This PLAN/README-only tracking update receives
 its own fresh precommit check and exact-head hosted acceptance. PR90 is
 pushed/green, not merged; required independent repository review still applies.
-The listed SDK/template Phase 8 gate passes; `krun deploy` remains P8.7 and
-Phase 8 is not finished. No auto-merge, publication, tags or production use.
+At that P8.6 delivery checkpoint, deploy remained P8.7 and Phase 8 was not
+finished. Current local deploy behavior is documented below. No auto-merge,
+publication, tags or production use.
+
+## Function deployment implementation (P8.7)
+
+`krun deploy [--no-apply] [--namespace <ns>] [--api-url <url>]
+[--registry <registry>] [dir]` builds and pushes the current function project,
+pins the acknowledged digest in `function.yaml` and runs the same offline
+validator as `krun validate`. YAML comments, schema headers and key order are
+preserved; an already pinned identical image is not rewritten. The atomic file
+update refuses a concurrent edit rather than overwriting it. Each invocation
+uses its own UUID-tagged build reference for build, push and digest inspection,
+so concurrent working copies do not overwrite a shared local `:latest` tag.
+
+Flags override `KRUN_REGISTRY`, `KRUN_NAMESPACE` (default `krun`) and
+`KRUN_API_URL`. The registry is required. Set the existing
+`KRUN_JOBS_NAMESPACE` setting (default `krun-jobs`) to the installation's jobs
+namespace for the printed logs command. No extra deployment flag or Kubernetes
+client dependency is introduced. The CLI never selects SDK mode or expands an
+API key: printed commands contain the literal `$KRUN_API_KEY` reference.
+
+Without `--no-apply`, deploy applies the Function in the selected namespace and
+waits up to 120 seconds for `Ready=True` at the current generation. Stale Ready
+conditions cannot satisfy a new apply; a current-generation rejection fails
+immediately with its reason and a describe hint. Stdout contains the first-run
+curl, an in-flight `kubectl logs` command and a GetRun/logTail hint; progress and
+ceiling values go to stderr. Non-TTY runs have ten-second progress messages,
+TTY runs have scoped spinners. Signals terminate the owned subprocess group/tree
+and bound the final pipe drain to five seconds before exit 130; inherited-pipe
+helpers cannot keep cancellation or Ready-timeout cleanup stuck. Real nested
+helper, SIGINT/SIGTERM and timeout regressions exercise this on Linux. Child
+error output is not echoed because registry/kubectl helpers may include private
+values.
+
+`--no-apply` still builds, pushes, pins and validates but never invokes kubectl,
+then prints only the digest reference. This is the GitOps path, not a dry-run
+build. Keep the generated project lockfile and vendored SDK artifact when
+working against unpublished packages.
+
+Local acceptance alone does not establish hosted delivery, merged-main
+acceptance, publication or production readiness. The source and tracking commits
+receive their own exact-head CI before PLAN closure. Earlier delivery sections
+retain their historical checkpoints.
+
+The final frozen-source local `make e2e` gate passes 38 tests across 13 files in
+both embedded and Postgres modes (19 per mode), with no runner retry observed
+in that accepted run. All four language/mode deploy cases reach current-generation
+Ready=True and print the three commands; their `--no-apply` invocations succeed
+with a nonexistent kubeconfig, leave Function items unchanged and pin digests
+whose registry bytes are independently verified. The gate also rebuilds/tests
+both vendored projects and retains all SDK execution/error/heartbeat regressions.
+The rebuilt image's eight CLI modules match the current compiled source and its
+help runs as UID/GID65532 under read-only, network-none, capability-drop controls.
+The complete repaired-source `make check` passes 2,387 TypeScript and 110 Python
+tests, including all 153 CLI cases. The fresh full native gate passes all 38
+tests with no observed runner retry. The two-CPU, unprivileged,
+capability-dropped verifier
+retains its original 1,800-second outer budget and default test policies. After
+measured severe host I/O pressure and three retained deadline failures, the
+accepted run uses per-command `ionice -c 2 -n 0`; no assertion, test/hook deadline,
+worker, runtime or supply-chain policy changes. Isolated unchanged gateway/query
+qualifications also pass. This records a successful scoped execution profile,
+not a proven universal timing repair. Independent reviews identified the
+cancellation and shared-tag defects repaired above. Independent repair review
+and Git delivery remain separate; PLAN is not closed in this job.
 
 ## Optional chart monitoring (P7.7)
 

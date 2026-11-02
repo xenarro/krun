@@ -96,6 +96,47 @@ acceptance,PLAN closure,production use or publication. P7.7 monitoring/full
 Phase7 remain separate. The historical sections below record the earlier
 raw-foundation gates;the chart procedure above is the current entrypoint.
 
+## CLI deploy acceptance (P8.7)
+
+`deploy.e2e.ts` reuses the real CLI-generated, vendored projects prepared by the
+owned foundation. For each language and chart mode it runs the actual CLI in
+that project, with only the owned kubeconfig and loopback registry available.
+`--no-apply` receives a nonexistent kubeconfig and must leave every Function
+item unchanged while writing a digest. Full deploy must reach current-generation
+Ready=True and print exactly the three documented commands. A synthetic output
+canary and an ignored SDK-mode setting must never appear in CLI output.
+
+Both invocations' digests are independently checked against registry manifest
+bytes. Readback accepts OCI indexes, Docker manifest lists and single-image
+manifests: a successful push may legitimately identify an index. The Dockerfiles
+copy the whole project, including function.yaml, so pinning that file can change
+the next build's digest; each invocation is verified separately, not assumed
+identical. Each case removes only its explicitly named test Function. The
+private project-path receipt is removed with the owned foundation on kind-down.
+Existing scenario retries, deadlines, concurrency and security oracles remain
+unchanged; a failed attempt is retained rather than counted as a pass.
+
+Final frozen-source P8.7 native acceptance passes 19 tests in each mode (38 total,
+13 files per mode), including four canonical CLI deploy/no-apply cases, with no
+runner retry observed. The accepted source corrects OCI-index media negotiation
+and prints the canonical Function-scoped GetRun URL. The CLI image hash/help
+verification and owned kind-down command also pass; final consolidated cleanup
+readback and whole-check results live in the implementation report. The entire
+unchanged whole check passes 2,383 TypeScript and 110 Python tests under the
+existing hardened two-CPU verifier with scoped best-effort I/O priority0;
+original deadline failures are retained, not hidden or universally repaired.
+
+Post-review cancellation/tag repairs rerun the unmodified full native gate:
+all 38 tests pass again in both modes, against a rebuilt matching CLI image.
+Separate real-daemon, barrier-interleaved working copies each pin their own
+built image using distinct invocation tags; local tag cleanup is read back.
+Real inherited-pipe helper interruption, timeout and CLI SIGINT/SIGTERM controls
+pass, and a deliberately escaped pipe holder verifies the five-second drain
+bound. The complete repaired-source whole check passes 2,387 TypeScript and
+110 Python tests, including 153 CLI cases, under the same hardened two-CPU,
+1,800-second profile and scoped I/O priority. Source, image/archive correspondence
+and exact owned cleanup are verified separately from later Git delivery.
+
 ## Phase 4 scenarios (P4.13)
 
 The separate Vitest runner requires all eight `*.e2e.ts` files (five Phase 4,

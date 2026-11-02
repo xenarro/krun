@@ -43,6 +43,7 @@ export const renderSdkFunction = (text: string, image: string) => {
 // Commands keep their captured output private, including package-manager errors.
 export const buildSdkFunctions = async (privateDir: string) => {
   const work = await mkdtemp(join(privateDir, "sdk-projects-"));
+  const projects: Partial<Record<"node" | "python", string>> = {};
   const command = (exe: string, args: string[], label: string, cwd = root) => {
     const env = Object.fromEntries(
       Object.entries(process.env).filter(
@@ -65,6 +66,7 @@ export const buildSdkFunctions = async (privateDir: string) => {
   const build = async (language: "node" | "python") => {
     const name = `krun-test-sdk-${language}`;
     const project = join(work, name);
+    projects[language] = project;
     command(
       process.execPath,
       [join(root, "packages/cli/dist/main.js"), "init", "--lang", language, name],
@@ -145,5 +147,10 @@ export const buildSdkFunctions = async (privateDir: string) => {
     );
     return resource;
   };
-  return sdkFunctionsSchema.parse({ node: await build("node"), python: await build("python") });
+  const functions = sdkFunctionsSchema.parse({
+    node: await build("node"),
+    python: await build("python"),
+  });
+  await writeFile(join(privateDir, "sdk-projects.json"), JSON.stringify(projects), { mode: 0o600 });
+  return functions;
 };

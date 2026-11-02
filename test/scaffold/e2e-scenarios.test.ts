@@ -14,6 +14,7 @@ it("requires every native scenario file including both SDKs and refuses an empty
       .sort(),
   ).toEqual([
     "chart.e2e.ts",
+    "deploy.e2e.ts",
     "exit_code.e2e.ts",
     "exit_code_status.e2e.ts",
     "heartbeat_timeout.e2e.ts",

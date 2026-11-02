@@ -2,9 +2,10 @@
 
 const entrypoints = new Map([
   ["init", "./init.js"],
+  ["deploy", "./deploy.js"],
   ["validate", "./validate.js"],
 ]);
-const usage = "Usage: krun <init|validate> [arguments]";
+const usage = "Usage: krun <init|deploy|validate> [arguments]";
 const command = process.argv[2];
 if (command === "--help") console.log(usage);
 else {
