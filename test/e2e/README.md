@@ -5,7 +5,8 @@ only the `krun-test-e2e` cluster and an ownership-labelled `kind-registry`
 container, bound to `127.0.0.1:5001`. Do not reuse these names for other work.
 
 Prerequisites: Docker, kubectl 1.37, Helm4.3.0, the exact kind version in
-`.kind-version`, Node from `.node-version` and locked pnpm dependencies.
+`.kind-version`, Node from `.node-version`, uv 0.13.1/Python 3.13 and locked
+pnpm dependencies.
 `images.json` pins the Kubernetes node, registry and curl manifests by digest.
 CI installs the same pinned Helm and kind; kind0.33 includes enforcing kindnetd.
 No third-party CNI or database operator is installed.
@@ -19,6 +20,19 @@ Dockerfile and pushes only to that registry. The acknowledged manifest digest
 is authoritative. It also builds/deploys the genuine checksum-pinned MinIO
 fixture in its restricted namespace and initializes the private bucket. It does
 not install the application or submit Runs.
+
+The foundation also generates both language projects through the freshly built
+CLI, vendors the current packed Node SDK/Python wheel and runs the projects'
+generated tests. Their unchanged Dockerfiles build with `--network=none` after
+the project lockfiles exist. Only the owned loopback registry receives pushes;
+acknowledged manifest digests become the generated Functions' images. The
+fixture handlers in `functions/sdk-node.js` and `functions/sdk-python.py` keep
+the default result but select thrown-error/75-second paths through input. They
+use the SDK, never a second hand-written internal-API client. Test Function
+input schemas permit private canaries and use 30-second heartbeats and
+120-second Job deadlines.
+Host Python tests invoke the environment's interpreter explicitly so a noexec
+TMPDIR does not require executing its pytest script.
 
 `make e2e` installs the actual chart twice, sequentially: embedded in a fresh
 `krun-test-embedded` namespace and postgres in a fresh `krun-test-postgres`
@@ -42,7 +56,14 @@ For each mode the mandatory open/deny/reopen scratch probe still runs before
 Vitest. Only an explicit remote client timeout counts as denial; kubectl,API
 and exec errors fail. A native API projection and process log privacy smoke
 remain mandatory. The separate runner then executes the eight earlier
-execution/wait/webhook/large-result scenarios and `chart.e2e.ts`.
+execution/wait/webhook/large-result scenarios, `chart.e2e.ts`, and six SDK
+cases in `sdk_{success,error,heartbeat}.e2e.ts`. The local P8.6 gate passes 17
+tests per mode (34 total). SDK successes require exact inline results; thrown
+exceptions require FUNCTION/EXIT_CODE, retained logTail and native exit 1. Slow
+cases positively observe a live Job plus RUNNING SDK status reports spanning
+at least 30 seconds, then succeed after the 75-second handler. All six cases
+in each mode run the existing credential and process/object-store/Pod privacy oracles;
+no native runner deadline, retry, worker or security override is introduced.
 
 The chart scenario proves jobs-to-internal8081 and no jobs-to-public8080,
 including actual embedded Pod labels,monitoring-selection open/deny/recovery

@@ -8,7 +8,7 @@ Core function execution,the Phase5 wait/signed-webhook gate and Phase6 MinIO lar
 
 - Strict TypeScript workspace on Node.js 26, with Effect 4 process entrypoints.
 - Zod configuration schemas and Effect services for gateway and scheduler settings.
-- Dependency-free Node.js function runtime SDK; the Python SDK runtime remains pending.
+- Dependency-free Node.js and Python function runtime SDKs, with vendored-template kind acceptance.
 - Digest-pinned, non-root distroless container packaging.
 - CI checks for types, formatting, tests, unused code, generated files, container packaging, chart lint and critical vulnerabilities.
 
@@ -391,8 +391,51 @@ SDK runtime matrices, generation, current-source image/identity/security,
 Helm/audit and 22 existing two-mode native regressions. Only P8.5 closes after
 source acceptance; this PLAN/README tracking update receives its own fresh
 local and exact-head hosted checks. PR88 is pushed/green, not merged. Actual
-SDK-built bilingual kind Functions and deploy/full Phase8 remain P8.6/P8.7.
+SDK-built bilingual kind acceptance is recorded below; deployment remains P8.7.
 No auto-merge, publication, tags or production use is claimed.
+
+## SDK-built native Functions (P8.6)
+
+`make e2e` now builds the current workspace before generating real Node and
+Python projects through the CLI. It packs the actual Node SDK and builds the
+actual Python wheel, installs each from the project's `vendor/`, runs the
+project's generated tests and builds its locked image with networking disabled.
+Both images are pushed only to the owned loopback registry. Their generated
+Functions use the digests acknowledged by `docker push`, not tags or local
+config IDs; independent registry readback matches both the response digest and
+manifest content hash.
+
+The fixture handlers keep the template's default `{ rows: 42 }` result and use
+only the real SDK. Test-only input selects a thrown exception or a 75-second
+handler; the generated Function's input schema is widened for private canaries,
+with the normative minimum 30-second heartbeat window and a 120-second native
+Job deadline. The heartbeat test observes a live Job and `RUNNING` reports
+spanning at least one whole heartbeat window before the exact result succeeds.
+The error test observes `EXIT_CODE`, `FUNCTION`, the exact error type/message,
+the SDK diagnostic in `logTail` and native exit 1 within the existing bound.
+
+Local native acceptance passes 34 tests: 17 in each actual chart mode, embedded
+and Postgres, including all six SDK cases per mode and every earlier native
+regression. Every SDK case retains positive Run-credential/Pod-manifest and
+all-replica process/object-store log privacy witnesses. Both per-mode namespace
+removals and complete owned cluster/registry cleanup are confirmed. Runner
+workers, retries, test/hook deadlines and security policies are unchanged.
+
+Both independent reviews report no material scoped defect; repair and delivery
+preserve all fourteen reviewed source paths. Source `cdc854ff27d4ff248014a9b79e311bd2b663ceea` is
+pushed in [PR90](https://github.com/xenarro/krun/pull/90), targeting main after
+normal reconciliation with merged PR87/PR88. Fresh precommit `make check` passes
+2,347 TypeScript and 110 Python tests. [Exact source CI](https://github.com/xenarro/krun/actions/runs/41482158341)
+passes all six jobs: both SDK runtime matrices, generation, current-source
+image/smokes/identity/security, Helm/audit and all 34 native tests, including
+twelve SDK case/privacy observations and owned cleanup. Earlier failed attempts
+and existing-policy retries remain recorded; no causal or no-flake claim is made.
+
+Only P8.6 closes after source CI. This PLAN/README-only tracking update receives
+its own fresh precommit check and exact-head hosted acceptance. PR90 is
+pushed/green, not merged; required independent repository review still applies.
+The listed SDK/template Phase 8 gate passes; `krun deploy` remains P8.7 and
+Phase 8 is not finished. No auto-merge, publication, tags or production use.
 
 ## Optional chart monitoring (P7.7)
 
