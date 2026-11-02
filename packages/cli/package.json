@@ -3,8 +3,13 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "bin": {
+    "krun": "dist/main.js"
+  },
+  "exports": {},
   "files": [
-    "dist"
+    "dist",
+    "templates"
   ],
   "engines": {
     "node": ">=26 <27"
@@ -15,12 +20,16 @@
     "lint": "biome check . && tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@clack/prompts": "^1.8.1",
     "@effect/platform-node": "~4.0.6",
     "@krun/shared": "workspace:*",
     "effect": "~4.0.6",
-    "yaml": "^2.9.1"
+    "picocolors": "^1.1.1",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@effect/vitest": "~4.0.6",
     "vitest": "^5.0"
   }
 }

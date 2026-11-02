@@ -5,8 +5,9 @@ const entrypoints = new Map([
   ["scheduler", "../apps/scheduler/dist/main.js"],
   ["migrate", "../packages/shared/dist/store/migrate.js"],
   ["validate", "../packages/cli/dist/validate.js"],
+  ["init", "../packages/cli/dist/init.js"],
 ]);
-const usage = "Usage: krun <gateway|scheduler|migrate|validate> [arguments]";
+const usage = "Usage: krun <gateway|scheduler|migrate|validate|init> [arguments]";
 const command = process.argv[2];
 
 if (command === "--help") {

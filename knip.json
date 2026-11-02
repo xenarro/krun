@@ -27,7 +27,7 @@
       "project": ["src/**/*.ts"]
     },
     "packages/cli": {
-      "entry": ["src/validate.ts"],
+      "entry": ["src/main.ts", "src/validate.ts", "src/init.ts"],
       "project": ["src/**/*.ts"]
     },
     "sdk/node": {
