@@ -334,8 +334,21 @@ root, no network and UID/GID 65532, with module/template hashes matched to sourc
 The CLI is executable-only (`bin` with no library exports); package validation
 passes without inventing an import-time API.
 
-This source remains uncommitted pending independent review and delivery;
-P8.4 is not closed in PLAN. No publication, tag or production use is claimed.
+Both independent reviews are consumed. Valid DNS labels that look like YAML
+scalars remain strings, and signal interruption waits for filesystem rollback
+before exit. Fourteen name regressions and six real acquisition/signal/retry
+regressions pass; twelve native interruption probes leave no partial files.
+
+Source `f20a45e0bbd64f6c9d935a4edc1f19099501bd61` is delivered in
+[PR86](https://github.com/xenarro/krun/pull/86), independently approved and merged
+as `e8997c7c18ae7b867dc7171c5e1c7cc1dd8a4d68`. Its exact-head
+[CI](https://github.com/xenarro/krun/actions/runs/41422875928) passes all six jobs:
+2,307 TypeScript + 110 Python tests, including 81 CLI cases, SDK runtime matrices,
+generation, current-source image/identity/security, Helm/audit and 22 existing
+native regressions. Only P8.4 closes after that source acceptance. This
+PLAN/README follow-up receives its own fresh check, separate PR and hosted CI;
+the source merge does not claim this follow-up is merged. No publication, tag,
+production use or auto-merge by this job is claimed.
 Python initialization, SDK-built kind Functions and `krun deploy` remain
 P8.5-P8.7; the complete Phase 8 gate is not yet accepted.
 
