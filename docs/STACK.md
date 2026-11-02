@@ -243,7 +243,10 @@ root, native ESM and full type/lint checks; do not copy schemas or bundle shared
 
 Python SDK (`sdk/python`): Python 3.11 or newer, standard library only at
 runtime; `uv`, `ruff`, `pytest`, `hypothesis` (property tests, the
-counterpart of fast-check), `mypy --strict` for development.
+counterpart of fast-check), `mypy --strict` for development. Pure-Python
+wheel/sdist builds use `uv_build==0.13.1`, matching the pinned uv tool's bundled
+backend, with `module-root = ""` for the existing `krun/` layout (SPEC D124).
+This is build-only tooling; published wheel metadata has no runtime dependencies.
 
 Tools on the agent machine (PLAN.md section 2): Node 26, pnpm, uv, Docker,
 Helm 4, kind 0.31 or newer, kubectl, actionlint, gh, helm-docs, promtool;

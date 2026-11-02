@@ -1,15 +1,21 @@
 [project]
 name = "krun"
 version = "0.0.0"
-description = "krun function SDK scaffold"
+description = "Dependency-free krun function SDK"
+readme = "README.md"
 requires-python = ">=3.11"
 dependencies = []
 
 [dependency-groups]
 dev = ["pytest", "ruff", "mypy"]
 
-[tool.uv]
-package = false
+[build-system]
+requires = ["uv_build==0.13.1"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "krun"
+module-root = ""
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -19,5 +25,6 @@ pythonpath = ["."]
 target-version = "py311"
 
 [tool.mypy]
+python_version = "3.11"
 strict = true
 files = ["krun", "tests"]

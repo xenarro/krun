@@ -217,10 +217,62 @@ packed consumers and declarations pass on both runtimes; the rebuilt SDK image
 executes under UID 65532 with read-only/network-none restrictions.
 
 PR #82 is pushed and green, not merged; required independent repository approval
-remains separate and no auto-merge is enabled. The Python runtime, shared bilingual
-conformance table, CLI templates and SDK-built native kind Functions remain
-P8.2-P8.7. Existing native regression tests are not the full SDK-built Phase 8
-gate, and no production/release or package-publication acceptance is claimed.
+remains separate and no auto-merge is enabled. The Python runtime implementation
+is described below; the shared bilingual conformance table, CLI templates and
+SDK-built native kind Functions remain P8.3-P8.7. Existing native regression
+tests are not the full SDK-built Phase 8 gate, and no production/release or
+package-publication acceptance is claimed.
+
+## Python function SDK delivery (P8.2)
+
+[`sdk/python`](sdk/python/README.md) now provides the matching standard-library
+`run(handle)` runtime for Python 3.11 or newer. It is a plain call under
+`if __name__ == "__main__"`, never a decorator; importing the handler does
+nothing. Local mode reads a file or stdin and keeps result stdout separate from
+status/log/error stderr. Non-None results use strict compact JSON; invalid
+non-void results report `ResultWriteError` in both modes.
+
+Deployed execution uses `urllib.request`, exact internal v1 operation success
+codes, fixed 1/2/4-second retry delays and no following redirects. One
+condition-driven daemon thread owns the latest-status gate and heartbeats,
+including during input and terminal writes, without delaying process exit.
+Cancellation from a background 401 or SIGTERM terminates the whole process.
+Presigned uploads carry exact UTF-8 Content-Length and no bearer/checksum header;
+transport diagnostics do not echo endpoints, response bodies or credentials.
+
+Run `uv sync --directory sdk/python --frozen`, then
+`uv run --directory sdk/python pytest`. The real HTTP/process suite covers
+unscaled timeouts/backoff, concurrency, status/error byte limits, uploads,
+void/error exits, inert imports and stream separation. The workflow defines an
+`sdk-python` job for Python 3.11 and 3.13 with Ruff, strict mypy and distribution
+builds. `make test` already includes the suite. `uv build sdk/python` uses the
+pinned build-only uv backend; wheels carry typed SDK code and no runtime
+dependencies. Local installed-wheel consumers pass on Python 3.11.17 and
+3.13.15, and the rebuilt SDK test image exercises local/deployed behavior under
+UID 65532 with a read-only root filesystem.
+
+[PR #83](https://github.com/xenarro/krun/pull/83) delivers
+[source 6b6d220](https://github.com/xenarro/krun/commit/6b6d220f7b176e6df249ec29c592835a9d5cadfe)
+against its still-unmerged `feat/node-sdk-runtime` / PR #82 parent. Both
+independent reviews reproduced a socket-idle versus whole-attempt timeout gap;
+the repaired transport uses owned isolated urllib workers, private request pipes
+and monotonic deadlines with kill/reap cleanup. Native 10/3/300-second arguments
+and retry delays remain unchanged; D125 records interpreter-startup overhead.
+
+[Exact source-head CI](https://github.com/xenarro/krun/actions/runs/41383825182)
+passes all six jobs: 80 SDK tests directly on each Python runtime
+(3.11.17, 3.13.16), 101 on each Node 22/26, a full 2,235 TypeScript
+plus 80 Python tests, generation, platform container smokes/identity/security,
+Helm/audit and 22 existing two-mode native regression tests. Nine new Python
+regressions supplement all 71 original cases; real slow-progress HTTP and
+worker cleanup are tested without shortening operation budgets. This PLAN/README
+tracking update receives its own fresh local and exact-head hosted acceptance.
+
+PR #83 is pushed and green, not merged; PR #82 still requires independent
+protected-main approval. Neither is auto-merged. Shared bilingual scenarios,
+CLI-generated vendored templates and SDK-built kind Functions remain P8.3-P8.7;
+the existing native tests are not the full Phase 8 SDK gate. No publication,
+release tag, production use or complete Phase 8 acceptance is claimed.
 
 ## Optional chart monitoring (P7.7)
 
