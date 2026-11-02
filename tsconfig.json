@@ -5,6 +5,7 @@
     "vitest.config.ts",
     "test/scaffold/**/*.test.ts",
     "test/e2e/**/*.ts",
+    "test/sdk-conformance/**/*.ts",
     "scripts/**/*.ts"
   ]
 }

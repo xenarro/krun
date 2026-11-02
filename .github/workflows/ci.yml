@@ -32,6 +32,10 @@ jobs:
           python-version: ${{ matrix.python }}
           enable-cache: true
           cache-dependency-glob: sdk/python/uv.lock
+      # The shared wire fake uses Node stdlib only, without installing pnpm tooling.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
       - name: Install locked Python SDK tooling
         run: uv sync --directory sdk/python --frozen
       - name: Check Python SDK and run HTTP and process acceptance
