@@ -1,0 +1,12 @@
+[project]
+name = "krun-function-__KRUN_NAME__"
+version = "0.0.0"
+requires-python = ">=3.11"
+dependencies = ["krun~=__KRUN_VERSION__"]
+
+[dependency-groups]
+dev = ["pytest"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
