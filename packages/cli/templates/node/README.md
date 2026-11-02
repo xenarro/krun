@@ -26,10 +26,16 @@ must stay under /tmp; the image supports a read-only root filesystem.
 
     krun deploy --registry registry.example.com/team
 
-Deploy is the CLI golden path (P8.7 in krun development); it builds/pushes,
-writes the digest, validates, applies and waits Ready=True. Until that command
-is available in your CLI build, use the manual steps below. The starter image
-REPLACE_WITH_DIGEST is intentionally invalid and must never be applied as-is.
+Deploy builds/pushes, writes the digest without removing YAML comments, validates,
+applies and waits up to 120 seconds for the current generation to be Ready=True.
+Use --no-apply to build/push/pin/validate without any cluster access (GitOps).
+Flags --registry, --namespace and --api-url override KRUN_REGISTRY, KRUN_NAMESPACE
+(default krun) and KRUN_API_URL. Set KRUN_JOBS_NAMESPACE (default krun-jobs) to
+your installation's jobs namespace for the printed in-flight logs command.
+Progress is on stderr; stdout contains the first-run curl, in-flight logs and
+GetRun/logTail hint. API keys stay literal environment references in these
+commands. The starter image REPLACE_WITH_DIGEST is intentionally invalid and
+must never be applied as-is.
 
 Manual steps behind deploy:
 
