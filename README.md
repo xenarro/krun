@@ -588,8 +588,15 @@ The rebuilt image's eight CLI modules match current compiled source under
 restrictive UID/GID 65532 checks. Owned cluster, registry and private-state cleanup
 are independently read back. Fresh post-repair `make check` passes 2,405 TypeScript
 and 110 Python tests, including 153 CLI tests, under the unchanged hardened
-profile. Independent repair review, delivery and the remaining Phase 9 gates are
-separate.
+profile.
+
+P9.1 source `2296c6f44ecefe0d1bc0eca3a022463c58af5962` passes all six hosted CI jobs in
+[run 41572943053](https://github.com/xenarro/krun/actions/runs/41572943053), including an uninterrupted
+full native gate with 40 cases (20 per database mode), generators, Helm,
+rebuilt-image checks, production audit and the critical image scan.
+[PR #92](https://github.com/xenarro/krun/pull/92) targets `main`; required independent repository
+review and merge remain separate, with no auto-merge requested. Only P9.1 is
+recorded complete. The remaining Phase 9 gates and publication are not claimed.
 
 ## Optional chart monitoring (P7.7)
 
