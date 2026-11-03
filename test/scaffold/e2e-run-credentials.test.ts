@@ -109,6 +109,30 @@ it("rejects another function's Run resource without normalizing its identifier",
   expect(() => witness.bind(resource.toUpperCase())).toThrow("Foreign Run credential binding");
 });
 
+it("accepts only explicitly declared scenario creators without broadening the default fence", () => {
+  const value = token();
+  const object = secret(value);
+  object.metadata.labels["krun.io/created-by"] = "e2e-backpressure";
+  expect(() => runCredentials(fn, new Set()).observe(object)).toThrow(
+    "Invalid owned Run credential witness",
+  );
+  const forbidden = new Set<string>();
+  const witness = runCredentials(fn, forbidden, "krun-jobs", ["e2e", "e2e-backpressure"]);
+  witness.bind(resource);
+  witness.observe(object);
+  expect(witness.ready(resource)).toBe(true);
+  expect(forbidden.has(value)).toBe(true);
+  object.metadata.labels["krun.io/created-by"] = "foreign";
+  expect(() => witness.observe(object)).toThrow("Invalid owned Run credential witness");
+});
+it("rejects a changed creator even when both principals are owned by the scenario", () => {
+  const witness = runCredentials(fn, new Set(), "krun-jobs", ["e2e", "e2e-backpressure"]);
+  const object = secret(token());
+  witness.observe(object);
+  object.metadata.labels["krun.io/created-by"] = "e2e-backpressure";
+  expect(() => witness.observe(object)).toThrow("Changed owned Run credential identity");
+});
+
 for (const mode of ["embedded", "postgres"]) {
   it(`fences actual ${mode} Run credentials to that fresh chart jobs namespace`, () => {
     const namespace = `krun-test-${mode}-jobs`;

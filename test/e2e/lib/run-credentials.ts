@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 const runId = z.uuidv7().refine((value) => value === value.toLowerCase());
-const ownedSecret = (namespace: string) =>
+const ownedSecret = (namespace: string, creators: readonly string[]) =>
   z.object({
     metadata: z.object({
       name: z.string(),
@@ -11,7 +11,7 @@ const ownedSecret = (namespace: string) =>
       labels: z.object({
         "krun.io/function": z.string(),
         "krun.io/run-id": runId,
-        "krun.io/created-by": z.literal("e2e"),
+        "krun.io/created-by": z.string().refine((creator) => creators.includes(creator)),
         "app.kubernetes.io/managed-by": z.literal("krun"),
       }),
     }),
@@ -26,9 +26,10 @@ export const runCredentials = (
   functionName: string,
   forbidden: Set<string>,
   namespace = "krun-jobs",
+  creators: readonly string[] = ["e2e"],
 ) => {
-  const schema = ownedSecret(namespace);
-  const observed = new Map<string, { uid: string; token: string }>();
+  const schema = ownedSecret(namespace, [...creators]);
+  const observed = new Map<string, { uid: string; token: string; creator: string }>();
   const bound = new Set<string>();
   const identity = (resource: string) => {
     const prefix = `functions/${functionName}/runs/`;
@@ -58,9 +59,15 @@ export const runCredentials = (
       )
         throw new Error("Invalid owned Run credential witness");
       const previous = observed.get(id);
-      if (previous && (previous.uid !== secret.metadata.uid || previous.token !== token))
+      const creator = secret.metadata.labels["krun.io/created-by"];
+      if (
+        previous &&
+        (previous.uid !== secret.metadata.uid ||
+          previous.token !== token ||
+          previous.creator !== creator)
+      )
         throw new Error("Changed owned Run credential identity");
-      observed.set(id, { uid: secret.metadata.uid, token });
+      observed.set(id, { uid: secret.metadata.uid, token, creator });
       if (bound.has(id)) forbidden.add(token);
     },
     bind(resource: string) {
