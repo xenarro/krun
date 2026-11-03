@@ -446,3 +446,15 @@ It is repeatable. CI runs it under `always()`, including after a failed gate.
 It does not publish images, change production clusters or remove other local
 clusters. `node test/e2e/cluster.ts diagnostics` prints only selected Pod status
 fields, never kubeconfig/Secret contents or raw application logs.
+
+## On-demand benchmark (P9.3)
+
+`make bench` uses this same isolated kind/chart foundation but is not part of
+`make e2e`: each Store mode runs one excluded warmup, 500 real ten-second
+successes, then 20 exit-1 samples, with 10 closed-loop clients and concurrency 10.
+Run `make kind-down` afterward, including after a failed/interrupted benchmark.
+No ambient kubeconfig, production target, mutation retry or shorter sample
+is supported. Measured local results, observer precision, conditions and the
+visible failure-detection target miss are in README and docs/OPERATIONS.md.
+The separate read-only-token `benchmark.yml` PR/on-demand workflow invokes the
+same compiled script and always removes its exact owned cluster/registry.
