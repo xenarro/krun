@@ -137,6 +137,70 @@ bound. The complete repaired-source whole check passes 2,387 TypeScript and
 1,800-second profile and scoped I/O priority. Source, image/archive correspondence
 and exact owned cleanup are verified separately from later Git delivery.
 
+## Security acceptance (P9.2)
+
+`security.e2e.ts` adds one complete boundary case per Store mode, with fresh
+scenario ownership on every configured runner attempt. Two generated principals
+have only `runs:read`/`runs:write` and the exact security Function glob; neither
+has admin scope. Two real curl Jobs download distinct private inputs, report
+`holding` and wait on the existing FIFO until owned cancellation.
+
+The test reads actual Job Pod YAML after both immutable Run credential witnesses
+are bound, then applies the existing private-manifest parser and scoped S3 URL
+oracle. Four own-token reads bracket two cross-run 401s from those actual Job
+processes; four own-key reads bracket two foreign-key 404s. Error envelopes have
+closed exact fields. In particular, an invalid Function never exposes its
+validation reason, while callback denial must include the documented exact
+`google.rpc.BadRequest` field violation rather than treating it as a leak.
+
+Both server dry-run and real Function apply reject a tag-only image through the
+installed CRD CEL rule, followed by an absence readback. Separately applied
+non-compiling `$ref` and forbidden service-account Functions must acquire
+current-generation false Ready conditions with the exact reasons and return
+opaque 404 on create. A callback to unlisted `http://10.0.0.1/hook` is rejected
+without admitting a Run. These Functions are cleaned and read back absent.
+
+For every live serving Pod, the actual held Job's curl TCP-connect timing must
+prove public 8080 and each real admin port blocked. Successful legitimate
+Node TCP probes bracket each exact destination, so an unavailable listener or
+wrong address cannot masquerade as policy enforcement. Postgres mode additionally
+probes its actual database Pod on 5432 from the gateway as positive control and
+from the Job as denied source. Embedded has no database TCP listener; its Job
+must not mount a persistentVolumeClaim or hostPath exposing platform SQLite.
+Connection refusal, DNS/exec errors, malformed output and a missing curl binary
+fail rather than count as denial. No jobs policy or security setting is altered.
+
+The reviewed failure-path ownership defect is fenced before teardown tracking:
+only HTTP 201, exact requested Function parent, explicit scenario ownership and
+matching creator authorize a cleanup candidate. Redirects, wrong creators and
+Run-shaped non-success replies fail closed. Unexpected admissions for owned child
+Functions use the original non-admin principal, not the root key. Cleanup checks
+identity before cancellation, validates its HTTP/body/state result, joins terminal
+readback and waits for exact Function/Run-labeled Job and Secret removal. Invalid
+cleanup still fails while the remaining owned Functions are cleaned. Fourteen
+permanent real-loopback controls reproduce the original foreign-response defect
+and prove zero unrelated mutations, valid own-admission retention, owner-only
+cancellation and joined readback. These are controlled failure-path regressions,
+not claims that the real gateway returned foreign resources.
+
+Targeted local native acceptance passes in both modes, including three denied
+live endpoints/six listener controls in embedded and seven/fourteen in Postgres.
+The restricted event-driven control Pod is removed and read back absent; the
+normal scenario finalizer cancels the owned Runs, removes their Jobs/Secrets and
+Function, and verifies scoped cleanup. The repaired frozen source qualifies all
+42 native cases: the complete embedded 21-case/15-file runner retained from the
+original parent and a fresh complete Postgres 21-case/15-file runner, including
+full module and finalizer verdicts. The original aggregate parent exited 124 at
+its unchanged 1,800-second limit and is preserved as failed evidence; interrupted
+Postgres progress is not accepted. The embedded runner used one existing
+configured Node SDK heartbeat retry; no retry or deadline setting changed.
+Current image/archive correspondence and
+exact kind/registry/private-state cleanup also pass. The separate fresh hardened
+`make check` passes 2,436 TypeScript and 110 Python tests, including 153 CLI tests,
+with the unchanged two-CPU/1,800-second cap and security settings. Final
+source-frozen acceptance validation passes. Original failed attempts are
+retained; configured native retry/deadlines are unchanged.
+
 ## Backpressure acceptance (P9.1)
 
 `backpressure.e2e.ts` adds one native case per chart mode. Its own Function uses

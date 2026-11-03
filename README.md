@@ -598,6 +598,68 @@ rebuilt-image checks, production audit and the critical image scan.
 review and merge remain separate, with no auto-merge requested. Only P9.1 is
 recorded complete. The remaining Phase 9 gates and publication are not claimed.
 
+## Security native scenario (P9.2)
+
+`test/e2e/security.e2e.ts` uses two fresh, non-admin principals restricted to
+`krun-test-security-*` Functions. Both real Jobs first fetch their own private
+input and report `holding`; their actual per-run credentials are positively
+witnessed before `kubectl get pod -o yaml` is inspected privately. Neither input
+nor token may appear in the decoded manifest. The existing scoped-upload,
+all-replica process-log and object-store privacy oracles still run.
+
+Each Job's own token works before and after a cross-run request returns the
+canonical 401 `TOKEN_INVALID`. Each principal can read its own Run before and
+after the other principal gets opaque 404 `RUN_NOT_FOUND`. A tag-only Function
+is rejected by the actual CRD at both server dry-run and real apply and remains
+absent. Non-compiling input schemas and forbidden service accounts produce
+current-generation `Ready=False` with `SchemaInvalid` and
+`ServiceAccountNotAllowed`; create returns opaque `FUNCTION_NOT_FOUND`, without
+validation details. An unlisted callback to `10.0.0.1` returns
+`CALLBACK_NOT_ALLOWED` and the documented `callback.url` field violation.
+
+Actual held Job processes cannot connect to any live gateway public/admin
+endpoint. Real Postgres TCP access is also denied in Postgres mode; embedded
+SQLite has no database TCP listener, and the Job has neither a platform PVC nor
+hostPath database mount. Every denied socket is bracketed by successful
+connections to that exact IP/port from its legitimate control. Only a connect
+timeout with no established TCP connection counts as denial: refusal, DNS,
+missing executables and kubectl failures do not. No policy is weakened for the
+probe, and the restricted control Pod is owned and removed by this scenario.
+
+Security teardown accepts Run ownership only from HTTP 201 admissions for the
+exact requested, explicitly owned Function and expected principal. Redirects and
+foreign/status-inconsistent replies fail without cleanup mutations. Unexpected
+owned admissions use their non-admin owner key, with positive identity checks,
+accepted cancellation, terminal readback and exact Job/Secret removal. Fourteen
+controlled loopback regressions cover these failure paths without mutating any
+actual unrelated resources.
+
+Targeted native acceptance passes in both Store modes: two private YAML
+witnesses, four own-token controls, two cross-run denials, four own-key read
+controls and two cross-key denials per mode. Embedded has three forbidden live
+public/admin endpoints; Postgres has seven including its real database. The
+repaired source qualifies all 42 native cases: a retained complete embedded
+21-case runner and a fresh complete Postgres 21-case runner, each across 15
+files with full runner/finalizer verdicts. The original aggregate parent hit its
+unchanged 1,800-second bound and exited 124; it remains failed evidence, and
+interrupted Postgres progress is not counted. The embedded runner used one
+existing configured Node SDK heartbeat retry; no retry/deadline policy changed.
+Image/archive
+correspondence and exact owned cleanup also pass. A separate fresh hardened
+`make check` passes 2,436 TypeScript and 110 Python tests, including 153 CLI tests,
+under the unchanged two-CPU/1,800-second profile. Source-frozen acceptance
+validation passes. Exact source commit `95ba4f774d8a07865d3682d7e9d60981d43e5213` is pushed in
+PR #93 (https://github.com/xenarro/krun/pull/93) against `test/backpressure-e2e`.
+Its hosted CI https://github.com/xenarro/krun/actions/runs/41598532903 passes all six jobs,
+including the uninterrupted 42-case native matrix and 2,436 TypeScript + 110
+Python whole check, plus generation, Helm, current-source image/identity/security
+checks and
+owned cleanup. Only P9.2 is tracked complete after this source acceptance;
+the tracking commit receives its own fresh full check and exact-head hosted CI.
+PR #93 and parent PR #92 remain unmerged; protected-main independent review
+remains separate. No auto-merge, full Phase 9 gate, publication, tags or
+production use.
+
 ## Optional chart monitoring (P7.7)
 
 The chart now renders opt-in `monitoring.coreos.com/v1` PodMonitor and
