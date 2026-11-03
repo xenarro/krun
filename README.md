@@ -648,8 +648,17 @@ Image/archive
 correspondence and exact owned cleanup also pass. A separate fresh hardened
 `make check` passes 2,436 TypeScript and 110 Python tests, including 153 CLI tests,
 under the unchanged two-CPU/1,800-second profile. Source-frozen acceptance
-validation passes. No P9.2 Git delivery, PLAN closure, full Phase 9 gate or
-publication is claimed here.
+validation passes. Exact source commit `95ba4f774d8a07865d3682d7e9d60981d43e5213` is pushed in
+PR #93 (https://github.com/xenarro/krun/pull/93) against `test/backpressure-e2e`.
+Its hosted CI https://github.com/xenarro/krun/actions/runs/41598532903 passes all six jobs,
+including the uninterrupted 42-case native matrix and 2,436 TypeScript + 110
+Python whole check, plus generation, Helm, current-source image/identity/security
+checks and
+owned cleanup. Only P9.2 is tracked complete after this source acceptance;
+the tracking commit receives its own fresh full check and exact-head hosted CI.
+PR #93 and parent PR #92 remain unmerged; protected-main independent review
+remains separate. No auto-merge, full Phase 9 gate, publication, tags or
+production use.
 
 ## Optional chart monitoring (P7.7)
 
