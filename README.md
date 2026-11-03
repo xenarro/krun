@@ -529,6 +529,68 @@ review remains pending and no auto-merge is enabled. The listed Phase8
 SDK/template/deploy gate passes. Capacity/security, benchmark/quick-start and
 release gates remain Phase9; no publication, tags or production use is claimed.
 
+## Backpressure native scenario (P9.1)
+
+`test/e2e/backpressure.e2e.ts` exercises the real chart, gateway, Store and
+scheduler in each database mode. A uniquely named Function has `maxQueued: 1000`
+and `maxConcurrency: 5`. An additional disposable Job-count ResourceQuota holds
+execution at zero while 3,000 sequential creates distinguish the exact queue cap
+from scheduling and rate-limit races: 1,000 must be admitted and the remaining
+2,000 must return the canonical 429 `QUEUE_FULL`, function limit metadata and
+`Retry-After: 1`. A separate non-admin test key with `maxQueued: 10` must reject
+its eleventh create with key limit metadata. No mutating HTTP request is retried.
+
+Quota acceptance requires the actual scheduler quota-rejection counter, attempted
+Runs remaining `QUEUED`, and absence of native Jobs. After cancelling the surplus
+through the public API and reading back terminal states, removing only that
+scenario's quota permits five held Jobs. A LIST-anchored native Job watch counts
+all nonterminal Jobs, including pending/deleting ones, through the entire test;
+watch errors fail the test. A sixth Run stays queued over multiple scheduler
+ticks, then starts only after the observer releases one producer's FIFO. Each
+scenario reads back all 1,011 accepted Runs as terminal and removes its own quota,
+Function, Jobs, Secrets and Pods. Existing credential/input/manifest/process-log
+privacy checks apply to all six actual executions. Only this scenario declares
+its two exact test-key creators; other scenarios retain the original creator
+fence, and a credential changing creator identity fails. Each runner attempt
+receives fresh scenario ownership and cleanup.
+
+The disposable chart sets its existing per-key rate bucket to 1,000 requests/s
+with burst 4,000 so this test measures queue pressure, not `RATE_LIMITED`.
+Production defaults, admission policy, timeouts, runner retries, workers, resource
+budgets and dependency guards are unchanged. This is not a throughput benchmark,
+a concurrent multi-gateway admission claim, or completion of the Phase9 security,
+benchmark, quick-start or release gates. Run the existing `make e2e`, then
+`make kind-down`; neither command uses the ambient Kubernetes context.
+
+Cancellation failures join every worker before they reach teardown, so a failed
+request cannot leave sibling mutations running into the next attempt. The Job
+watch remains live until all owned Runs and native Jobs settle, then joins child
+close after draining stdout and rechecks sticky failures and zero occupancy.
+Transport/validation failures, late overcapacity, watch errors/exits, malformed or
+truncated drain input and a late native Job have dedicated regression controls.
+
+Post-repair native qualification covers 40 tests across 14 files per mode
+(20 tests each in embedded and Postgres). Both backpressure cases record exactly
+1,000 admissions and 2,000 queue rejections, four native quota classifications,
+a maximum of five nonterminal Jobs across six executions, six credential/privacy
+witnesses and 1,011 terminal owned Runs. Both final Job watches drain and join
+with zero nonterminal Jobs.
+
+The complete embedded runner verdict and successful namespace removal are
+retained from a budget-limited `make e2e`. Postgres is qualified by two successful
+bounded runners covering disjoint sets of seven and thirteen cases, each with
+full module/hook verdicts, fresh owned namespaces and a mandatory policy probe.
+Partial case ticks are not accepted as clean module teardown. Original failed or
+interrupted parent commands are not reported as exit 0; receipt history retains
+the existing configured retries without changing test, hook or outer budgets.
+
+The rebuilt image's eight CLI modules match current compiled source under
+restrictive UID/GID 65532 checks. Owned cluster, registry and private-state cleanup
+are independently read back. Fresh post-repair `make check` passes 2,405 TypeScript
+and 110 Python tests, including 153 CLI tests, under the unchanged hardened
+profile. Independent repair review, delivery and the remaining Phase 9 gates are
+separate.
+
 ## Optional chart monitoring (P7.7)
 
 The chart now renders opt-in `monitoring.coreos.com/v1` PodMonitor and

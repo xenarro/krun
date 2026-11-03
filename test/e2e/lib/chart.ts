@@ -23,6 +23,8 @@ export const chartValues = (mode: DatabaseMode, image: string) => {
     image: { repository: "localhost:5001/krun", tag: `e2e@${parsed.split("@")[1]}` },
     db: { mode, postgres: { existingSecret: "krun-test-postgres" } },
     apiKeys: { existingSecret: "krun-e2e-keys" },
+    // P9.1 measures queue admission, not the separate token-bucket limit.
+    config: { rateLimitRps: 1000, rateLimitBurst: 4000 },
     gateway: { replicas: mode === "embedded" ? 1 : 2 },
     scheduler: { replicas: mode === "embedded" ? 1 : 2 },
     crds: { install: true, keep: false },

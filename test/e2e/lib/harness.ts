@@ -8,6 +8,8 @@ import { isDeepStrictEqual } from "node:util";
 import { parse } from "yaml";
 import { z } from "zod";
 import { publicSchemas } from "../../../apps/gateway/src/public-contracts.js";
+import { backpressureKey } from "./backpressure.js";
+import { backpressureAcceptance } from "./backpressure-harness.js";
 import { chartLayout, databaseMode, release } from "./chart.js";
 import { contextArgs, parsePushDigest } from "./contracts.js";
 import {
@@ -26,6 +28,7 @@ const root = fileURLToPath(new URL("../../../", import.meta.url));
 const owner = createHash("sha256").update(root).digest("hex").slice(0, 16);
 const privateDir = join(tmpdir(), `krun-test-e2e-${owner}`);
 const modes = [
+  "backpressure",
   "success",
   "exit_code",
   "exit_code_status",
@@ -73,6 +76,7 @@ export const scenario = (mode: Mode, client?: { namespace: string; pod: string }
   const podContents = new Set<string>();
   let key = "";
   let url = "";
+  let pressure: ReturnType<typeof backpressureAcceptance> | undefined;
   let applied = false;
   let receiverApplied = false;
   let closing = false;
@@ -412,9 +416,15 @@ export const scenario = (mode: Mode, client?: { namespace: string; pod: string }
       layout = chartLayout(state.mode);
       namespace = layout.namespace;
       jobsNamespace = layout.jobsNamespace;
-      credentials = runCredentials(name, forbidden, jobsNamespace);
+      credentials = runCredentials(
+        name,
+        forbidden,
+        jobsNamespace,
+        mode === "backpressure" ? ["e2e", "e2e-backpressure"] : ["e2e"],
+      );
       key = state.key;
       forbidden.add(key);
+      forbidden.add(backpressureKey(key));
       if (state.postgresPassword) {
         forbidden.add(state.postgresPassword);
         forbidden.add(Buffer.from(state.postgresPassword).toString("base64"));
@@ -515,7 +525,9 @@ export const scenario = (mode: Mode, client?: { namespace: string; pod: string }
                 spec: {
                   image,
                   inputSchema: { type: "object" },
-                  activeDeadlineSeconds: mode === "image_pull_backoff" ? 60 : 120,
+                  activeDeadlineSeconds:
+                    mode === "image_pull_backoff" ? 60 : mode === "backpressure" ? 600 : 120,
+                  ...(mode === "backpressure" ? { maxQueued: 1000, maxConcurrency: 5 } : {}),
                   ...(mode === "heartbeat_timeout" ? { heartbeatTimeout: "30s" } : {}),
                 },
               },
@@ -590,6 +602,28 @@ export const scenario = (mode: Mode, client?: { namespace: string; pod: string }
       }
       watchCredentials();
       watchPods();
+      if (mode === "backpressure")
+        pressure = backpressureAcceptance({
+          name,
+          namespace,
+          jobsNamespace,
+          kubeconfig,
+          url,
+          key,
+          mode: state.mode,
+          kube,
+          children,
+          live(run) {
+            credentials.bind(run.name);
+            runs.push(run);
+          },
+        });
+    },
+    async backpressure() {
+      check(pressure, "Backpressure requires its owned scenario");
+      const marker = randomBytes(24).toString("hex");
+      forbidden.add(marker);
+      await pressure.run({ marker });
     },
     input() {
       const marker = randomBytes(24).toString("hex");
@@ -997,6 +1031,11 @@ export const scenario = (mode: Mode, client?: { namespace: string; pod: string }
     },
     async close() {
       const cleanupFailures: string[] = [];
+      try {
+        await pressure?.close();
+      } catch {
+        cleanupFailures.push("backpressure-cleanup");
+      }
       try {
         if (applied) {
           // API or observer failure must not bypass this Function's bounded cleanup.

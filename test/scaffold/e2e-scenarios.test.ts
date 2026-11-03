@@ -13,6 +13,7 @@ it("requires every native scenario file including both SDKs and refuses an empty
       .filter((path) => path.endsWith(".e2e.ts"))
       .sort(),
   ).toEqual([
+    "backpressure.e2e.ts",
     "chart.e2e.ts",
     "deploy.e2e.ts",
     "exit_code.e2e.ts",

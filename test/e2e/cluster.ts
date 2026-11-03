@@ -7,6 +7,7 @@ import { setTimeout } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { parse, parseAllDocuments } from "yaml";
 import { z } from "zod";
+import { backpressureKey } from "./lib/backpressure.ts";
 import { chartLayout, chartValues, type DatabaseMode, databaseMode, release } from "./lib/chart.ts";
 import {
   assertRegistryOwner,
@@ -420,7 +421,18 @@ const install = async (mode: DatabaseMode) => {
     [
       "krun-e2e-keys",
       {
-        "keys.yaml": JSON.stringify({ keys: [{ name: "e2e", key: state.key, scopes: ["admin"] }] }),
+        "keys.yaml": JSON.stringify({
+          keys: [
+            { name: "e2e", key: state.key, scopes: ["admin"] },
+            {
+              name: "e2e-backpressure",
+              key: backpressureKey(state.key),
+              scopes: ["runs:read", "runs:write"],
+              functions: ["krun-test-backpressure-*"],
+              maxQueued: 10,
+            },
+          ],
+        }),
       },
     ],
     [

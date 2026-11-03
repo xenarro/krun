@@ -137,6 +137,81 @@ bound. The complete repaired-source whole check passes 2,387 TypeScript and
 1,800-second profile and scoped I/O priority. Source, image/archive correspondence
 and exact owned cleanup are verified separately from later Git delivery.
 
+## Backpressure acceptance (P9.1)
+
+`backpressure.e2e.ts` adds one native case per chart mode. Its own Function uses
+`maxQueued=1000` and `maxConcurrency=5`; its curl producer posts an accepted
+`holding` status and blocks on an observer-controlled FIFO, not a timed sleep.
+A test-only `count/jobs.batch=0` ResourceQuota first isolates queue admission.
+The non-admin generated backpressure key is restricted to these Functions and
+`maxQueued=10`: ten creates succeed, the eleventh is canonical key-limited
+`QUEUE_FULL`. After their cancellation/readback, exactly 1,000 of 3,000 further
+sequential creates succeed; 2,000 must return canonical function-limited
+`QUEUE_FULL` with `Retry-After: 1`. A `RATE_LIMITED`, transport failure or unrelated
+429 cannot satisfy the oracle. The disposable chart configures the existing
+rate bucket at 1,000 requests/s, burst 4,000; production defaults are untouched.
+
+The actual scheduler counter must classify quota failures, attempted Runs remain
+queued, and the continuous LIST-resourceVersion-anchored Job watch stays empty.
+The test cancels surplus Runs through the public API before removing its own
+quota, then positively observes five running held producers. A sixth Run must
+stay queued across multiple real scheduler ticks. Releasing one FIFO permits
+that Run to start, giving six distinct native Jobs with a maximum of five
+nonterminal Jobs. Pending and deleting Jobs count until a terminal condition or
+DELETED event; watch errors fail, never prove absence. All six executions use
+the existing run-credential/input/Pod/process/object-store privacy oracles. Only
+this scenario declares the two exact generated test principals; the default
+single-principal fence stays unchanged, foreign creators fail and a changed
+creator fails credential identity checks. Every runner attempt owns a fresh
+scenario scope. The metric scraper honors both explicit admin addresses and the
+documented default9090 when the environment omits it.
+
+Foundation setup now requires a positive read-only MinIO health response from
+the actual restricted initializer Pod before S3 calls. Kubelet readiness alone
+does not prove that client Service/DNS/policy path. The bounded preflight uses
+at most ten two-second reads and drains their bodies; exhausted readiness
+fails, and AWS403/503 responses still fail without a bucket-create attempt.
+The original90-second Job deadline and ten-second S3 bounds stay unchanged.
+No S3 mutation, API submission or scenario retry is added. Original foundation
+failures and same-image DNS/HTTP/S3 diagnostics remain in the implementation
+evidence; this is not a claimed universal repair of host timing failures.
+Cleanup reads back all 1,011 accepted Runs as terminal and the quota/Function/
+label-owned resources as absent. No application/runtime dependency, runner
+budget, retry, worker, network, admission or supply-chain policy is relaxed.
+
+This scenario is not a concurrent multi-replica admission benchmark or the
+complete Phase9 gate; security, measured benchmarks, quick start, restore and
+release remain separate tasks. Run it through the normal two-mode `make e2e`.
+
+The native Job observer stays live while all owned Runs are cancelled and all
+nonterminal Jobs settle. Teardown then joins child close (including stdout drain)
+and rejects any sticky watch error, truncated final record or nonzero final Job
+occupancy before emitting its success record. Cancellation transport/validation
+failures join all sibling workers before propagating; failed mutations are not
+replayed by that sweep. Ten controlled lifecycle regressions and independent
+real-process/loopback controls cover both failure paths as well as normal close.
+
+The repaired frozen-source qualification has 20 tests across 14 files in each
+mode (40 tests total). Each backpressure case records 1,000 admissions, 2,000
+canonical queue rejections, four quota classifications, six executed Jobs with
+maximum occupancy five, six credential/privacy witnesses and 1,011 terminal
+owned Runs. Final observer records positively confirm child/stdout drain and zero
+nonterminal Jobs.
+
+The complete embedded runner summary and successful namespace removal are
+retained from the interrupted parent command. Postgres has two successful bounded
+runner verdicts covering disjoint seven-case and thirteen-case inventories,
+including all module hooks; each uses fresh owned namespaces and a successful
+policy probe. No interrupted-run case ticks are promoted into clean file verdicts.
+Original parent failures and configured retry history remain in the receipts;
+no timeout, worker, security or retry setting was relaxed.
+
+Current-image restrictive hash/help checks and final owned infrastructure
+cleanup/readback pass. Fresh post-repair `make check` passes 2,405 TypeScript and
+110 Python tests, including 153 CLI tests, under the unchanged hardened profile.
+The private report links exact receipts, case identities and source hashes.
+Independent repair review and hosted delivery remain separate.
+
 ## Phase 4 scenarios (P4.13)
 
 The separate Vitest runner requires all eight `*.e2e.ts` files (five Phase 4,

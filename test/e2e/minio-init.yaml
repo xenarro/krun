@@ -34,6 +34,19 @@ spec:
                   secretAccessKey: process.env.KRUN_S3_SECRET_KEY },
               });
               try {
+                // Kubelet readiness does not prove Service/DNS/NetworkPolicy
+                // convergence from this separate restricted client Pod.
+                let ready = false;
+                for (let attempt = 0; attempt < 10; attempt++) {
+                  try {
+                    const response = await fetch(process.env.KRUN_S3_ENDPOINT + '/minio/health/ready',
+                      { signal: AbortSignal.timeout(2000) });
+                    await response.body?.cancel();
+                    if (response.status === 200) { ready = true; break; }
+                  } catch { /* A bounded read-only convergence probe, not an S3 mutation retry. */ }
+                  if (attempt < 9) await new Promise(resolve => setTimeout(resolve, 100));
+                }
+                if (!ready) throw new Error('Native MinIO client readiness failed');
                 try {
                   await client.send(new HeadBucketCommand({ Bucket: 'krun-test-results' }),
                     { abortSignal: AbortSignal.timeout(10000) });
