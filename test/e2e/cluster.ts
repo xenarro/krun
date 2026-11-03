@@ -15,8 +15,8 @@ import {
   parsePushDigest,
   probeVerdict,
 } from "./lib/contracts.ts";
-
 import { buildSdkFunctions, sdkFunctionsSchema } from "./lib/sdk-functions.ts";
+import { securityPrincipals } from "./lib/security.ts";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const cluster = "krun-test-e2e";
@@ -424,6 +424,7 @@ const install = async (mode: DatabaseMode) => {
         "keys.yaml": JSON.stringify({
           keys: [
             { name: "e2e", key: state.key, scopes: ["admin"] },
+            ...securityPrincipals(state.key),
             {
               name: "e2e-backpressure",
               key: backpressureKey(state.key),

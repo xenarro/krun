@@ -24,6 +24,7 @@ it("requires every native scenario file including both SDKs and refuses an empty
     "sdk_error.e2e.ts",
     "sdk_heartbeat.e2e.ts",
     "sdk_success.e2e.ts",
+    "security.e2e.ts",
     "success.e2e.ts",
     "wait.e2e.ts",
     "webhook.e2e.ts",

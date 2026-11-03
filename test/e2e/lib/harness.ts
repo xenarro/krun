@@ -21,6 +21,8 @@ import {
 import { podSchema } from "./pod.js";
 import { runCredentials } from "./run-credentials.js";
 import { sdkFunctionsSchema } from "./sdk-functions.js";
+import { securityKey } from "./security.js";
+import { securityAcceptance } from "./security-harness.js";
 import { eventually } from "./wait.js";
 import { receiverSnapshotSchema, webhookResources } from "./webhook-fixture.js";
 
@@ -28,6 +30,7 @@ const root = fileURLToPath(new URL("../../../", import.meta.url));
 const owner = createHash("sha256").update(root).digest("hex").slice(0, 16);
 const privateDir = join(tmpdir(), `krun-test-e2e-${owner}`);
 const modes = [
+  "security",
   "backpressure",
   "success",
   "exit_code",
@@ -77,6 +80,7 @@ export const scenario = (mode: Mode, client?: { namespace: string; pod: string }
   let key = "";
   let url = "";
   let pressure: ReturnType<typeof backpressureAcceptance> | undefined;
+  let security: ReturnType<typeof securityAcceptance> | undefined;
   let applied = false;
   let receiverApplied = false;
   let closing = false;
@@ -420,11 +424,17 @@ export const scenario = (mode: Mode, client?: { namespace: string; pod: string }
         name,
         forbidden,
         jobsNamespace,
-        mode === "backpressure" ? ["e2e", "e2e-backpressure"] : ["e2e"],
+        mode === "backpressure"
+          ? ["e2e", "e2e-backpressure"]
+          : mode === "security"
+            ? ["e2e-security-owner", "e2e-security-other"]
+            : ["e2e"],
       );
       key = state.key;
       forbidden.add(key);
       forbidden.add(backpressureKey(key));
+      forbidden.add(securityKey(key, "owner"));
+      forbidden.add(securityKey(key, "other"));
       if (state.postgresPassword) {
         forbidden.add(state.postgresPassword);
         forbidden.add(Buffer.from(state.postgresPassword).toString("base64"));
@@ -469,7 +479,7 @@ export const scenario = (mode: Mode, client?: { namespace: string; pod: string }
                   "--build-arg",
                   `CURL_IMAGE=${curl}`,
                   "--build-arg",
-                  `SCENARIO=${mode === "wait" || mode === "webhook" ? "success" : mode}`,
+                  `SCENARIO=${mode === "wait" || mode === "webhook" ? "success" : mode === "security" ? "backpressure" : mode}`,
                 ]),
             "--tag",
             tag,
@@ -526,8 +536,13 @@ export const scenario = (mode: Mode, client?: { namespace: string; pod: string }
                   image,
                   inputSchema: { type: "object" },
                   activeDeadlineSeconds:
-                    mode === "image_pull_backoff" ? 60 : mode === "backpressure" ? 600 : 120,
+                    mode === "image_pull_backoff"
+                      ? 60
+                      : mode === "backpressure" || mode === "security"
+                        ? 600
+                        : 120,
                   ...(mode === "backpressure" ? { maxQueued: 1000, maxConcurrency: 5 } : {}),
+                  ...(mode === "security" ? { maxConcurrency: 2 } : {}),
                   ...(mode === "heartbeat_timeout" ? { heartbeatTimeout: "30s" } : {}),
                 },
               },
@@ -602,6 +617,46 @@ export const scenario = (mode: Mode, client?: { namespace: string; pod: string }
       }
       watchCredentials();
       watchPods();
+      if (mode === "security")
+        security = securityAcceptance({
+          name,
+          namespace,
+          jobsNamespace,
+          kubeconfig,
+          url,
+          key,
+          mode: state.mode,
+          kube,
+          live(run) {
+            credentials.bind(run.name);
+            runs.push(run);
+          },
+          async pod(run) {
+            const id = run.name.split("/").at(-1);
+            const pod = await eventually(
+              async () => {
+                healthyWatch();
+                return credentials.ready(run.name)
+                  ? [...pods.values()].find(
+                      (p) =>
+                        p.metadata.labels["krun.io/run-id"] === id && p.status?.phase === "Running",
+                    )
+                  : undefined;
+              },
+              (value) => (value ? "done" : "wait"),
+              "Owned live security Pod and credential",
+            );
+            check(pod, "Missing owned security Pod");
+            return pod.metadata.name;
+          },
+          privateYaml(content) {
+            try {
+              safePod(JSON.stringify(parse(content)));
+            } catch {
+              throw new Error("Private input or token appeared in actual Job Pod YAML");
+            }
+          },
+        });
       if (mode === "backpressure")
         pressure = backpressureAcceptance({
           name,
@@ -618,6 +673,14 @@ export const scenario = (mode: Mode, client?: { namespace: string; pod: string }
             runs.push(run);
           },
         });
+    },
+    async security() {
+      check(security, "Security requires its owned scenario");
+      const first = randomBytes(24).toString("hex");
+      const second = randomBytes(24).toString("hex");
+      forbidden.add(first);
+      forbidden.add(second);
+      await security.run({ marker: first }, { marker: second });
     },
     async backpressure() {
       check(pressure, "Backpressure requires its owned scenario");
@@ -1031,6 +1094,11 @@ export const scenario = (mode: Mode, client?: { namespace: string; pod: string }
     },
     async close() {
       const cleanupFailures: string[] = [];
+      try {
+        await security?.close();
+      } catch {
+        cleanupFailures.push("security-cleanup");
+      }
       try {
         await pressure?.close();
       } catch {
