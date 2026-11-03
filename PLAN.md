@@ -911,7 +911,7 @@ Gate: all e2e scenarios green; README states measured numbers and the
       `ServiceAccountNotAllowed`; a run of another key is 404
       `RUN_NOT_FOUND`; a webhook to an unlisted `10.0.0.1` is rejected at
       create with `CALLBACK_NOT_ALLOWED`. Acceptance: test green.
-- [ ] P9.3 Benchmark script: 500 runs of a 10 second function; record
+- [x] P9.3 Benchmark script: 500 runs of a 10 second function; record
       submit to `running` latency p50 and p95, failure detection latency
       p95 and sustained runs per second on kind. Acceptance: numbers
       written into README and docs/OPERATIONS.md.
@@ -1111,3 +1111,5 @@ P1.9 is pushed and green in https://github.com/xenarro/krun/pull/15 (base feat/s
 P1.10 is pushed and code-head green in https://github.com/xenarro/krun/pull/16 (base feat/store-sqlite-dialect), not merged. Next task: P1.11 from the final committed, verified P1.10 lineage; preserve this feature on recovery and fork a new typed child only when that feature begins. Full Store assembly and Phase 1 remain incomplete.
 P1.11 is pushed and code-head green in https://github.com/xenarro/krun/pull/17 (base feat/store-runtime-status), not merged. Phase1 complete Store acceptance passes both real backends;no auto-merge or protected-main review bypass. Next task P2.1 starts from final committed verified P1.11 lineage,not obsolete main;preserve this feature on recovery and fork a typed child only when that new feature begins. P0.9 remains independently owner-blocked;P3.7 must verify strict HTTP cancellation/deadline behavior.
 Full Phase 0 and v1 acceptance remain incomplete.
+
+2026-11-04 P9.3 2a707551b532ea6e735a685456707d5e80689423 Compiled kind benchmark completes 500 ten-second successes, 20 actual EXIT_CODE failures and one excluded warmup per Store mode, with 10 closed-loop clients. README and docs/OPERATIONS record submit-to-first-RUNNING p50/p95, actual native-exit-to-observed-FAILED p95 and full-window throughput; the original local embedded 11.345-second target miss remains explicit. Both independent reviews were consumed; P93-M1 malformed metric literals were reproduced and repaired with 16 permanent regressions. Fresh precommit make check passes 2470 TypeScript + 110 Python tests, including 153 CLI tests. Exact source CI https://github.com/xenarro/krun/actions/runs/41667107651 passes all six jobs and 42 native cases; https://github.com/xenarro/krun/actions/runs/41667107765 independently qualifies the full 500/20 populations in both modes and owned cleanup. PR #95 https://github.com/xenarro/krun/pull/95 was independently approved and merged to main as b12421f6032e845571d0c2446e75dbb80ff27f3f; this delivery did not merge or auto-merge it. Task-only tracking receives its own fresh check and exact-head hosted acceptance. No whole Phase 9, release dry-run, publication or production-capacity claim.
