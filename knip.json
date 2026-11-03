@@ -16,7 +16,8 @@
         "scripts/gen-helm-docs.ts",
         "scripts/gen-openapi.ts",
         "scripts/smoke-validate.ts",
-        "scripts/smoke-gateway.ts"
+        "scripts/smoke-gateway.ts",
+        "scripts/bench.ts"
       ],
       "project": ["bin/**/*.js", "test/**/*.ts", "scripts/**/*.ts"],
       "vitest": { "config": ["vitest.config.ts", "test/e2e/vitest.config.ts"] }

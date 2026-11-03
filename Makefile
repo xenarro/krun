@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := check
 IMAGE ?= krun:local
 
-.PHONY: build test lint check generate docker kind-up kind-down e2e helm-lint
+.PHONY: build test lint check generate docker kind-up kind-down e2e helm-lint bench-build bench
 
 build:
 	pnpm -r build
@@ -39,6 +39,18 @@ e2e: kind-up
 		node test/e2e/cluster.ts install "$$mode"; \
 		node test/e2e/cluster.ts verify; \
 		pnpm exec vitest run --config test/e2e/vitest.config.ts; \
+		node test/e2e/cluster.ts uninstall; \
+	done
+
+bench-build: build
+	pnpm exec tsc -p tsconfig.bench.json
+
+# Independent measured workload; never append it to the native e2e corpus.
+bench: kind-up bench-build
+	@set -eu; for mode in embedded postgres; do \
+		node test/e2e/cluster.ts install "$$mode"; \
+		node test/e2e/cluster.ts verify; \
+		node dist/bench/scripts/bench.js; \
 		node test/e2e/cluster.ts uninstall; \
 	done
 

@@ -8,8 +8,9 @@ import { isDeepStrictEqual } from "node:util";
 import { parse } from "yaml";
 import { z } from "zod";
 import { publicSchemas } from "../../../apps/gateway/src/public-contracts.js";
-import { backpressureKey } from "./backpressure.js";
+import { backpressureKey, schedulerMetricsScript } from "./backpressure.js";
 import { backpressureAcceptance } from "./backpressure-harness.js";
+import { benchmarkAdmission } from "./benchmark.js";
 import { chartLayout, databaseMode, release } from "./chart.js";
 import { contextArgs, parsePushDigest } from "./contracts.js";
 import {
@@ -26,10 +27,9 @@ import { securityAcceptance } from "./security-harness.js";
 import { eventually } from "./wait.js";
 import { receiverSnapshotSchema, webhookResources } from "./webhook-fixture.js";
 
-const root = fileURLToPath(new URL("../../../", import.meta.url));
-const owner = createHash("sha256").update(root).digest("hex").slice(0, 16);
-const privateDir = join(tmpdir(), `krun-test-e2e-${owner}`);
+const defaultRoot = fileURLToPath(new URL("../../../", import.meta.url));
 const modes = [
+  "benchmark",
   "security",
   "backpressure",
   "success",
@@ -61,7 +61,14 @@ const decode = <T>(schema: z.ZodType<T>, value: unknown, message: string): T => 
 };
 const terminal = (run: Run) => ["SUCCEEDED", "FAILED", "CANCELLED"].includes(run.state);
 
-export const scenario = (mode: Mode, client?: { namespace: string; pod: string }) => {
+export const scenario = (
+  mode: Mode,
+  client?: { namespace: string; pod: string },
+  repositoryRoot = defaultRoot,
+) => {
+  const root = repositoryRoot;
+  const owner = createHash("sha256").update(root).digest("hex").slice(0, 16);
+  const privateDir = join(tmpdir(), `krun-test-e2e-${owner}`);
   let layout = chartLayout("embedded");
   let namespace = "";
   let jobsNamespace = "";
@@ -186,6 +193,7 @@ export const scenario = (mode: Mode, client?: { namespace: string; pod: string }
     let response: Response;
     try {
       response = await fetch(`${url}/v1/${path}`, {
+        redirect: mode === "benchmark" ? "error" : "follow",
         method,
         headers: {
           authorization: `Bearer ${key}`,
@@ -543,6 +551,7 @@ export const scenario = (mode: Mode, client?: { namespace: string; pod: string }
                         : 120,
                   ...(mode === "backpressure" ? { maxQueued: 1000, maxConcurrency: 5 } : {}),
                   ...(mode === "security" ? { maxConcurrency: 2 } : {}),
+                  ...(mode === "benchmark" ? { maxConcurrency: 10, maxQueued: 1000 } : {}),
                   ...(mode === "heartbeat_timeout" ? { heartbeatTimeout: "30s" } : {}),
                 },
               },
@@ -712,12 +721,76 @@ export const scenario = (mode: Mode, client?: { namespace: string; pod: string }
         },
         options.wait ? 35_000 : 3000,
       );
+      if (mode === "benchmark") benchmarkAdmission(run, name);
       credentials.bind(run.name);
       runs.push(run);
       return run;
     },
     get(run: Run) {
       return api(run.name);
+    },
+    benchmarkIdentity() {
+      check(mode === "benchmark", "Benchmark requires its owned scenario");
+      return { name, mode: layout.namespace.endsWith("postgres") ? "postgres" : "embedded" };
+    },
+    async benchmarkExit(run: Run) {
+      check(mode === "benchmark" && runs.some((r) => r.name === run.name), "Unowned benchmark Run");
+      const id = run.name.split("/").at(-1);
+      const stopped = await eventually(
+        async () => {
+          healthyWatch();
+          return [...pods.values()]
+            .filter((pod) => pod.metadata.labels["krun.io/run-id"] === id)
+            .flatMap((pod) => pod.status?.containerStatuses ?? [])
+            .find((container) => container.name === "function")?.state.terminated;
+        },
+        (value) => (value ? "done" : "wait"),
+        "Benchmark native exit witness",
+        10_000,
+      );
+      check(stopped?.finishedAt && stopped.exitCode === 1, "Missing actual exit1 timestamp");
+      const exitMs = Date.parse(stopped.finishedAt);
+      check(Number.isFinite(exitMs), "Invalid actual native exit time");
+      return exitMs;
+    },
+    benchmarkMetrics() {
+      check(mode === "benchmark", "Benchmark requires its owned scenario");
+      const values = decode(
+        z.object({
+          items: z.array(
+            z.object({
+              metadata: z.object({ name: z.string() }),
+              spec: z.object({ containers: z.array(z.object({ name: z.string() })) }),
+            }),
+          ),
+        }),
+        json(
+          kube(
+            ["get", "pods", "-n", namespace, "-l", "app.kubernetes.io/instance=e2e", "-o", "json"],
+            "Read benchmark scheduler replicas",
+          ),
+        ),
+        "Invalid benchmark scheduler inventory",
+      );
+      return values.items
+        .filter((pod) => pod.spec.containers.some((c) => c.name === "scheduler"))
+        .map((pod) =>
+          kube(
+            [
+              "exec",
+              "-n",
+              namespace,
+              pod.metadata.name,
+              "-c",
+              "scheduler",
+              "--",
+              "/nodejs/bin/node",
+              "-e",
+              schedulerMetricsScript,
+            ],
+            "Read actual terminal-detection histogram",
+          ),
+        );
     },
     wait(run: Run) {
       return api(`${run.name}:wait`, "POST", { timeout: "30s" }, 35_000);

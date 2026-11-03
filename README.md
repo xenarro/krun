@@ -2651,3 +2651,68 @@ The newly rebuilt `krun-test-p3-6-repair:local` image passes 137 actual native g
 The source is delivered as `8325f9366d6319c832c9e3f520ffe011de249a20` in [PR #33](https://github.com/xenarro/krun/pull/33), explicitly based on immediate unmerged `feat/gateway-cancel-run`/[PR #32](https://github.com/xenarro/krun/pull/32). [Exact source CI](https://github.com/xenarro/krun/actions/runs/40260319575) passed all nine gates on attempt 1, including 1147 TypeScript tests and one Python test. Both independent review findings are reproduced, repaired and dispositioned by lens; the original reports/evidence remain unchanged, and no reviewer approval of the repaired snapshot is fabricated. P3.6 is closed only after that exact source acceptance; the separate tracking commit receives its own fresh precommit and exact-head hosted checks, recorded in the private delivery report.
 
 This is pushed source, not a merged-main or complete-application claim. PR33 and parent PR32 remain OPEN with their actual empty reviewDecision, and PR31 retains its protected-main independent-review dependency. No stack auto-merge, protection bypass, package publication or tags. Preserve `feat/gateway-run-results` on recovery; P3.7 starts a new typed feature only from the current committed verified lineage after refreshing actual parent/main state. Serving-process/listener wiring, concrete ObjectStore/P6.1 and complete later Phase3/application end-to-end acceptance remain future PLAN work.
+
+## Measured native Job benchmark (P9.3)
+
+Measured 2026-11-03 on local kind (not a CI runner): one Kubernetes 1.37.0
+control-plane node, Node 26.7.0, AMD Ryzen 7 5700X 8-Core Processor
+(16 visible logical CPUs), 60.7 GiB host RAM. These are host
+resources, not a dedicated runner reservation. The unchanged chart installs
+one combined gateway/scheduler Pod in embedded mode and two replicas of each
+process in Postgres mode, with Postgres 18 and the existing MinIO fixture.
+Default-deny enforcement is positively verified before each measurement.
+
+Each mode completes 500 successful runs of the pinned curl-based function
+whose measured workload is `sleep 10`, followed by 20 actual `exit 1` runs
+of that function. One excluded successful warmup caches the exact image.
+The load is closed-loop with 10 clients and Function `maxConcurrency: 10`,
+not a simultaneous 500-run burst, an idle-single-run SLO test, or a measurement
+of maximum capacity. Existing credential/Pod privacy observers remain active.
+
+| Store mode | Submit→first RUNNING p50 (s) | p95 (s) | Exit→observed FAILED p95 (s) | Completed runs/s |
+|---|---:|---:|---:|---:|
+| embedded | 2.414 | 6.103 | 11.345 | 0.494 |
+| postgres | 1.433 | 13.979 | 8.943 | 0.459 |
+
+Percentiles use nearest rank over the complete populations (500 success and
+20 crash samples), without interpolation or dropping failures. Submit time
+is recorded immediately before CreateRun. GetRun observes first RUNNING at
+200 ms intervals; WaitRun observes terminal state. Throughput is 500 divided
+by the full window from first submission to last successful terminal response,
+not HTTP admission rate. Failed outcomes must carry `EXIT_CODE`. Detection
+latency subtracts the actual native container `finishedAt` from the client's
+first terminal observation; kind and client share the host clock. Native exit
+timestamps have Kubernetes' timestamp precision, and observation/transport
+latency is included. This is not the backdated Run `endTime` or the ten-second
+function duration.
+
+The documented under-15-second startup target is met by both loaded samples;
+the idle-cluster target is not independently certified by this load test.
+Embedded failure-detection p95 is **11.345 seconds**, above the documented
+under-10-second aspiration: do not treat that target as demonstrated. The
+scheduler's exact-Function `krun_terminal_detect_seconds` histogram is an
+independent second source: its counts advance 1→501→521 in each mode. The
+20-crash histogram count/sum deltas are
+embedded: 20 / 153.064 seconds; postgres: 20 / 107.192 seconds.
+These sums are not p95 estimates. The script rejects missing series, resets,
+wrong counts, duplicate Runs, missed RUNNING, wrong terminal reasons or
+negative/nonfinite timing evidence. The driver never retries public API
+mutations; the fixture retains its existing bounded internal curl transport
+behavior. No workload, deadline, security rule or test allowance was relaxed
+to produce the numbers.
+
+Reproduce with `make bench` then `make kind-down`, using the pinned tools in
+`test/e2e/README.md`. This is separate from `make e2e` and can take roughly
+20–25 minutes per mode. `make bench-build` compiles `scripts/bench.ts` into
+`dist/bench/scripts/bench.js`; individual modes can use the existing
+`cluster.ts install <mode>`, `cluster.ts verify`, compiled script, and
+`cluster.ts uninstall` lifecycle. The script emits sanitized raw per-Run
+observations and the summary only after verified owned cleanup; API keys,
+input, tokens and connection details never enter the output. The dedicated
+`benchmark.yml` workflow runs this same fixed workload on pull requests that
+change the benchmark and on demand, with least-privilege permissions and
+always-run owned cluster cleanup. Hosted results remain a separate exact-head
+delivery gate; these local numbers are not attributed to GitHub Actions.
+
+No Phase 9 release gate, publication or production capacity guarantee is
+claimed by this measurement.

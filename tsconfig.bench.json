@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist/bench",
+    "rewriteRelativeImportExtensions": true
+  },
+  "include": ["scripts/bench.ts"]
+}
