@@ -1,0 +1,268 @@
+---
+import { primaryLinks } from "../../lib/links";
+import KIcon from "../KIcon.astro";
+import RunTicket from "./RunTicket.astro";
+
+const { data } = Astro.locals.starlightRoute.entry;
+const tagline = data.hero?.tagline ?? data.description ?? "";
+const links = await primaryLinks();
+---
+
+<section class="k-hero not-content" aria-labelledby="_top">
+  <div class="k-hero__copy">
+    <p class="k-hero__eyebrow">
+      <span class="k-hero__pulse" aria-hidden="true"></span>
+      Functions as one-off Kubernetes Jobs
+    </p>
+    <h1 id="_top" data-page-title class="k-hero__title">
+      <span>HTTP in.</span>{" "}
+      <span class="k-hero__mark">Result out.</span>
+    </h1>
+    <p class="k-hero__lede" set:html={tagline} />
+    <p class="k-hero__kicker">
+      Every run gets a one-way ticket: its own Job, its own token, no automatic retries, and a
+      status you can still look up tomorrow.
+    </p>
+    <div class="k-hero__actions">
+      <a class="k-btn k-btn--primary" href={links.start}>
+        Get started <KIcon name="arrow" size={20} />
+      </a>
+      <a class="k-btn k-btn--secondary" href={links.docs}>
+        <KIcon name="book" size={20} /> Documentation
+      </a>
+      <a class="k-btn k-btn--secondary" href={links.github}>
+        <KIcon name="repo" size={20} /> GitHub
+      </a>
+    </div>
+    <p class="k-hero__status">
+      <span class="k-chip">Pre-release</span>
+      Version 0.1.0 is prepared, not published. Today you run krun from a source checkout.
+    </p>
+  </div>
+  <div class="k-hero__visual">
+    <RunTicket />
+  </div>
+</section>
+
+<style>
+  .k-hero {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
+    align-items: center;
+    gap: clamp(2rem, 5vw, 4.5rem);
+    padding-block: clamp(1.5rem, 4vw, 4rem) clamp(2.5rem, 6vw, 5rem);
+  }
+
+  .k-hero::before {
+    content: "";
+    position: absolute;
+    inset: -2rem calc(-1 * var(--sl-content-pad-x)) 0;
+    z-index: -1;
+    background-image: radial-gradient(var(--k-line) 1.2px, transparent 1.4px);
+    background-size: 22px 22px;
+    mask-image: radial-gradient(ellipse 60% 70% at 70% 45%, #000 10%, transparent 75%);
+    opacity: 0.9;
+  }
+
+  .k-hero__eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin: 0 0 1.25rem;
+    padding: 0.35rem 0.85rem 0.35rem 0.6rem;
+    border: 1px solid var(--k-line-strong);
+    border-radius: var(--k-radius-pill);
+    background: var(--k-bg-raised);
+    font-family: var(--k-font-mono);
+    font-size: var(--k-step--2);
+    font-weight: 600;
+    letter-spacing: var(--k-tracking-label);
+    text-transform: uppercase;
+    color: var(--k-text);
+  }
+
+  .k-hero__pulse {
+    position: relative;
+    width: 0.6rem;
+    height: 0.6rem;
+    border-radius: 50%;
+    background: var(--k-signal);
+  }
+
+  .k-hero__pulse::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: var(--k-signal);
+    animation: k-pulse 2.4s var(--k-ease-out) infinite;
+  }
+
+  .k-hero__title {
+    display: grid;
+    margin: 0;
+    font-size: var(--k-step-5);
+    font-weight: 800;
+    line-height: 0.94;
+    letter-spacing: -0.045em;
+    color: var(--k-text-strong);
+  }
+
+  .k-hero__mark {
+    justify-self: start;
+    margin-top: 0.08em;
+    padding: 0 0.12em 0.07em 0.06em;
+    border-radius: 0.1em;
+    background: var(--k-volt);
+    color: var(--k-on-volt);
+    transform: rotate(-1.6deg);
+    transform-origin: left bottom;
+    animation: k-sticker 650ms var(--k-ease-spring) 200ms both;
+  }
+
+  .k-hero__lede {
+    max-width: 36rem;
+    margin: 1.75rem 0 0;
+    font-size: var(--k-step-1);
+    line-height: 1.55;
+    color: var(--k-text);
+  }
+
+  .k-hero__kicker {
+    max-width: 36rem;
+    margin: 0.85rem 0 0;
+    color: var(--k-text-muted);
+  }
+
+  .k-hero__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-top: 2rem;
+  }
+
+  .k-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 3rem;
+    padding: 0.7rem 1.3rem;
+    border: 2px solid transparent;
+    border-radius: var(--k-radius-pill);
+    font-weight: 700;
+    font-size: 1.0625rem;
+    line-height: 1;
+    text-decoration: none;
+    transition:
+      transform var(--k-dur-base) var(--k-ease-spring),
+      background-color var(--k-dur-fast),
+      border-color var(--k-dur-fast);
+  }
+
+  .k-btn:hover {
+    transform: translateY(-2px);
+  }
+
+  .k-btn:active {
+    transform: translateY(0);
+  }
+
+  .k-btn--primary {
+    background: var(--k-signal);
+    color: var(--k-on-signal);
+    box-shadow: 0 4px 0 color-mix(in srgb, var(--k-signal-700) 80%, black);
+  }
+
+  .k-btn--primary:hover {
+    background: var(--k-signal-300);
+  }
+
+  .k-btn--primary :global(.k-icon) {
+    transition: transform var(--k-dur-base) var(--k-ease-spring);
+  }
+
+  .k-btn--primary:hover :global(.k-icon) {
+    transform: translateX(3px);
+  }
+
+  .k-btn--secondary {
+    border-color: var(--k-line-strong);
+    background: var(--k-bg-raised);
+    color: var(--k-text-strong);
+  }
+
+  .k-btn--secondary:hover {
+    border-color: var(--k-text);
+  }
+
+  .k-hero__status {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 0.75rem;
+    margin: 1.75rem 0 0;
+    font-size: var(--k-step--1);
+    color: var(--k-text-muted);
+  }
+
+  .k-chip {
+    padding: 0.2rem 0.6rem;
+    border-radius: var(--k-radius-pill);
+    background: var(--k-bg-sunken);
+    border: 1px solid var(--k-line-strong);
+    font-family: var(--k-font-mono);
+    font-size: var(--k-step--2);
+    font-weight: 700;
+    letter-spacing: var(--k-tracking-label);
+    text-transform: uppercase;
+    color: var(--k-state-cancelling);
+  }
+
+  @media (max-width: 60rem) {
+    .k-hero {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .k-hero__visual {
+      justify-self: center;
+      width: 100%;
+      max-width: 38rem;
+    }
+  }
+
+  @media (max-width: 30rem) {
+    .k-btn {
+      flex: 1 1 100%;
+      justify-content: center;
+    }
+  }
+
+  @keyframes k-pulse {
+    0% {
+      transform: scale(1);
+      opacity: 0.6;
+    }
+    80%,
+    100% {
+      transform: scale(2.6);
+      opacity: 0;
+    }
+  }
+
+  @keyframes k-sticker {
+    from {
+      clip-path: inset(0 100% 0 0);
+      transform: rotate(-4deg);
+    }
+    to {
+      clip-path: inset(0 0 0 0);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .k-hero__pulse::after,
+    .k-hero__mark {
+      animation: none;
+    }
+  }
+</style>

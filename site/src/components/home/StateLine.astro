@@ -1,0 +1,395 @@
+---
+/**
+ * The run lifecycle as a line map (SPEC.md section 5; docs/API.md section 2.2).
+ * The main line runs QUEUED → SCHEDULED → RUNNING → SUCCEEDED; the cancel line
+ * collects CancelRun into CANCELLING → CANCELLED; the fail line collects every
+ * classified failure into FAILED. The timetable below is the full text version.
+ */
+const timetable = [
+  {
+    state: "queued",
+    next: [
+      ["scheduled", "the scheduler created the Job"],
+      ["failed", "JOB_CREATE_FAILED or QUEUE_TIMEOUT"],
+      ["cancelling", "CancelRun"],
+    ],
+  },
+  {
+    state: "scheduled",
+    next: [
+      ["running", "the pod reached phase Running"],
+      ["succeeded", "the Job completed before Running was observed"],
+      ["failed", "the Job failed, or vanished (JOB_LOST)"],
+      ["cancelling", "CancelRun"],
+    ],
+  },
+  {
+    state: "running",
+    next: [
+      ["succeeded", "the Job completed"],
+      ["failed", "the Job failed, vanished, or missed its heartbeat"],
+      ["cancelling", "CancelRun"],
+    ],
+  },
+  { state: "cancelling", next: [["cancelled", "the Job was deleted or is gone"]] },
+];
+---
+
+<div class="k-states not-content">
+  <svg class="k-states__svg" viewBox="0 0 1100 400" role="img" aria-labelledby="k-states-title">
+    <title id="k-states-title">
+      Run states: QUEUED, SCHEDULED and RUNNING lead to SUCCEEDED; any of them can fail into FAILED
+      or be cancelled through CANCELLING into CANCELLED. SUCCEEDED, FAILED and CANCELLED are terminal.
+    </title>
+    <g class="track">
+      <path class="casing" d="M120 196V100q0-30 30-30h810M370 196V70M620 196V70"></path>
+      <path class="ln ln--cancel" d="M120 196V100q0-30 30-30h810M370 196V70M620 196V70"></path>
+      <path class="casing" d="M120 224v96q0 30 30 30h810M370 224v126M620 224v126"></path>
+      <path class="ln ln--fail" d="M120 224v96q0 30 30 30h810M370 224v126M620 224v126"></path>
+      <path class="express" d="M370 210c120-92 470-92 590 0"></path>
+      <path class="casing" d="M120 210h840"></path>
+      <path class="ln ln--main" d="M120 210h840"></path>
+    </g>
+
+    <g class="stops">
+      <circle cx="120" cy="210" r="15"></circle>
+      <circle cx="370" cy="210" r="15"></circle>
+      <circle cx="620" cy="210" r="15"></circle>
+      <circle cx="780" cy="70" r="13"></circle>
+    </g>
+    <g class="terminals">
+      <circle class="t t--ok" cx="960" cy="210" r="22"></circle>
+      <circle class="t t--fail" cx="960" cy="350" r="20"></circle>
+      <circle class="t t--cancel" cx="960" cy="70" r="20"></circle>
+    </g>
+
+    <g class="names">
+      <text x="140" y="240">QUEUED</text>
+      <text x="390" y="240">SCHEDULED</text>
+      <text x="640" y="240">RUNNING</text>
+      <text class="ok" x="994" y="216">SUCCEEDED</text>
+      <text class="fail" x="992" y="356">FAILED</text>
+      <text class="cancel" x="992" y="76">CANCELLED</text>
+      <text class="cancel" x="780" y="44" text-anchor="middle">CANCELLING</text>
+    </g>
+    <g class="notes">
+      <text x="245" y="56" text-anchor="middle">CancelRun</text>
+      <text x="870" y="100" text-anchor="middle">Job deleted</text>
+      <text x="805" y="130" text-anchor="middle">completed before RUNNING was seen</text>
+      <text x="540" y="382" text-anchor="middle">every FAILED run carries a failureReason</text>
+      <text class="tag" x="994" y="236">terminal</text>
+      <text class="tag" x="992" y="376">terminal</text>
+      <text class="tag" x="992" y="96">terminal</text>
+    </g>
+  </svg>
+
+  <div class="k-states__board" role="table" aria-label="Run state timetable">
+    <div class="row head" role="row">
+      <span role="columnheader">From</span>
+      <span role="columnheader">Next stop and why</span>
+    </div>
+    {
+      timetable.map((row) => (
+        <div class="row" role="row">
+          <span role="cell">
+            <span class={`state state--${row.state}`}>{row.state.toUpperCase()}</span>
+          </span>
+          <span role="cell" class="next">
+            {row.next.map(([state, why]) => (
+              <span class="hop">
+                <span class={`state state--${state}`}>{state?.toUpperCase()}</span>
+                <span class="why">{why}</span>
+              </span>
+            ))}
+          </span>
+        </div>
+      ))
+    }
+    <div class="row" role="row">
+      <span role="cell">
+        <span class="state state--succeeded">SUCCEEDED</span>
+        <span class="state state--failed">FAILED</span>
+        <span class="state state--cancelled">CANCELLED</span>
+      </span>
+      <span role="cell" class="next">
+        <span class="why">Terminal. Nothing leaves a terminal state.</span>
+      </span>
+    </div>
+  </div>
+
+  <ul class="k-states__rules">
+    <li>Every transition is a compare-and-set; two writers never both win.</li>
+    <li>No automatic retries: each Job has <code>backoffLimit: 0</code>.</li>
+    <li>Once a run is CANCELLING, the only terminal state left is CANCELLED.</li>
+  </ul>
+</div>
+
+<style>
+  .k-states {
+    --main: var(--k-signal);
+    --cancel: var(--k-amber-300);
+    --fail: var(--k-red-300);
+    --casing: transparent;
+  }
+
+  :global(:root[data-theme="light"]) .k-states {
+    --casing: var(--k-ink-900);
+    --cancel: #f2a93b;
+    --fail: #e0483c;
+  }
+
+  .k-states__svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    overflow: visible;
+  }
+
+  /* Below 60rem the drawing's labels would drop under 11 px; the timetable
+     below carries the same transitions as text. */
+  @media (max-width: 60rem) {
+    .k-states__svg {
+      display: none;
+    }
+    .k-states__board {
+      margin-top: 0;
+    }
+  }
+
+  .track path {
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .casing {
+    stroke: var(--casing);
+    stroke-width: 14;
+  }
+
+  .ln {
+    stroke-width: 9;
+  }
+
+  .ln--main {
+    stroke: var(--main);
+  }
+
+  .ln--cancel {
+    stroke: var(--cancel);
+  }
+
+  .ln--fail {
+    stroke: var(--fail);
+  }
+
+  .express {
+    stroke: var(--k-text-muted);
+    stroke-width: 3;
+    stroke-dasharray: 2 8;
+  }
+
+  .stops circle {
+    fill: var(--k-bg-raised);
+    stroke: var(--k-text-strong);
+    stroke-width: 4.5;
+  }
+
+  .t {
+    stroke: var(--k-text-strong);
+    stroke-width: 6;
+  }
+
+  .t--ok {
+    fill: var(--k-volt);
+  }
+
+  .t--fail {
+    fill: var(--fail);
+  }
+
+  .t--cancel {
+    fill: var(--cancel);
+  }
+
+  .names text {
+    font-family: var(--k-font-mono);
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    fill: var(--k-text-strong);
+    paint-order: stroke;
+    stroke: var(--k-bg);
+    stroke-width: 6px;
+    stroke-linejoin: round;
+  }
+
+  .names .ok {
+    fill: var(--k-state-succeeded);
+  }
+
+  .names .fail {
+    fill: var(--k-state-failed);
+  }
+
+  .names .cancel {
+    fill: var(--k-state-cancelling);
+  }
+
+  .notes text {
+    font-family: var(--k-font-mono);
+    font-size: 13.5px;
+    fill: var(--k-text-muted);
+    paint-order: stroke;
+    stroke: var(--k-bg);
+    stroke-width: 6px;
+    stroke-linejoin: round;
+  }
+
+  .notes .tag {
+    font-size: 11.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  /* Timetable: the departure board, always ink, both themes. */
+  .k-states__board {
+    margin-top: 2rem;
+    border: 1px solid var(--k-line);
+    border-radius: var(--k-radius-l);
+    background: var(--k-board);
+    color: var(--k-on-board);
+    padding: 0.5rem clamp(0.75rem, 2vw, 1.5rem);
+    box-shadow: var(--k-shadow-m);
+  }
+
+  .row {
+    display: grid;
+    grid-template-columns: minmax(9rem, 0.3fr) 1fr;
+    gap: 0.5rem 1.5rem;
+    align-items: start;
+    padding: 0.85rem 0;
+    border-bottom: 1px dashed rgb(255 255 255 / 0.14);
+  }
+
+  .row:last-child {
+    border-bottom: 0;
+  }
+
+  .row.head {
+    font-family: var(--k-font-mono);
+    font-size: var(--k-step--2);
+    font-weight: 600;
+    letter-spacing: var(--k-tracking-label);
+    text-transform: uppercase;
+    color: var(--k-on-board-muted);
+  }
+
+  .row > [role="cell"]:first-child {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+
+  .next {
+    display: grid;
+    gap: 0.45rem;
+  }
+
+  .hop {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.25rem 0.75rem;
+  }
+
+  .why {
+    font-size: 0.9375rem;
+    color: var(--k-on-board-muted);
+  }
+
+  .state {
+    display: inline-block;
+    min-width: 7.25rem;
+    padding: 0.18rem 0.55rem;
+    border-radius: var(--k-radius-xs);
+    font-family: var(--k-font-mono);
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-align: center;
+    color: var(--k-ink-900);
+    background: var(--k-ink-300);
+  }
+
+  .state--scheduled {
+    background: var(--k-cobalt-300);
+  }
+
+  .state--running {
+    background: var(--k-signal-300);
+  }
+
+  .state--succeeded {
+    background: var(--k-volt-400);
+  }
+
+  .state--failed {
+    background: var(--k-red-300);
+  }
+
+  .state--cancelling {
+    background: repeating-linear-gradient(-45deg, var(--k-amber-300) 0 6px, #ffd896 6px 12px);
+  }
+
+  .state--cancelled {
+    background: var(--k-ink-200);
+  }
+
+  .k-states__rules {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+    gap: 0.75rem 1.5rem;
+    margin: 1.5rem 0 0;
+    padding: 0;
+    list-style: none;
+    font-size: 0.9375rem;
+    color: var(--k-text-muted);
+  }
+
+  .k-states__rules li {
+    position: relative;
+    margin: 0;
+    padding-inline-start: 1.5rem;
+  }
+
+  .k-states__rules li::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0.5em;
+    width: 0.65rem;
+    height: 0.65rem;
+    border-radius: 50%;
+    border: 3px solid var(--k-signal);
+  }
+
+  .k-states__rules code {
+    padding: 0.08em 0.35em;
+    border-radius: var(--k-radius-xs);
+    background: var(--sl-color-bg-inline-code);
+    font-family: var(--k-font-mono);
+    font-size: 0.85em;
+    color: var(--k-text);
+    white-space: nowrap;
+  }
+
+  @media (max-width: 34rem) {
+    .row {
+      grid-template-columns: 1fr;
+    }
+    .row.head span:last-child {
+      display: none;
+    }
+  }
+</style>

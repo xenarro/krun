@@ -1,0 +1,183 @@
+---
+/**
+ * Brand footer on every page; the full version closes splash pages. Splash
+ * pages have no mobile menu, so on phones this footer also carries the theme
+ * select that the header hides there.
+ */
+import ThemeSelect from "@astrojs/starlight/components/ThemeSelect.astro";
+import Logo from "../../../docs/assets/logo-light.svg";
+import LogoDark from "../../../docs/assets/logo-dark.svg";
+import { blob, firstPageIn, primaryLinks, repository } from "../lib/links";
+
+interface Props {
+  compact?: boolean;
+}
+
+const { compact = false } = Astro.props;
+const links = await primaryLinks();
+const columns = [
+  {
+    title: "Docs",
+    items: [
+      { text: "Get started", href: links.start },
+      { text: "Guides", href: await firstPageIn("guides") },
+      { text: "Reference", href: await firstPageIn("reference") },
+      { text: "Project", href: await firstPageIn("project") },
+    ],
+  },
+  {
+    title: "Source",
+    items: [
+      { text: "Repository", href: repository },
+      { text: "SPEC.md", href: blob("SPEC.md") },
+      { text: "Changelog", href: blob("CHANGELOG.md") },
+      { text: "Issues", href: `${repository}/issues` },
+    ],
+  },
+].map((column) => ({ ...column, items: column.items.filter((item) => item.href) }));
+---
+
+<footer class:list={["k-footer", "not-content", { "k-footer--compact": compact }]}>
+  {
+    !compact && (
+      <div class="k-footer__top">
+        <div class="k-footer__brand">
+          <Logo class="k-footer__logo k-footer__logo--light" width={132} height={43} aria-label="krun" role="img" />
+          <LogoDark class="k-footer__logo k-footer__logo--dark" width={132} height={43} aria-label="krun" role="img" />
+          <p>HTTP-triggered functions executed as one-off Kubernetes Jobs.</p>
+          <div class="k-footer__theme">
+            <ThemeSelect />
+          </div>
+        </div>
+        {columns.map((column) => (
+          <nav aria-label={column.title}>
+            <h2>{column.title}</h2>
+            <ul>
+              {column.items.map((item) => (
+                <li>
+                  <a href={item.href}>{item.text}</a>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        ))}
+      </div>
+    )
+  }
+  <p class="k-footer__fine">
+    <span>krun is pre-release: version 0.1.0 is prepared, not published.</span>
+    <span>A license has not been published yet.</span>
+    <a href={repository}>xenarro/krun on GitHub</a>
+  </p>
+</footer>
+
+<style>
+  .k-footer {
+    margin-top: var(--k-space-3xl);
+    padding-top: 2rem;
+    border-top: 2px dashed var(--k-line-strong);
+  }
+
+  .k-footer--compact {
+    margin-top: 3rem;
+    padding-top: 1.25rem;
+    border-top-width: 1px;
+    border-top-style: solid;
+    border-top-color: var(--sl-color-hairline);
+  }
+
+  .k-footer__top {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) repeat(2, minmax(0, 1fr));
+    gap: 2rem;
+  }
+
+  @media (max-width: 40rem) {
+    .k-footer__top {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .k-footer__brand {
+      grid-column: 1 / -1;
+    }
+  }
+
+  .k-footer__brand p {
+    max-width: 22rem;
+    margin: 0.75rem 0 0;
+    color: var(--k-text-muted);
+  }
+
+  .k-footer__theme {
+    display: none;
+    margin-top: 1rem;
+  }
+
+  @media (max-width: 49.99rem) {
+    .k-footer__theme {
+      display: flex;
+    }
+  }
+
+  .k-footer__logo {
+    display: block;
+    width: 8.25rem;
+    height: auto;
+  }
+
+  .k-footer__logo--dark {
+    display: none;
+  }
+
+  :global(:root:not([data-theme="light"])) .k-footer__logo--light {
+    display: none;
+  }
+
+  :global(:root:not([data-theme="light"])) .k-footer__logo--dark {
+    display: block;
+  }
+
+  .k-footer h2 {
+    margin: 0 0 0.75rem;
+    font-family: var(--k-font-mono);
+    font-size: var(--k-step--2);
+    font-weight: 700;
+    letter-spacing: var(--k-tracking-label);
+    text-transform: uppercase;
+    color: var(--k-text-muted);
+  }
+
+  .k-footer ul {
+    display: grid;
+    gap: 0.4rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .k-footer li {
+    margin: 0;
+  }
+
+  .k-footer a {
+    color: var(--k-text);
+    text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+    text-underline-offset: 0.2em;
+  }
+
+  .k-footer a:hover {
+    color: var(--k-accent);
+  }
+
+  .k-footer__fine {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 1.25rem;
+    margin: 2rem 0 0;
+    font-size: var(--k-step--1);
+    color: var(--k-text-muted);
+  }
+
+  .k-footer--compact .k-footer__fine {
+    margin-top: 0;
+  }
+</style>

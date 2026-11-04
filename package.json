@@ -12,7 +12,10 @@
     "test": "vitest run --project tooling",
     "lint": "biome check . && tsc --noEmit -p tsconfig.json",
     "release:lint": "publint",
-    "release:types": "attw"
+    "release:types": "attw",
+    "site:dev": "pnpm --filter @krun/site run dev",
+    "site:build": "pnpm --filter @krun/site run site:build",
+    "site:check": "pnpm --filter @krun/site run site:check"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",

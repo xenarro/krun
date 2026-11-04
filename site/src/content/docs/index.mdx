@@ -1,0 +1,77 @@
+---
+title: HTTP functions as one-off Kubernetes Jobs
+description: HTTP-triggered functions executed as one-off Kubernetes Jobs. Submit JSON over HTTP; receive durable status, an inline or object-storage result, and classified failures without giving callers Kubernetes credentials.
+template: splash
+tableOfContents: false
+pagefind: true
+hero:
+  title: HTTP in. Result out.
+  tagline: HTTP-triggered functions executed as one-off Kubernetes Jobs. Submit JSON over HTTP; receive durable status, an inline or object-storage result, and classified failures without giving callers Kubernetes credentials.
+---
+
+import Capabilities from '../../components/home/Capabilities.astro';
+import Departures from '../../components/home/Departures.astro';
+import Example from '../../components/home/Example.astro';
+import Install from '../../components/home/Install.astro';
+import ProjectStrip from '../../components/home/ProjectStrip.astro';
+import RouteMap from '../../components/home/RouteMap.astro';
+import Section from '../../components/home/Section.astro';
+import StateLine from '../../components/home/StateLine.astro';
+
+<Section
+  id="how-it-works"
+  stop="Route map"
+  title="One request, one Job, one honest answer."
+  lede="A gateway admits runs, one elected scheduler turns them into Jobs, and the truth about every run comes from Kubernetes, never from the function's own reports."
+>
+  <RouteMap />
+</Section>
+
+<Section
+  id="run-states"
+  stop="Timetable"
+  title="Seven states. Three terminals."
+  lede="Every run rides the same line. Watch it live over server-sent events, poll it, or get a signed webhook when it reaches a terminal."
+>
+  <StateLine />
+</Section>
+
+<Section
+  id="capabilities"
+  stop="On board"
+  title="Everything a run needs, nothing you have to rebuild."
+  lede="Queueing, validation, isolation, status, results and failure classification ship together, so function teams stop writing Job plumbing."
+>
+  <Capabilities />
+</Section>
+
+<Section
+  id="use-cases"
+  stop="Departures"
+  title="Built for work that takes seconds to hours."
+  lede="Bounded, isolated batch work and HTTP-triggered compute that already belongs on your Kubernetes cluster. Cold start is seconds, mostly scheduling and image pull."
+>
+  <Departures />
+</Section>
+
+<Section
+  id="example"
+  stop="Minimal example"
+  title="A Function, a handler, a curl."
+  lede="Adapted from what krun init generates for a function named reports-demo, plus the two requests that run it and read it back."
+>
+  <Example />
+</Section>
+
+<Section
+  id="install"
+  stop="Board from source"
+  title="Try the whole platform on a throwaway cluster."
+  lede="Nothing is published yet, so every path starts from a source checkout. One command rehearses both database modes end to end."
+>
+  <Install />
+</Section>
+
+<Section id="project" stop="Project" title="Open about where it stands.">
+  <ProjectStrip />
+</Section>

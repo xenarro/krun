@@ -1,0 +1,321 @@
+---
+title: Writing a function
+description: Define a Function resource, meet the container contract, and handle input, progress, heartbeats, results, errors, deadlines and cancellation.
+sidebar:
+  order: 1
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+A krun function is two things: a **container image** that follows a small HTTP
+contract, and a **`Function` resource** in the krun namespace that tells krun how to
+run it. Every run of the function becomes one Kubernetes Job.
+
+The fastest way to start is `krun init`, which generates both pieces plus a test
+and a Dockerfile. See [Using the CLI](/krun/guides/cli/).
+
+## A minimal handler
+
+<Tabs syncKey="lang">
+<TabItem label="Node.js">
+
+```js title="handler.js"
+import { pathToFileURL } from "node:url";
+import { run } from "@krun/sdk";
+
+export async function handle(input, ctx) {
+  await ctx.status("loading", 0.1);
+  return { rows: 42 };
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  run(handle);
+}
+```
+
+</TabItem>
+<TabItem label="Python">
+
+```python title="handler.py"
+from krun import run
+
+
+def handle(input, ctx):
+    ctx.status("loading", 0.1)
+    return {"rows": 42}
+
+
+if __name__ == "__main__":
+    run(handle)
+```
+
+</TabItem>
+</Tabs>
+
+These are the exact starter handlers that `krun init` writes. `run` is a plain call,
+not a decorator, so tests can import `handle` without starting the runtime. The SDKs
+are optional: any image with an HTTP client can implement the contract, as shown in
+[Without an SDK](#without-an-sdk).
+
+## The Function resource
+
+```yaml title="function.yaml" wrap
+# yaml-language-server: $schema=https://raw.githubusercontent.com/xenarro/krun/main/docs/schemas/function-v1alpha1.json
+apiVersion: krun.io/v1alpha1
+kind: Function
+metadata:
+  name: reports-demo
+spec:
+  image: registry.example.com/team/reports-demo@sha256:<digest>
+  inputSchema:
+    type: object
+    required: [name]
+    properties:
+      name:
+        type: string
+        minLength: 1
+    additionalProperties: false
+  heartbeatTimeout: 5m
+```
+
+`Function` belongs to API group `krun.io`, version `v1alpha1`, and is namespaced in
+the krun namespace. Its short name is `kfn`. On clusters that also run OpenFaaS or
+Fission, `kubectl get functions` is ambiguous; use `kubectl get kfn` or
+`functions.krun.io`. `metadata.name` must be a DNS-1123 label of at most 63
+characters; it is the function name in every API path.
+
+:::tip[Editor validation]
+The generated editor schema is `docs/schemas/function-v1alpha1.json`. Templates from
+`krun init` reference it through a `v<version>` tag that does not exist until the
+first release, so point your editor at the copy on `main`, as above.
+:::
+
+### Spec fields
+
+| Field | Default | Rules |
+|---|---|---|
+| `image` | required | Must contain `@sha256:`; tags are rejected by the CRD. Must start with an entry of `KRUN_ALLOWED_REGISTRIES` when that list is set. |
+| `inputSchema` | required | JSON Schema draft 2020-12, at most 64 KiB serialized. Compiled with Ajv in strict mode plus ajv-formats; only local `#` references are allowed. |
+| `serviceAccountName` | `krun-job-default` | Must be listed in `KRUN_ALLOWED_SERVICE_ACCOUNTS`. |
+| `runAsUser`, `runAsGroup` | `65532` | Integers of at least 1. |
+| `resources` | LimitRange defaults | `requests` and `limits` for `cpu`, `memory` and `ephemeral-storage`. The jobs namespace LimitRange applies defaults and caps. |
+| `env` | none | Plain `name` and `value` pairs only. |
+| `secretRefs` | none | Names of existing Secrets in the jobs namespace, injected with `envFrom`. Names starting with `krun-` are rejected. |
+| `activeDeadlineSeconds` | `3600` | Integer of at least 1, at most `KRUN_MAX_ACTIVE_DEADLINE` (default 86400). |
+| `maxConcurrency` | `10` | Integer of at least 1: scheduled plus running runs of this function. |
+| `maxQueued` | `1000` | Integer of at least 0, at most `KRUN_MAX_QUEUED` (default 1000). Zero disables the queued backlog. |
+| `queueTimeout` | `1h` | Duration of at least 1 ms. Runs queued longer fail with `QUEUE_TIMEOUT`. |
+| `heartbeatTimeout` | unset | Duration of at least 30 s. When set, the function must report status at least this often once running. |
+| `nodeSelector` | none | Map of node labels. |
+| `imagePullSecrets` | none | List of `name` references to existing Secrets. |
+| `callback.url` | none | Default webhook URL, copied into a run that does not name its own. Its host must match `KRUN_WEBHOOK_ALLOWED_HOSTS`. |
+
+Durations everywhere match `^\d+(ms|s|m|h)$`, for example `500ms`, `30s`, `5m` or
+`1h`. The gateway uses `name`, `inputSchema`, `maxQueued` and `callback`; the
+scheduler uses the rest.
+
+### Validation and the Ready condition
+
+A Function is validated twice:
+
+1. **At apply**, by the Kubernetes API server from the CRD: required fields, types,
+   minimums, the duration pattern and the digest rule.
+2. **In the processes**, on every informer event: the input schema must compile
+   within its size limit, and every installation ceiling must hold (deadline, queue
+   size, registries, service accounts, Secret names and callback hosts).
+
+Only the scheduler leader writes the result to the `Ready` condition. A change
+reaches both processes within about one second of `kubectl apply`.
+
+| `Ready` reason | Meaning |
+|---|---|
+| `Valid` | The function is served. |
+| `SchemaInvalid` | `inputSchema` does not compile in strict mode, uses a non-local `$ref`, or the spec fails the wire schema. |
+| `SchemaTooLarge` | `inputSchema` exceeds 65536 serialized UTF-8 bytes. |
+| `DeadlineAboveCeiling` | `activeDeadlineSeconds` exceeds `KRUN_MAX_ACTIVE_DEADLINE`. |
+| `QueuedAboveCeiling` | `maxQueued` exceeds `KRUN_MAX_QUEUED`. |
+| `RegistryNotAllowed` | `image` is outside `KRUN_ALLOWED_REGISTRIES`. |
+| `ServiceAccountNotAllowed` | `serviceAccountName` is not in `KRUN_ALLOWED_SERVICE_ACCOUNTS`. |
+| `SecretRefNotAllowed` | A `secretRefs` entry starts with `krun-`. |
+| `CallbackNotAllowed` | The `callback.url` host does not match `KRUN_WEBHOOK_ALLOWED_HOSTS`. |
+| `InvalidDuration` | `queueTimeout` or `heartbeatTimeout` is not a representable duration within its minimum. |
+
+A Function that is not Ready is not served: the API answers `404 FUNCTION_NOT_FOUND`,
+indistinguishable from a missing function, and the scheduler claims nothing for it.
+Check the reason with Kubernetes:
+
+```sh title="Terminal"
+kubectl get kfn reports-demo -n krun
+kubectl describe kfn reports-demo -n krun
+```
+
+Run the same second-layer checks locally or in CI with `krun validate function.yaml`.
+
+## The container contract
+
+The scheduler runs each run's Job with a hardened pod. Your image must work within
+it:
+
+- A digest-pinned image, running as a non-root numeric UID and GID (65532 unless the
+  Function overrides it).
+- A read-only root filesystem with all capabilities dropped, no privilege escalation,
+  seccomp `RuntimeDefault` and no service-account token. Write transient files only
+  under `/tmp`, an `emptyDir`; `HOME` is `/tmp`.
+- No persistent per-run filesystem and no warm process: every run starts a fresh
+  container.
+- Exit 0 means success; any other exit code means failure. Jobs run with
+  `backoffLimit: 0`, so there are no automatic retries.
+
+### Environment
+
+| Variable | Meaning |
+|---|---|
+| `KRUN_RUN_ID` | The run id, a lowercase UUIDv7. |
+| `KRUN_FUNCTION` | The function name. |
+| `KRUN_GATEWAY_URL` | Base URL of the gateway's internal API, for example `http://krun-gateway-internal.krun.svc:8081`. |
+| `KRUN_TOKEN` | The per-run bearer token, from the run's own Secret. |
+| `KRUN_MAX_RESULT_BYTES` | Inline result cap in bytes (default 262144). |
+| `KRUN_RESULT_UPLOAD_URL` | Presigned PUT URL for a larger result; present only when object storage is configured. |
+| `KRUN_HEARTBEAT_TIMEOUT` | Heartbeat window in seconds; present only when the Function sets `heartbeatTimeout`. |
+| `HOME` | `/tmp`. |
+
+Your Function's `env` entries and `secretRefs` Secrets are added after these. The
+input is never placed in an environment variable or in the Job manifest.
+
+### Lifecycle of a run inside the container
+
+```text title="Order of internal API calls"
+container start
+  GET  /internal/v1/runs/{run}/input      200: work begins
+  POST /internal/v1/runs/{run}/status     optional progress; 204, or 429 (dropped)
+  then exactly one of:
+    PUT  /internal/v1/runs/{run}/result   204, then exit 0
+    PUT  <KRUN_RESULT_UPLOAD_URL>         200, then exit 0 (large result)
+    (nothing to return)                   exit 0
+    PUT  /internal/v1/runs/{run}/error    204, then exit 1
+```
+
+Every internal API call carries `Authorization: Bearer $KRUN_TOKEN`; the presigned
+upload must carry no `Authorization` header. The result or error must be
+accepted **before** the process exits, because the exit is what the scheduler
+reacts to.
+
+## Input
+
+`GET .../input` returns a JSON document equal to the submitted input, the value that
+passed the Function's `inputSchema`. It is re-serialized, so key order, whitespace
+and number spelling are not preserved; compare parsed values, never bytes. The input
+never changes during a run, and it is safe to fetch more than once.
+
+## Progress and heartbeats
+
+`POST .../status` with `{ "message": "...", "progress": 0.4, "data": {} }` records
+the function's latest report as the run's `runtimeStatus`. `message` is required and
+at most 1 KB, `progress` is optional between 0 and 1, and `data` is an optional
+object of at most 4 KB. The gateway accepts at most one report per second per run per
+replica and answers `429 STATUS_RATE_LIMITED` beyond that. Status is informational:
+the run's state never depends on it.
+
+With `heartbeatTimeout` set, status becomes a liveness promise. Once the run is
+`RUNNING`, the scheduler checks every 10 seconds whether the later of the start time
+and the last report is older than the window. A stale run has its log tail captured
+and its Job deleted, and fails with `HEARTBEAT_TIMEOUT`.
+
+The SDKs handle this for you: they re-send the latest status every third of
+`KRUN_HEARTBEAT_TIMEOUT` from a background timer (Node.js) or daemon thread
+(Python).
+
+:::caution[CPU-bound handlers can starve heartbeats]
+A synchronous CPU-bound handler blocks Node.js timers, and a GIL-holding Python
+extension can starve the heartbeat thread. Set `heartbeatTimeout` longer than the
+longest such gap, or move the work off the event loop.
+:::
+
+Functions without `heartbeatTimeout` are never judged by their reports; a hung run
+ends at `activeDeadlineSeconds` with `DEADLINE_EXCEEDED`.
+
+## Results
+
+- **Inline**: `PUT .../result` with any JSON value except `null`, up to
+  `KRUN_MAX_RESULT_BYTES` (default 262144, hard maximum 1 MiB). A larger body is
+  rejected with `413 RESULT_TOO_LARGE`. Calling it again replaces the result.
+- **Large**: when object storage is configured, PUT the raw bytes to
+  `KRUN_RESULT_UPLOAD_URL` with an exact `Content-Length`. Never send the run token
+  or any other `Authorization` header to the object store. The URL expires after
+  `KRUN_S3_PRESIGN_TTL`, which defaults to the Function's `activeDeadlineSeconds`.
+  When the Job completes without an inline result, the scheduler checks the object
+  and sets the run's `resultUri` to `s3://<bucket>/runs/<id>/result.json`.
+- **No result**: exit 0 without calling either; the run succeeds with no result.
+
+A run never carries both `result` and `resultUri`, and only a `SUCCEEDED` run carries
+`resultUri`. Callers read either form through `GetRunResult`.
+
+## Errors and exit codes
+
+Report an application error with `PUT .../error` and a body such as
+`{ "message": "...", "type": "ValidationError", "details": {} }` (message up to 4 KB,
+type up to 128 bytes, details up to 8 KB), then exit nonzero. The run's `error` then
+has `source: FUNCTION`, and a later Kubernetes or krun error never overwrites it.
+
+The exit code is the truth: a function that reports an error and exits 0 still
+succeeds. When the container fails, `failureReason` tells callers why:
+
+| Container outcome | `failureReason` |
+|---|---|
+| Killed for exceeding its memory limit | `OOM_KILLED` |
+| Ran past `activeDeadlineSeconds` | `DEADLINE_EXCEEDED` |
+| Evicted by the kubelet, for example over its ephemeral-storage limit | `EVICTED` |
+| Pod disrupted, or the Job failed without the container terminating | `DISRUPTED` |
+| Any other nonzero exit | `EXIT_CODE` |
+
+When several apply, that order is the precedence. For failed runs whose container
+ran, krun keeps the last 100 log lines (16 KB at most) as `logTail`. See
+[Troubleshooting](/krun/guides/troubleshooting/) for every reason, including those
+krun assigns itself.
+
+## Deadlines and queue time
+
+- `activeDeadlineSeconds` becomes the Job's `activeDeadlineSeconds`. Kubernetes stops
+  the pod when it expires and the run fails with `DEADLINE_EXCEEDED`. The per-run token
+  is also bounded by this active-deadline lifetime.
+- `queueTimeout` bounds how long a run may wait in `QUEUED` before it fails with
+  `QUEUE_TIMEOUT`.
+
+## Cancellation
+
+A caller cancels a run with `CancelRun`. From `QUEUED`, `SCHEDULED` or `RUNNING` the
+run moves to `CANCELLING` at once, and from then on the only terminal state is
+`CANCELLED`:
+
+1. The per-run token is dead from `CANCELLING` onward: every internal API call
+   answers `401 TOKEN_INVALID`.
+2. The scheduler deletes the Job. The pod receives SIGTERM and, 30 seconds later
+   (`terminationGracePeriodSeconds: 30`), SIGKILL.
+3. The run becomes `CANCELLED` once the Job is gone.
+
+Exit on the first 401, even from a status report, or on SIGTERM, whichever comes
+first; the SDKs exit 1 in both cases. A `CANCELLED` run may keep an inline result
+accepted before the cancel, but never a `resultUri`. A waiting client that
+disconnects does not cancel or revoke anything.
+
+## Without an SDK
+
+The contract is plain HTTP, so `curl` in a small image is enough. The internal API
+reference includes a complete
+[conforming function in shell](/krun/reference/generated/internal-api/#9-example-a-conforming-function-in-shell),
+with heartbeats, the inline or presigned result and error reporting.
+
+Follow the retry rules from the contract: `GetInput`, `SetResult` and `SetError` use a
+10-second timeout and retry three times (after 1, 2 and 4 seconds) on connection
+errors, timeouts and 5xx; status reports are one 3-second attempt with no retry; the
+presigned upload allows 300 seconds. Stop on any 401.
+
+## What the scheduler creates
+
+For each claimed run the scheduler creates, in the jobs namespace, an immutable
+Secret `krun-<run id>` holding the token (only its SHA-256 is stored) and a Job
+`krun-<run id>`. Both carry the labels `krun.io/run-id`, `krun.io/function`,
+`krun.io/created-by` and `app.kubernetes.io/managed-by: krun`. The scheduler deletes
+both once it has recorded the terminal state; `ttlSecondsAfterFinished` (default one
+day) is only a safety net. The [architecture reference](/krun/reference/architecture/)
+describes the full Job template.

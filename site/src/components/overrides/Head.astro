@@ -1,0 +1,13 @@
+---
+// Starlight's head (title, description, canonical, Open Graph and the tags
+// from astro.config.mjs) plus preloads for both self-hosted fonts: the text
+// face and the mono face used above the fold (eyebrow, search hint, ticket).
+// The URLs are the same hashed assets that src/styles/fonts.css references.
+import Default from "@astrojs/starlight/components/Head.astro";
+import display from "../../fonts/bricolage-grotesque-latin.woff2?url";
+import mono from "../../fonts/jetbrains-mono-latin.woff2?url";
+---
+
+<Default />
+<link rel="preload" href={display} as="font" type="font/woff2" crossorigin="anonymous" />
+<link rel="preload" href={mono} as="font" type="font/woff2" crossorigin="anonymous" />

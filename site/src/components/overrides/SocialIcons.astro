@@ -1,0 +1,48 @@
+---
+// A text link instead of a third-party logo: krun ships original artwork only.
+import { repository } from "../../lib/links";
+import KIcon from "../KIcon.astro";
+---
+
+<a class="k-gh" href={repository}>
+  <KIcon name="repo" size={18} />
+  <span>GitHub</span>
+</a>
+
+<style>
+  .k-gh {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.8rem;
+    border: 1px solid var(--k-line-strong);
+    border-radius: var(--k-radius-pill);
+    font-family: var(--k-font-mono);
+    font-size: var(--k-step--2);
+    font-weight: 700;
+    letter-spacing: var(--k-tracking-label);
+    text-transform: uppercase;
+    text-decoration: none;
+    color: var(--sl-color-white);
+    white-space: nowrap;
+  }
+
+  .k-gh:hover {
+    border-color: var(--sl-color-text-accent);
+    color: var(--sl-color-text-accent);
+  }
+
+  @media (max-width: 30rem) {
+    .k-gh span {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      white-space: nowrap;
+    }
+    .k-gh {
+      padding: 0.45rem;
+    }
+  }
+</style>

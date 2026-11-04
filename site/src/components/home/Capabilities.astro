@@ -1,0 +1,151 @@
+---
+import KIcon from "../KIcon.astro";
+
+/** Implemented capabilities only (PLAN.md phases 1 to 8 are complete). */
+const features = [
+  {
+    icon: "http",
+    title: "Plain HTTP for callers",
+    body: "Create, get, list, wait for, watch (SSE), cancel and fetch the result of a run over /v1. Callers hold a scoped API key, never Kubernetes credentials.",
+  },
+  {
+    icon: "job",
+    title: "One Job per run",
+    body: "Each run gets its own Job and an immutable per-run Secret in a hardened namespace, with backoffLimit 0. Both are deleted once the outcome is recorded.",
+  },
+  {
+    icon: "schema",
+    title: "Validated before it queues",
+    body: "Every Function declares a JSON Schema 2020-12 inputSchema. Bad input is rejected with INPUT_SCHEMA_VIOLATION before any Job exists.",
+  },
+  {
+    icon: "replay",
+    title: "Idempotent by requestId",
+    body: "Retry a create with the same requestId and you get the same run back. The same id with a different payload is a 409 IDEMPOTENCY_CONFLICT.",
+  },
+  {
+    icon: "reason",
+    title: "Failures with a reason",
+    body: "Every failed run carries a failureReason such as EXIT_CODE, OOM_KILLED or DEADLINE_EXCEEDED, plus the last 100 log lines when the container ran.",
+  },
+  {
+    icon: "bucket",
+    title: "Results inline or in a bucket",
+    body: "Results up to 256 KiB by default come back inline. Larger ones go to S3-compatible storage through presigned URLs; pods never see bucket credentials.",
+  },
+  {
+    icon: "gauge",
+    title: "Backpressure built in",
+    body: "Per-key rate limits, per-Function maxQueued and maxConcurrency, a global running cap, queueTimeout and activeDeadlineSeconds. Bursts wait in the queue.",
+  },
+  {
+    icon: "send",
+    title: "Signed webhooks",
+    body: "Optional HMAC-SHA256 signed callbacks at the terminal state, delivered at least once over about 15 hours, with SSRF address checks on every target.",
+  },
+  {
+    icon: "shield",
+    title: "Hardened by default",
+    body: "Pod Security restricted, default-deny NetworkPolicies, digest-pinned images, non-root, read-only root filesystem, no service account token in pods.",
+  },
+  {
+    icon: "database",
+    title: "Two storage modes",
+    body: "Postgres for replicated gateway and scheduler processes, or embedded SQLite in one Pod with a PVC, with optional Litestream replication.",
+  },
+  {
+    icon: "pulse",
+    title: "Observable",
+    body: "Prometheus metrics on the admin port, OTLP traces when you configure an endpoint, and seven ready-made PrometheusRule alerts in the chart.",
+  },
+  {
+    icon: "terminal",
+    title: "SDKs and a CLI",
+    body: "Dependency-free Node.js 22+ and Python 3.11+ SDKs with a local mode, and krun init, deploy and validate. Any HTTP client can speak the contract.",
+  },
+] as const;
+---
+
+<ul class="k-features not-content">
+  {
+    features.map((feature) => (
+      <li class="k-feature">
+        <span class="k-feature__icon">
+          <KIcon name={feature.icon} size={26} />
+        </span>
+        <h3>{feature.title}</h3>
+        <p>{feature.body}</p>
+      </li>
+    ))
+  }
+</ul>
+
+<style>
+  .k-features {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 16.5rem), 1fr));
+    gap: 1rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .k-feature {
+    position: relative;
+    margin: 0;
+    padding: 1.35rem 1.35rem 1.45rem;
+    border: 1px solid var(--k-line);
+    border-radius: var(--k-radius-m);
+    background: var(--k-bg-raised);
+    transition:
+      transform var(--k-dur-base) var(--k-ease-out),
+      border-color var(--k-dur-fast);
+  }
+
+  .k-feature:hover {
+    transform: translateY(-3px);
+    border-color: var(--k-line-strong);
+  }
+
+  .k-feature__icon {
+    display: inline-grid;
+    place-items: center;
+    width: 3rem;
+    height: 3rem;
+    border-radius: var(--k-radius-s);
+    background: var(--k-signal);
+    color: var(--k-on-signal);
+    -webkit-mask:
+      radial-gradient(circle 0.32rem at 0 50%, #0000 97%, #000) left / 51% 100% no-repeat,
+      radial-gradient(circle 0.32rem at 100% 50%, #0000 97%, #000) right / 51% 100% no-repeat;
+    mask:
+      radial-gradient(circle 0.32rem at 0 50%, #0000 97%, #000) left / 51% 100% no-repeat,
+      radial-gradient(circle 0.32rem at 100% 50%, #0000 97%, #000) right / 51% 100% no-repeat;
+  }
+
+  .k-feature:nth-child(4n + 2) .k-feature__icon {
+    background: var(--k-volt);
+    color: var(--k-on-volt);
+  }
+
+  .k-feature:nth-child(4n + 3) .k-feature__icon {
+    background: var(--k-text-strong);
+    color: var(--k-bg);
+  }
+
+  .k-feature h3 {
+    margin: 1rem 0 0.4rem;
+    font-size: var(--k-step-1);
+    font-weight: 760;
+    letter-spacing: -0.015em;
+    line-height: 1.25;
+    color: var(--k-text-strong);
+  }
+
+  .k-feature p {
+    margin: 0;
+    font-size: 0.9375rem;
+    line-height: 1.6;
+    color: var(--k-text-muted);
+  }
+</style>

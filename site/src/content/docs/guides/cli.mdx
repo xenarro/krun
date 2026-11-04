@@ -1,0 +1,199 @@
+---
+title: Using the CLI
+description: Scaffold a function with krun init, ship it with krun deploy, and check Function manifests in CI with krun validate.
+sidebar:
+  order: 4
+---
+
+import { Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+The `krun` CLI is the golden path from code to a Ready function. It has three
+commands: `init` scaffolds a project, `deploy` builds, pins, validates and applies
+it, and `validate` checks Function manifests the same way the platform does.
+
+## Get the CLI
+
+:::caution[Not on npm yet]
+The planned distribution is `npx @krun/cli`, but `@krun/cli` is **not published**.
+Run the CLI from a built checkout instead. It requires Node.js 26.
+:::
+
+```sh title="In the krun checkout"
+pnpm install --frozen-lockfile
+make build
+alias krun="node $PWD/packages/cli/dist/main.js"
+krun --help
+```
+
+`krun --help` prints `Usage: krun <init|deploy|validate> [arguments]`. The platform
+container image also carries `validate`, `init` and `deploy` as entrypoints next to
+the server commands, which is useful for running `krun validate` in CI images.
+
+You need the context your platform team hands over: the registry prefix, the krun
+namespace, the jobs namespace, the public API URL and an API key delivered through
+a private channel. `deploy` also uses your local `docker` and your current `kubectl`
+context.
+
+:::danger[Do not set KRUN_GATEWAY_URL on your workstation]
+The CLI never reads `KRUN_GATEWAY_URL`, but the SDKs do: it switches them from local
+mode to in-Pod mode, which breaks local runs and tests.
+:::
+
+## Scaffold a project with `krun init`
+
+<Tabs syncKey="lang">
+<TabItem label="Node.js">
+
+```sh title="Terminal"
+krun init --lang node reports-demo
+cd reports-demo
+npm install
+npm test
+```
+
+Files: `handler.js`, `handler.test.js`, `package.json`, `Dockerfile`,
+`.dockerignore`, `.gitignore`, `function.yaml` and `README.md`.
+
+</TabItem>
+<TabItem label="Python">
+
+```sh title="Terminal"
+krun init --lang python reports-demo
+cd reports-demo
+uv sync
+uv run pytest
+```
+
+Files: `handler.py`, `tests/test_handler.py`, `pyproject.toml`, `Dockerfile`,
+`.dockerignore`, `.gitignore`, `function.yaml` and `README.md`.
+
+</TabItem>
+</Tabs>
+
+- The function name defaults to the directory's base name. Pass `--name` to choose
+  another; it must be a DNS-1123 label of at most 63 characters.
+- Without `--lang`, `init` asks for the language on an interactive terminal and fails
+  with `Missing --lang on a non-interactive terminal.` otherwise. Cancelling the
+  prompt exits 130.
+- The target directory must be absent, or contain only dotfiles other than
+  `.gitignore` and `.dockerignore` (which `init` generates). `init` never
+  overwrites a file and removes what it created if it fails.
+- The generated project depends on the SDK at the CLI's own version (`^X.Y.Z` for
+  npm, `krun~=X.Y.Z` for Python). Because the SDKs are not published yet, install a
+  vendored SDK before testing, as described in the
+  [Node.js](/krun/guides/node-sdk/#install-from-a-checkout) and
+  [Python](/krun/guides/python-sdk/#install-from-a-checkout) guides.
+
+The generated `function.yaml` contains `image: REPLACE_WITH_DIGEST`. That value is
+intentionally invalid and must never be applied as is; `krun deploy` replaces it.
+
+## Ship it with `krun deploy`
+
+```sh title="Terminal"
+export KRUN_NAMESPACE=krun
+export KRUN_JOBS_NAMESPACE=krun-jobs
+export KRUN_API_URL=https://krun.example.com
+export KRUN_REGISTRY=registry.example.com/team
+krun deploy
+```
+
+Flags override the environment: `--namespace`, `--api-url` and `--registry`. The
+optional positional argument is the project directory (default `.`).
+
+<Steps>
+
+1. Reads exactly one `Function` document from `function.yaml`.
+2. Builds the image as `<registry>/<name>:krun-<uuid>`, a fresh tag for every
+   deploy, and pushes it.
+3. Reads the pushed digest from the push output, or from `docker inspect` when the
+   output does not identify exactly one digest.
+4. Writes `spec.image: <registry>/<name>@sha256:<digest>` into `function.yaml`,
+   preserving comments.
+5. Runs `krun validate` on the pinned file, using the same ceilings as the platform
+   when you export them (see [validate](#check-manifests-with-krun-validate)).
+6. Runs `kubectl apply -f function.yaml -n <namespace>`.
+7. Polls `kubectl get functions.krun.io` every second until the current generation
+   is `Ready=True`, for at most 120 seconds. It fails at once on `Ready=False`.
+8. Prints a first-run `curl`, an in-flight logs command and a GetRun `curl` to stdout.
+
+</Steps>
+
+The printed commands reference `$KRUN_API_KEY` literally, so the key never appears in
+your terminal history or the CLI output. Progress goes to stderr, with a spinner on
+an interactive terminal; setting `NO_COLOR` switches to plain progress lines.
+
+```sh title="Output on stdout (example)"
+# First run: adjust input to function.yaml's inputSchema.
+curl -sS -X POST 'https://krun.example.com/v1/functions/reports-demo/runs' \
+  -H "Authorization: Bearer $KRUN_API_KEY" -H 'Content-Type: application/json' \
+  -d '{"input":{"name":"world"}}'
+# Replace <id> with the run id; logs work only while scheduled or running.
+kubectl logs -f -n 'krun-jobs' 'job/krun-<id>'
+# GetRun: logTail contains the last lines of a failed run.
+curl -sS 'https://krun.example.com/v1/functions/reports-demo/runs/<id>' \
+  -H "Authorization: Bearer $KRUN_API_KEY"
+```
+
+The CLI prints each `curl` on one line; it is wrapped here for readability. Without
+an API URL, the commands use `"${KRUN_API_URL%/}..."` so your shell fills it in.
+
+### GitOps with `--no-apply`
+
+```sh title="Terminal"
+krun deploy --no-apply --registry registry.example.com/team
+```
+
+`--no-apply` builds, pushes, pins and validates, then prints only the pinned image
+reference to stdout. It never contacts the cluster, so a GitOps tool can apply the
+committed `function.yaml`. Deploying a function is always a plain
+`kubectl apply -f function.yaml`; there is no Helm chart per function.
+
+### Input rules
+
+- The registry must be a repository prefix without credentials, scheme or tag, for
+  example `registry.example.com/team`.
+- The namespaces must be DNS labels.
+- The API URL must be `http` or `https`, without credentials, query or fragment.
+- A `metadata.namespace` in `function.yaml` must match the selected namespace.
+
+## Check manifests with `krun validate`
+
+```sh title="Terminal"
+krun validate function.yaml
+krun validate deploy/functions/
+```
+
+`validate` runs the CRD schema and the platform's second-layer checks on every
+`Function` document in the given files and directories, without contacting a
+cluster. Directories are not searched recursively: only their immediate `.yaml` and
+`.yml` entries are read, in sorted order. Documents of other kinds are skipped.
+
+```text title="Output"
+OK "/work/reports-demo/function.yaml": reports-demo
+FAIL "/work/other.yaml": other: SecretRefNotAllowed: spec.secretRefs contains a reserved name
+```
+
+Each line names the absolute file path as a JSON string, then the Function name.
+Result lines go to stdout and the ceilings in use go to stderr as
+`krun validate ceilings: {...}`. The exit code is 1 on any failure, including when no
+Function document is found at all. To reproduce the platform's decision exactly,
+export the installation's ceilings before running it:
+
+```sh title="CI step"
+export KRUN_MAX_QUEUED=1000
+export KRUN_MAX_ACTIVE_DEADLINE=86400
+export KRUN_ALLOWED_REGISTRIES=registry.example.com/
+export KRUN_ALLOWED_SERVICE_ACCOUNTS=krun-job-default
+export KRUN_WEBHOOK_ALLOWED_HOSTS=hooks.example.com
+krun validate deploy/functions/
+```
+
+Unset ceilings use the platform defaults shown in the
+[configuration reference](/krun/reference/configuration/).
+
+## Next steps
+
+- Every usage string, flag, default, output and error is listed in the
+  [CLI reference](/krun/reference/cli/).
+- Call your deployed function with
+  [invoking runs over HTTP](/krun/guides/invoking-runs/).

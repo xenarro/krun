@@ -1,0 +1,365 @@
+---
+title: Installation
+description: Install the krun Helm chart from a source checkout, choose Postgres or embedded SQLite, add optional object storage and webhooks, and onboard a function team.
+sidebar:
+  order: 3
+---
+
+import { Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+This guide is for the platform team. It installs the chart from the repository
+checkout into a cluster you operate, then hands a namespace and an API key to a
+function team.
+
+:::caution[Install from source until v0.1.0 is published]
+The documented release identities, the OCI chart `oci://ghcr.io/xenarro/charts/krun`
+and the image `ghcr.io/xenarro/krun`, are **planned and not published yet**. The
+chart's default `image.repository` points at that unpublished image, and the chart
+version `0.0.0` is development metadata. Build the platform image yourself and
+install the chart from `deploy/helm/krun`, as shown below. See
+[Releases](/krun/project/releases/) for the publication status.
+:::
+
+## Requirements
+
+- Kubernetes 1.33 or newer. krun relies on CRD CEL validation rules, Pod Security
+  Admission labels, the `DisruptionTarget` pod condition, native sidecar containers
+  and ValidatingAdmissionPolicy.
+- A CNI that actually enforces NetworkPolicy. Without enforcement the jobs namespace
+  isolation is void. Verify it once with a default-deny policy in a scratch
+  namespace.
+- Helm 4.
+- In Postgres mode, an operator-managed Postgres 16 or newer. CI runs the store
+  contract suite against Postgres 18.
+- Optional: Gateway API CRDs and a controller for the HTTPRoute, Prometheus Operator
+  CRDs for the PodMonitor and PrometheusRule, and an S3-compatible bucket for large
+  results.
+
+The chart never creates a Secret, a database, a bucket, a Gateway or a `Function`.
+You provide Secrets by name; credential material never goes into Helm values or
+command-line arguments.
+
+## Install the chart
+
+<Steps>
+
+1. **Build and push the platform image.** One image serves every entrypoint
+   (`krun gateway`, `krun scheduler`, `krun migrate`, `krun validate`). The
+   multi-stage Dockerfile builds from source on a distroless Node.js 26 runtime that
+   runs as user 65532. The chart does not set image pull secrets on platform pods,
+   so your nodes must be able to pull the image.
+
+   ```sh title="Terminal"
+   make docker IMAGE=registry.example.com/platform/krun:dev
+   docker push registry.example.com/platform/krun:dev
+   ```
+
+2. **Create and label the release namespace.** The chart does not label its own
+   namespace. Do not rely on `--create-namespace`.
+
+   ```sh title="Terminal"
+   kubectl create namespace krun
+   kubectl label namespace krun \
+     pod-security.kubernetes.io/enforce=restricted
+   ```
+
+   By default the chart creates and hardens the separate jobs namespace
+   `krun-jobs` itself (`jobsNamespace.create: true`).
+
+3. **Create the API keys Secret.** Write a private `keys.yaml` file and store it
+   under the key `keys.yaml`. Each entry is one principal:
+
+   ```yaml title="keys.yaml"
+   keys:
+     - name: reports-service        # unique; becomes the run's createdBy
+       key: <random, at least 32 bytes>   # or a list of keys during rotation
+       scopes: [runs:write, runs:read, functions:read]
+       functions: ["reports-*"]     # Function name globs; required unless admin
+       maxQueued: 200               # optional: queued runs per function for this key
+   ```
+
+   ```sh title="Terminal"
+   kubectl -n krun create secret generic krun-api-keys \
+     --from-file=keys.yaml=./keys.yaml
+   ```
+
+   Scopes are `functions:read`, `runs:read`, `runs:write`, `runs:priority` (needed
+   for a run `priority` above 0) and `admin`. The loader rejects unknown fields and
+   duplicate names. Use at least 32 random bytes per key; the loader itself only
+   requires a nonempty string. The gateway re-reads the file on a 30-second
+   content-hash poll, so key changes need no restart.
+
+4. **Choose a database mode** and prepare its prerequisites.
+
+   <Tabs syncKey="db-mode">
+   <TabItem label="Postgres">
+
+   Two Deployments: the gateway (two replicas by default) and the scheduler (one
+   active leader, extra replicas stand by). Migrations run in a Helm
+   `pre-install,pre-upgrade` hook Job that executes `krun migrate` before serving
+   pods roll out. Each krun process opens 5 pooled connections plus one dedicated
+   `LISTEN` client; size the database's connection limit accordingly.
+
+   Store the connection string under the key `dsn`:
+
+   ```sh title="Terminal"
+   kubectl -n krun create secret generic krun-db \
+     --from-file=dsn=./dsn.txt
+   ```
+
+   ```yaml title="krun-values.yaml"
+   image:
+     repository: registry.example.com/platform/krun
+     tag: dev
+   apiKeys:
+     existingSecret: krun-api-keys
+   db:
+     mode: postgres
+     postgres:
+       existingSecret: krun-db
+   networkPolicy:
+     metricsFrom:
+       matchLabels:
+         kubernetes.io/metadata.name: monitoring
+   ```
+
+   </TabItem>
+   <TabItem label="Embedded SQLite">
+
+   One StatefulSet replica runs the gateway and scheduler containers side by side,
+   sharing one PVC mounted at `/data` with the database at `/data/krun.db` in SQLite
+   WAL mode. Init containers run an optional Litestream restore, then
+   `krun migrate`. Network filesystems are not supported, and an upgrade means a
+   brief downtime. Both `gateway.replicas` and `scheduler.replicas` must be at most
+   1, so override the gateway default of 2.
+
+   ```yaml title="krun-values.yaml"
+   image:
+     repository: registry.example.com/platform/krun
+     tag: dev
+   apiKeys:
+     existingSecret: krun-api-keys
+   db:
+     mode: embedded
+     embedded:
+       storage: 1Gi
+       storageClass: ""   # empty uses the cluster default
+   gateway:
+     replicas: 1
+   scheduler:
+     replicas: 1
+   networkPolicy:
+     metricsFrom:
+       matchLabels:
+         kubernetes.io/metadata.name: monitoring
+   ```
+
+   Without Litestream the PVC is the only copy of your data. To stream the WAL to
+   object storage, set `db.embedded.litestream.enabled: true` with a digest-pinned
+   `image`, a replica `url` and an `existingSecret` holding
+   `LITESTREAM_ACCESS_KEY_ID` and `LITESTREAM_SECRET_ACCESS_KEY`.
+
+   </TabItem>
+   </Tabs>
+
+5. **Validate offline.** These commands render the chart without contacting a
+   cluster:
+
+   ```sh title="Terminal"
+   helm lint deploy/helm/krun --strict --values krun-values.yaml
+   helm template krun deploy/helm/krun \
+     --namespace krun --values krun-values.yaml > /dev/null
+   ```
+
+   The chart fails with a clear message when `apiKeys.existingSecret` is empty, when
+   Postgres mode has no `db.postgres.existingSecret`, when embedded mode has more
+   than one replica, when `config.maxRunning` exceeds `jobsNamespace.quota.pods`,
+   and when an enabled optional feature is missing its Secret or settings.
+
+6. **Install.**
+
+   ```sh title="Terminal"
+   helm install krun deploy/helm/krun \
+     --namespace krun --values krun-values.yaml
+   ```
+
+   The CRD `functions.krun.io` is part of the release (`crds.install: true`). With
+   `crds.install=false`, apply `deploy/crds/functions.krun.io.yaml` yourself before
+   every install and upgrade.
+
+</Steps>
+
+## Verify the installation
+
+```sh title="Terminal"
+kubectl -n krun get pods
+kubectl get crd functions.krun.io
+kubectl -n krun get lease krun-scheduler \
+  -o jsonpath='{.spec.holderIdentity}'
+```
+
+- Every serving container has a readiness probe on `/readyz` and a liveness probe
+  on `/healthz` on its admin port. `/readyz` waits for the database and the
+  Function informer's initial list.
+- The Lease `krun-scheduler` names the current scheduler leader.
+- The public Service is named after the release (`krun` here) and listens on port
+  8080. The internal Service `krun-gateway-internal` on port 8081 is reachable only
+  from the jobs namespace. No Service exposes the admin ports.
+
+Before you hand the platform over, verify default-deny enforcement in the jobs
+namespace, your image admission policy, and any object storage or webhook egress
+you rely on.
+
+:::danger[Keep the private ports private]
+Expose only the public port 8080, for example through the optional HTTPRoute with
+TLS at your Gateway. Keep the internal port 8081 and the admin ports 9090 and 9091
+private. Set `networkPolicy.metricsFrom` explicitly: its empty default allows any
+namespace to reach the admin ports.
+:::
+
+## Values that matter
+
+| Value | Default | Why it matters |
+|---|---|---|
+| `image.repository`, `image.tag` | `ghcr.io/xenarro/krun`, appVersion | Point these at the image you built; the default is not published. |
+| `db.mode` | `postgres` | `postgres` or `embedded`. |
+| `db.postgres.existingSecret` | `""` | Secret with key `dsn`; required in Postgres mode. |
+| `apiKeys.existingSecret` | `""` | Secret with key `keys.yaml`; always required. |
+| `gateway.replicas`, `scheduler.replicas` | `2`, `1` | Extra schedulers are standbys; embedded mode allows at most 1 of each. |
+| `jobsNamespace.name` | `krun-jobs` | Where Job pods and per-run Secrets live. |
+| `jobsNamespace.create`, `jobsNamespace.keep` | `true`, `true` | Render and keep the hardened jobs namespace on uninstall. |
+| `jobsNamespace.quota.pods` | `"200"` | Must be at least `config.maxRunning` while the chart creates the namespace. |
+| `jobsNamespace.limitRange.max` | cpu 4, memory 8Gi, ephemeral-storage 20Gi | Per-container ceiling for function pods. |
+| `jobsNamespace.egressCIDRs` | `[]` | Extra egress for every function; never a bare `0.0.0.0/0`. |
+| `config.maxRunning` | `100` | Global cap on scheduled and running runs. |
+| `config.allowedRegistries` | `""` (any) | Comma-separated image prefixes Functions may use. |
+| `config.retention` | `720h` | How long finished runs are kept. |
+| `networkPolicy.metricsFrom` | `{}` (any namespace) | Namespace selector allowed to scrape the admin ports. |
+| `crds.install`, `crds.keep` | `true`, `true` | The CRD is templated into the release and kept on uninstall. |
+
+Every `config.*` key renders as the matching `KRUN_*` environment variable on both
+processes. [Configuration](/krun/guides/configuration/) explains each setting, and
+the generated [Helm chart reference](/krun/reference/generated/helm-chart/) lists
+every value.
+
+## Optional integrations
+
+<Tabs>
+<TabItem label="Object storage">
+
+Results larger than `config.maxResultBytes` (default 262144 bytes) need
+S3-compatible storage. Provide a bucket and a Secret with keys `accessKey` and
+`secretKey`; function pods never receive these credentials.
+
+```yaml title="krun-values.yaml"
+objectStorage:
+  enabled: true
+  endpoint: https://s3.example.com
+  bucket: krun-results
+  region: us-east-1          # required at runtime; there is no default
+  existingSecret: krun-s3
+  egress:                    # NetworkPolicyPeer list for function uploads
+    - ipBlock: { cidr: 203.0.113.10/32 }
+```
+
+krun never deletes result objects (`runs/<id>/result.json`). Set a bucket lifecycle
+expiration of at least `config.retention`.
+
+</TabItem>
+<TabItem label="Webhooks">
+
+Webhooks are disabled until you allow callback hosts. Store comma-separated signing
+secrets under the key `secret`; only the scheduler receives it.
+
+```yaml title="krun-values.yaml"
+webhooks:
+  allowedHosts: ["hooks.example.com"]
+  allowedCIDRs: []           # add Pod or Service CIDRs for in-cluster receivers
+  existingSecret: krun-webhook-secret
+```
+
+Callback addresses must be public unicast unless they fall inside
+`webhooks.allowedCIDRs`.
+
+</TabItem>
+<TabItem label="HTTPRoute">
+
+```yaml title="krun-values.yaml"
+gatewayApi:
+  httpRoute:
+    enabled: true
+    parentRefs:
+      - name: public-gateway
+        namespace: gateway-system
+    hostnames: ["krun.example.com"]
+```
+
+The route targets only the public Service on port 8080. Install the Gateway API
+CRDs and a controller yourself, allow the route on the target Gateway, and configure
+TLS and long-wait or SSE timeouts there.
+
+</TabItem>
+<TabItem label="Monitoring">
+
+```yaml title="krun-values.yaml"
+metrics:
+  podMonitor:
+    enabled: true
+  prometheusRule:
+    enabled: true
+observability:
+  otlpEndpoint: http://otel-collector.observability.svc:4318
+  tracesSampleRatio: "0.1"
+```
+
+The PodMonitor and PrometheusRule need the Prometheus Operator CRDs. The rule
+contains seven alerts; see [Operations](/krun/guides/operations/).
+
+</TabItem>
+</Tabs>
+
+## Onboard a function team
+
+<Steps>
+
+1. **Add an API key** for the team to your private `keys.yaml`: a unique name,
+   scopes `functions:read`, `runs:read` and `runs:write`, and only the team's
+   Function globs, for example `reports-*`. Keep the other principals and avoid
+   `admin`. Update the existing Secret from the file, then wait for the 30-second
+   reload.
+
+2. **Bind the namespace roles** to the team's Kubernetes group. The chart renders
+   `krun-function-author` in the krun namespace and `krun-job-viewer` in the jobs
+   namespace without bindings:
+
+   ```sh title="Terminal"
+   kubectl --context "$PLATFORM_CONTEXT" -n "$KRUN_NAMESPACE" \
+     create rolebinding reports-authors \
+     --role=krun-function-author --group=reports-developers
+   kubectl --context "$PLATFORM_CONTEXT" -n "$KRUN_JOBS_NAMESPACE" \
+     create rolebinding reports-logs \
+     --role=krun-job-viewer --group=reports-developers
+   ```
+
+   Authors can manage `Function` resources and read logs of in-flight Jobs. Neither
+   role grants Secret reads, pod exec, workload creation or cluster-admin access.
+
+3. **Hand over** the approved Kubernetes context, both namespace names, the registry
+   prefix and the public API URL. Send the API key through a separate private
+   channel. Kubernetes roles and API-key scopes are separate grants.
+
+</Steps>
+
+## Upgrade and uninstall
+
+- Upgrade with `helm upgrade`. In Postgres mode the `pre-upgrade` hook runs
+  `krun migrate` first; migrations are expand and contract, so the previous pods keep
+  working during the rollout. Embedded mode restarts its single replica.
+- `helm rollback` by one minor version is the supported rollback policy.
+- Keep scheduler downtime below `config.ttlAfterFinished` (24 hours by default);
+  runs that finish during a longer outage become `JOB_LOST`.
+- `crds.keep` and `jobsNamespace.keep` leave the CRD and the jobs namespace behind on
+  `helm uninstall`. Deleting the CRD deletes every Function.
+
+The [operations guide](/krun/reference/generated/operations/) covers upgrades,
+retained ownership, capacity and recovery in depth.

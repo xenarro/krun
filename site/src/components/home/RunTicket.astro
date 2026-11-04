@@ -1,0 +1,463 @@
+---
+/**
+ * The hero's product visual: one run drawn as a one-way ticket. Every field is
+ * a real krun fact: the starter function from `krun init` returns
+ * { "rows": 42 }, CreateRun takes `wait=30s`, the public listener is :8080, the
+ * Job is named krun-<run id> and has backoffLimit 0 (no automatic retries).
+ */
+import Mark from "../../../../docs/assets/mark.svg";
+---
+
+<div class="k-ticket-wrap">
+  <figure class="k-ticket" aria-labelledby="k-ticket-caption">
+    <figcaption id="k-ticket-caption" class="sr-only">
+      Example run of the reports-demo starter function: created with POST /v1 and wait=30s,
+      travelling QUEUED, SCHEDULED and RUNNING to the terminal state SUCCEEDED, with the result
+      rows 42.
+    </figcaption>
+    <div class="k-ticket__main">
+      <div class="k-ticket__head">
+        <span class="k-ticket__brand"><Mark width={22} height={22} aria-hidden="true" /> Run ticket</span>
+        <span class="k-ticket__kind">Example</span>
+      </div>
+
+      <div class="k-ticket__trip">
+        <div>
+          <span class="k-ticket__label">From</span>
+          <span class="k-ticket__big">POST /v1</span>
+          <code>functions/reports-demo/runs?wait=30s</code>
+        </div>
+        <svg class="k-ticket__arrow" viewBox="0 0 48 24" aria-hidden="true">
+          <path d="M2 12h40m-8-8 8 8-8 8" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path>
+        </svg>
+        <div>
+          <span class="k-ticket__label">To</span>
+          <span class="k-ticket__big k-ticket__ok">SUCCEEDED</span>
+          <code>a terminal state</code>
+        </div>
+      </div>
+
+      <ol class="k-route" aria-label="States the run travelled">
+        <li style="--i: 0">Queued</li>
+        <li style="--i: 1">Scheduled</li>
+        <li style="--i: 2">Running</li>
+        <li style="--i: 3" class="is-terminal">Succeeded</li>
+      </ol>
+
+      <dl class="k-ticket__fields">
+        <div><dt>Gate</dt><dd>:8080</dd></div>
+        <div><dt>Job</dt><dd>krun-&lt;run&nbsp;id&gt;</dd></div>
+        <div><dt>Retries</dt><dd>none</dd></div>
+        <div><dt>Token</dt><dd>per run</dd></div>
+      </dl>
+
+      <div class="k-ticket__result">
+        <span class="k-ticket__label">Result</span>
+        <code>{"{"} "rows": 42 {"}"}</code>
+      </div>
+    </div>
+
+    <div class="k-ticket__stub" aria-hidden="true">
+      <span class="k-ticket__label">One-way</span>
+      <span class="k-ticket__stamp">Succeeded</span>
+      <span class="k-ticket__barcode"></span>
+      <span class="k-ticket__serial">019a4f2e</span>
+    </div>
+  </figure>
+</div>
+
+<style>
+  .k-ticket-wrap {
+    container: ticket / inline-size;
+    filter: drop-shadow(0 1px 0 rgb(0 0 0 / 0.25)) drop-shadow(0 28px 40px rgb(0 0 0 / 0.35));
+    animation: k-ticket-in var(--k-dur-slow) var(--k-ease-out) both;
+  }
+
+  :global(:root[data-theme="light"]) .k-ticket-wrap {
+    filter: drop-shadow(0 1px 0 rgb(23 21 30 / 0.08)) drop-shadow(0 28px 36px rgb(23 21 30 / 0.16));
+  }
+
+  .k-ticket {
+    --cut: 74%;
+    margin: 0;
+    display: grid;
+    grid-template-columns: var(--cut) 1fr;
+    border-radius: var(--k-radius-l);
+    background: var(--k-bg-raised);
+    color: var(--k-text);
+    transform: rotate(-1.5deg);
+    -webkit-mask:
+      radial-gradient(circle var(--k-notch) at var(--cut) 0, #0000 97%, #000) top / 100% 51% no-repeat,
+      radial-gradient(circle var(--k-notch) at var(--cut) 100%, #0000 97%, #000) bottom / 100% 51% no-repeat;
+    mask:
+      radial-gradient(circle var(--k-notch) at var(--cut) 0, #0000 97%, #000) top / 100% 51% no-repeat,
+      radial-gradient(circle var(--k-notch) at var(--cut) 100%, #0000 97%, #000) bottom / 100% 51% no-repeat;
+  }
+
+  .k-ticket__main {
+    display: grid;
+    gap: 1.15rem;
+    padding: 1.4rem 1.5rem 1.5rem;
+    min-width: 0;
+  }
+
+  .k-ticket__head,
+  .k-ticket__trip,
+  .k-ticket__result {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .k-ticket__brand,
+  .k-ticket__kind,
+  .k-ticket__label,
+  .k-ticket__fields dt {
+    font-family: var(--k-font-mono);
+    font-size: var(--k-step--2);
+    font-weight: 600;
+    letter-spacing: var(--k-tracking-label);
+    text-transform: uppercase;
+    color: var(--k-text-muted);
+  }
+
+  .k-ticket__brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--k-text);
+  }
+
+  .k-ticket__kind {
+    border: 1px dashed var(--k-line-strong);
+    border-radius: var(--k-radius-pill);
+    padding: 0.15rem 0.6rem;
+  }
+
+  .k-ticket__trip {
+    align-items: start;
+  }
+
+  .k-ticket__trip > div {
+    display: grid;
+    gap: 0.15rem;
+    min-width: 0;
+    flex: 1 1 0;
+  }
+
+  .k-ticket__trip > div:last-child {
+    flex: none;
+    text-align: end;
+  }
+
+  .k-ticket__big {
+    font-size: clamp(1.35rem, 1rem + 1.6cqi, 2rem);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+    color: var(--k-text-strong);
+  }
+
+  .k-ticket__ok {
+    color: var(--k-state-succeeded);
+  }
+
+  .k-ticket code {
+    font-family: var(--k-font-mono);
+    font-size: var(--k-step--2);
+    color: var(--k-text-muted);
+    background: none;
+    padding: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .k-ticket__arrow {
+    width: 2.5rem;
+    flex: none;
+    align-self: center;
+    color: var(--k-signal);
+  }
+
+  /* The route: stations light up in order, then the terminal ring. */
+  .k-route {
+    --dot: 0.95rem;
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    margin: 0.25rem 0 0;
+    padding: calc(var(--dot) + 0.6rem) 0 0;
+    list-style: none;
+    font-family: var(--k-font-mono);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--k-text-muted);
+  }
+
+  .k-route::before,
+  .k-route::after {
+    content: "";
+    position: absolute;
+    top: calc(var(--dot) / 2 - var(--k-route) / 2);
+    left: calc(var(--dot) / 2);
+    right: calc(25% - var(--dot) / 2);
+    height: var(--k-route);
+    border-radius: var(--k-radius-pill);
+    background: var(--k-line);
+  }
+
+  .k-route::after {
+    background: var(--k-signal);
+    transform-origin: left center;
+    animation: k-route-fill 1.6s var(--k-ease-out) 0.35s both;
+  }
+
+  .k-route li {
+    position: relative;
+    margin: 0;
+  }
+
+  .k-route li::before {
+    content: "";
+    position: absolute;
+    z-index: 1;
+    top: calc(-1 * (var(--dot) + 0.6rem));
+    left: 0;
+    width: var(--dot);
+    height: var(--dot);
+    box-sizing: border-box;
+    border-radius: 50%;
+    border: 0.22rem solid var(--k-signal);
+    background: var(--k-bg-raised);
+    animation: k-station 300ms var(--k-ease-spring) calc(0.35s + var(--i) * 0.45s) both;
+  }
+
+  .k-route li.is-terminal {
+    color: var(--k-state-succeeded);
+  }
+
+  .k-route li.is-terminal::before {
+    --dot: 1.35rem;
+    top: calc(-1 * (0.95rem + 0.6rem) - 0.2rem);
+    left: -0.2rem;
+    border-width: 0.3rem;
+    border-color: var(--k-text-strong);
+    background: var(--k-volt);
+  }
+
+  .k-ticket__fields {
+    display: grid;
+    grid-template-columns: repeat(4, auto);
+    justify-content: space-between;
+    gap: 0.75rem 1rem;
+    margin: 0;
+    padding-top: 1rem;
+    border-top: 1px dashed var(--k-line-strong);
+  }
+
+  .k-ticket__fields div {
+    display: grid;
+    gap: 0.1rem;
+  }
+
+  .k-ticket__fields dd {
+    margin: 0;
+    font-family: var(--k-font-mono);
+    font-size: var(--k-step--1);
+    font-weight: 600;
+    color: var(--k-text-strong);
+  }
+
+  .k-ticket__result {
+    padding: 0.7rem 0.9rem;
+    border-radius: var(--k-radius-s);
+    background: var(--k-bg-sunken);
+  }
+
+  .k-ticket__result code {
+    font-size: var(--k-step--1);
+    font-weight: 600;
+    color: var(--k-text-strong);
+  }
+
+  .k-ticket__stub {
+    position: relative;
+    display: grid;
+    align-content: space-between;
+    justify-items: center;
+    gap: 1rem;
+    padding: 1.4rem 0.75rem;
+    border-inline-start: 2px dashed color-mix(in srgb, var(--k-on-signal) 45%, transparent);
+    background: var(--k-signal);
+    color: var(--k-on-signal);
+  }
+
+  .k-ticket__stub .k-ticket__label {
+    color: var(--k-on-signal);
+  }
+
+  .k-ticket__stamp {
+    padding: 0.35rem 0.6rem;
+    border: 3px solid var(--k-on-signal);
+    border-radius: var(--k-radius-s);
+    font-family: var(--k-font-mono);
+    font-size: 0.75rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    background: var(--k-volt);
+    color: var(--k-on-volt);
+    transform: rotate(-12deg);
+    animation: k-stamp 420ms var(--k-ease-spring) 2.1s both;
+  }
+
+  .k-ticket__barcode {
+    width: 100%;
+    max-width: 4.5rem;
+    height: 3.25rem;
+    background: repeating-linear-gradient(
+      90deg,
+      var(--k-on-signal) 0 2px,
+      transparent 2px 4px,
+      var(--k-on-signal) 4px 7px,
+      transparent 7px 9px,
+      var(--k-on-signal) 9px 10px,
+      transparent 10px 13px
+    );
+    opacity: 0.85;
+  }
+
+  .k-ticket__serial {
+    font-family: var(--k-font-mono);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+  }
+
+  /* Narrow ticket: the stub tears off along the bottom instead. */
+  .k-ticket__stub .k-ticket__label,
+  .k-ticket__stamp,
+  .k-ticket__serial {
+    white-space: nowrap;
+  }
+
+  @container ticket (max-width: 33rem) {
+    .k-ticket {
+      --cut: 100%;
+      grid-template-columns: minmax(0, 1fr);
+      transform: rotate(-1.2deg);
+      -webkit-mask:
+        radial-gradient(circle var(--k-notch) at 0 calc(100% - 4.25rem), #0000 97%, #000) left / 51% 100% no-repeat,
+        radial-gradient(circle var(--k-notch) at 100% calc(100% - 4.25rem), #0000 97%, #000) right / 51% 100% no-repeat;
+      mask:
+        radial-gradient(circle var(--k-notch) at 0 calc(100% - 4.25rem), #0000 97%, #000) left / 51% 100% no-repeat,
+        radial-gradient(circle var(--k-notch) at 100% calc(100% - 4.25rem), #0000 97%, #000) right / 51% 100% no-repeat;
+    }
+    .k-ticket__main {
+      padding: 1.15rem 1.1rem 1.25rem;
+    }
+    .k-ticket__stub {
+      height: 4.25rem;
+      box-sizing: border-box;
+      grid-auto-flow: column;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 1.1rem;
+      border-inline-start: 0;
+      border-top: 2px dashed color-mix(in srgb, var(--k-on-signal) 45%, transparent);
+    }
+    .k-ticket__barcode {
+      width: 4rem;
+      height: 1.75rem;
+    }
+    .k-ticket__fields {
+      grid-template-columns: repeat(2, auto);
+      justify-content: start;
+      column-gap: 2rem;
+    }
+    .k-ticket__arrow {
+      width: 1.75rem;
+    }
+    .k-route {
+      font-size: 0.625rem;
+    }
+  }
+
+  /* Phone-narrow ticket (about 320 px screens): From and To stack, the arrow
+     goes, and the stub keeps only what fits on one line. */
+  @container ticket (max-width: 21rem) {
+    .k-ticket__trip {
+      flex-direction: column;
+      gap: 0.85rem;
+    }
+    .k-ticket__trip > div,
+    .k-ticket__trip > div:last-child {
+      flex: none;
+      width: 100%;
+      text-align: start;
+    }
+    .k-ticket__arrow {
+      display: none;
+    }
+    .k-ticket__big {
+      font-size: 1.375rem;
+    }
+    .k-route {
+      font-size: 0.5625rem;
+      letter-spacing: 0.02em;
+    }
+    .k-ticket__fields {
+      column-gap: 1.5rem;
+    }
+    .k-ticket__stub {
+      padding: 0 0.9rem;
+    }
+    .k-ticket__serial {
+      display: none;
+    }
+  }
+
+  @media (max-width: 40rem) {
+    .k-ticket {
+      transform: none !important;
+    }
+  }
+
+  @keyframes k-ticket-in {
+    from {
+      opacity: 0;
+      transform: translateY(18px);
+    }
+  }
+
+  @keyframes k-route-fill {
+    from {
+      transform: scaleX(0);
+    }
+  }
+
+  @keyframes k-station {
+    from {
+      transform: scale(0.2);
+      border-color: var(--k-line-strong);
+    }
+  }
+
+  @keyframes k-stamp {
+    from {
+      opacity: 0;
+      transform: rotate(-12deg) scale(1.8);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .k-ticket-wrap,
+    .k-route::after,
+    .k-route li::before,
+    .k-ticket__stamp {
+      animation: none;
+    }
+  }
+</style>

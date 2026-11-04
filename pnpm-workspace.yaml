@@ -2,6 +2,7 @@ packages:
   - packages/*
   - apps/*
   - sdk/node
+  - site
 
 autoInstallPeers: false
 

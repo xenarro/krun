@@ -8,3 +8,10 @@ __pycache__/
 .ruff_cache/
 coverage/
 .cache/
+
+# Documentation site (site/): Astro caches, generated mirrors and copied brand files
+site/.astro/
+site/src/content/docs/reference/generated/
+site/public/favicon.svg
+site/public/apple-touch-icon.png
+site/public/og-image.png

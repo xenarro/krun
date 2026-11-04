@@ -1,0 +1,286 @@
+---
+/**
+ * Install from a source checkout (README.md, "Quick start"), the measured
+ * numbers with their caveats (README.md, measured sections), and the planned
+ * publication identities (PLAN.md P9.5, unchecked).
+ */
+import { Code } from "@astrojs/starlight/components";
+import { blob } from "../../lib/links";
+
+const quickstart = `git clone https://github.com/xenarro/krun.git
+cd krun
+pnpm install --frozen-lockfile
+make build
+make e2e-quickstart`;
+
+const prerequisites = [
+  "Node.js 26",
+  "pnpm",
+  "Helm 4",
+  "kind",
+  "kubectl",
+  "Docker",
+  "npm",
+  "GNU timeout",
+  "uv",
+];
+
+const measured = [
+  { label: "Quickstart, embedded", value: "325.989 s", note: "fresh cluster to cleanup" },
+  { label: "Quickstart, Postgres", value: "291.738 s", note: "fresh cluster to cleanup" },
+  { label: "Submit to RUNNING, p50", value: "2.414 s", note: "embedded · 1.433 s Postgres" },
+  { label: "Exit to FAILED, p95", value: "11.345 s", note: "embedded, above the 10 s target" },
+];
+
+const planned = [
+  "Signed image ghcr.io/xenarro/krun with an SBOM",
+  "OCI Helm chart oci://ghcr.io/xenarro/charts/krun",
+  "@krun/sdk and @krun/cli on npm",
+  "The Python SDK on PyPI",
+  "A v0.1.0 tag and GitHub release",
+];
+---
+
+<div class="k-install">
+  <div class="k-install__main">
+    <Code code={quickstart} lang="sh" title="Rehearse on kind" />
+    <p class="k-install__lede">
+      <code>make e2e-quickstart</code> starts a fresh kind cluster per database mode, installs the real
+      Helm chart with the locally built image, runs <code>krun init</code> and <code>krun deploy</code>,
+      submits a real run and checks the result is <code>{"{"} "rows": 42 {"}"}</code>, then removes
+      what it created. It uses only its own <code>kind-krun-test-e2e</code> context, never your
+      ambient one.
+    </p>
+    <ul class="k-install__prereqs" aria-label="Prerequisites">
+      {prerequisites.map((tool) => <li>{tool}</li>)}
+    </ul>
+    <p class="k-install__fine">
+      Needs Kubernetes 1.33 or newer with a CNI that enforces NetworkPolicy for real clusters. On an
+      operated platform, the platform team installs the chart from source and hands you a namespace,
+      a registry prefix, the API URL and a key.
+    </p>
+  </div>
+
+  <aside class="k-install__side not-content">
+    <section class="k-measured" aria-labelledby="k-measured-title">
+      <h3 id="k-measured-title">Measured, not promised</h3>
+      <dl>
+        {
+          measured.map((item) => (
+            <div>
+              <dt>{item.label}</dt>
+              <dd>
+                <span class="value">{item.value}</span>
+                <span class="note">{item.note}</span>
+              </dd>
+            </div>
+          ))
+        }
+      </dl>
+      <p>
+        Local kind runs (benchmark 2026-11-03 under a 10-client closed loop, quickstart
+        2026-11-04), warm caches. Not a hosted CI result, a cold-cache guarantee or a capacity
+        claim.{" "}
+        <a href={blob("README.md#measured-native-job-benchmark-p93")}>Method and caveats</a>
+      </p>
+    </section>
+
+    <section class="k-planned" aria-labelledby="k-planned-title">
+      <h3 id="k-planned-title"><span class="k-planned__chip">Planned</span> Not published yet</h3>
+      <ul>
+        {planned.map((item) => <li>{item}</li>)}
+      </ul>
+      <p>
+        Release v0.1.0 is prepared and rehearsed without publishing. It waits on owner-verified
+        registry ownership. Until then, do not install these names from public registries.
+      </p>
+    </section>
+  </aside>
+</div>
+
+<style>
+  .k-install {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+    gap: clamp(1.5rem, 4vw, 3rem);
+    align-items: start;
+  }
+
+  @media (max-width: 60rem) {
+    .k-install {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  .k-install__lede {
+    margin-top: 1.25rem;
+  }
+
+  .k-install__lede code {
+    white-space: nowrap;
+  }
+
+  .k-install__prereqs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: 1.25rem 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .k-install__prereqs li {
+    margin: 0;
+    padding: 0.25rem 0.7rem;
+    border: 1px solid var(--k-line-strong);
+    border-radius: var(--k-radius-pill);
+    font-family: var(--k-font-mono);
+    font-size: var(--k-step--2);
+    font-weight: 600;
+    color: var(--k-text);
+  }
+
+  .k-install__fine {
+    font-size: var(--k-step--1);
+    color: var(--k-text-muted);
+  }
+
+  .k-install__side {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .k-measured,
+  .k-planned {
+    padding: 1.4rem 1.4rem 1.5rem;
+    border-radius: var(--k-radius-l);
+  }
+
+  .k-measured {
+    border: 1px solid var(--k-line);
+    background: var(--k-board);
+    color: var(--k-on-board);
+  }
+
+  .k-measured h3,
+  .k-planned h3 {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin: 0 0 1rem;
+    font-size: var(--k-step-1);
+    font-weight: 760;
+  }
+
+  .k-measured h3 {
+    color: var(--k-paper-50);
+  }
+
+  .k-measured dl {
+    display: grid;
+    gap: 0.75rem;
+    margin: 0;
+  }
+
+  .k-measured dl div {
+    display: grid;
+    gap: 0.1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px dashed rgb(255 255 255 / 0.14);
+  }
+
+  .k-measured dt {
+    font-family: var(--k-font-mono);
+    font-size: var(--k-step--2);
+    font-weight: 600;
+    letter-spacing: var(--k-tracking-label);
+    text-transform: uppercase;
+    color: var(--k-on-board-muted);
+  }
+
+  .k-measured dd {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.25rem 0.75rem;
+    margin: 0;
+  }
+
+  .k-measured .value {
+    font-family: var(--k-font-mono);
+    font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--k-volt-400);
+  }
+
+  .k-measured .note {
+    font-size: var(--k-step--1);
+    color: var(--k-on-board-muted);
+  }
+
+  .k-measured p {
+    margin: 1rem 0 0;
+    font-size: var(--k-step--1);
+    color: var(--k-on-board-muted);
+  }
+
+  .k-measured a {
+    color: var(--k-signal-300);
+    font-weight: 650;
+  }
+
+  .k-planned {
+    border: 2px dashed var(--k-line-strong);
+  }
+
+  .k-planned h3 {
+    color: var(--k-text-strong);
+  }
+
+  .k-planned__chip {
+    padding: 0.2rem 0.6rem;
+    border-radius: var(--k-radius-pill);
+    background: var(--k-bg-sunken);
+    border: 1px solid var(--k-line-strong);
+    font-family: var(--k-font-mono);
+    font-size: var(--k-step--2);
+    font-weight: 700;
+    letter-spacing: var(--k-tracking-label);
+    text-transform: uppercase;
+    color: var(--k-state-cancelling);
+  }
+
+  .k-planned ul {
+    display: grid;
+    gap: 0.45rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .k-planned li {
+    position: relative;
+    margin: 0;
+    padding-inline-start: 1.35rem;
+    font-size: 0.9375rem;
+    color: var(--k-text);
+  }
+
+  .k-planned li::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0.5em;
+    width: 0.6rem;
+    height: 0.6rem;
+    border-radius: 50%;
+    border: 2px dashed var(--k-text-muted);
+  }
+
+  .k-planned p {
+    margin: 1rem 0 0;
+    font-size: var(--k-step--1);
+    color: var(--k-text-muted);
+  }
+</style>

@@ -1,0 +1,206 @@
+---
+/**
+ * The minimal working example, adapted from what `krun init reports-demo`
+ * generates (packages/cli/templates: the editor-schema comment is dropped and
+ * one explanatory comment added) and the create/read calls of docs/API.md.
+ */
+import { Code, TabItem, Tabs } from "@astrojs/starlight/components";
+
+const functionYaml = `apiVersion: krun.io/v1alpha1
+kind: Function
+metadata:
+  name: "reports-demo"
+spec:
+  # krun deploy replaces this with <registry>/reports-demo@sha256:...
+  image: REPLACE_WITH_DIGEST
+  inputSchema:
+    type: object
+    required: [name]
+    properties:
+      name:
+        type: string
+        minLength: 1
+    additionalProperties: false
+  heartbeatTimeout: 5m`;
+
+const nodeHandler = `import { pathToFileURL } from "node:url";
+import { run } from "@krun/sdk";
+
+export async function handle(input, ctx) {
+  await ctx.status("loading", 0.1);
+  return { rows: 42 };
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  run(handle);
+}`;
+
+const pythonHandler = `from krun import run
+
+
+def handle(input, ctx):
+    ctx.status("loading", 0.1)
+    return {"rows": 42}
+
+
+if __name__ == "__main__":
+    run(handle)`;
+
+const create = `curl -sS --fail-with-body -X POST \\
+  "$KRUN_API_URL/v1/functions/reports-demo/runs?wait=30s" \\
+  -H "Authorization: Bearer $KRUN_API_KEY" \\
+  -H 'Content-Type: application/json' \\
+  -d '{"input":{"name":"reports-demo"}}' | tee run.json`;
+
+const read = `RUN_NAME=$(jq -r .name run.json)
+curl -sS --fail-with-body "$KRUN_API_URL/v1/\${RUN_NAME}" \\
+  -H "Authorization: Bearer $KRUN_API_KEY"`;
+
+const local = `printf '%s\\n' '{"name":"world"}' | node handler.js`;
+---
+
+<div class="k-example">
+  <div class="k-example__code">
+    <Tabs>
+      <TabItem label="Function">
+        <Code code={functionYaml} lang="yaml" title="function.yaml" />
+      </TabItem>
+      <TabItem label="Node.js">
+        <Code code={nodeHandler} lang="js" title="handler.js" />
+      </TabItem>
+      <TabItem label="Python">
+        <Code code={pythonHandler} lang="python" title="handler.py" />
+      </TabItem>
+      <TabItem label="Call">
+        <Code code={create} lang="sh" title="Create a run, waiting up to 30 s" />
+        <p class="k-example__between">
+          The response is the run. Its <code>name</code>, such as
+          <code>functions/reports-demo/runs/019a…</code>, is the handle for every later call:
+        </p>
+        <Code code={read} lang="sh" title="Read it back" />
+      </TabItem>
+    </Tabs>
+  </div>
+  <ol class="k-example__notes not-content">
+    <li>
+      <strong>Describe it.</strong> A <code>Function</code> is a Kubernetes resource
+      (<code>functions.krun.io</code>, short name <code>kfn</code>): a digest-pinned image and the
+      JSON Schema its input must match. Tags are rejected.
+    </li>
+    <li>
+      <strong>Write the handler.</strong> <code>run(handle)</code> fetches the input, calls you, and
+      stores whatever you return. Try it locally first:
+      <Code code={local} lang="sh" frame="none" />
+    </li>
+    <li>
+      <strong>Ship it.</strong> <code>krun deploy</code> builds and pushes the image, pins its digest
+      into <code>function.yaml</code>, validates it, applies it, and waits up to 120 seconds for
+      <code>Ready=True</code>.
+    </li>
+    <li>
+      <strong>Call it.</strong> The starter returns <code>{"{"} "rows": 42 {"}"}</code>. A
+      <code>wait</code> of 30 seconds returns early when the run finishes; otherwise poll it by name.
+    </li>
+  </ol>
+</div>
+
+<style>
+  .k-example {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+    gap: clamp(1.5rem, 4vw, 3rem);
+    align-items: start;
+  }
+
+  @media (max-width: 60rem) {
+    .k-example {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  .k-example__code :global(starlight-tabs) {
+    margin: 0;
+  }
+
+  .k-example__between {
+    margin: 1rem 0;
+    font-size: var(--k-step--1);
+    color: var(--k-text-muted);
+  }
+
+  .k-example__between code {
+    font-size: 0.9em;
+  }
+
+  .k-example__notes {
+    display: grid;
+    gap: 1.25rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    counter-reset: note;
+  }
+
+  .k-example__notes li {
+    position: relative;
+    margin: 0;
+    padding-inline-start: 2.75rem;
+    color: var(--k-text-muted);
+    counter-increment: note;
+  }
+
+  .k-example__notes li::before {
+    content: counter(note);
+    position: absolute;
+    left: 0;
+    top: 0;
+    display: grid;
+    place-items: center;
+    width: 1.85rem;
+    height: 1.85rem;
+    border-radius: 50%;
+    background: var(--k-signal);
+    color: var(--k-on-signal);
+    font-family: var(--k-font-mono);
+    font-size: 0.75rem;
+    font-weight: 700;
+  }
+
+  .k-example__notes li:not(:last-child)::after {
+    content: "";
+    position: absolute;
+    left: calc(0.925rem - 0.1rem);
+    top: 2.1rem;
+    bottom: -1.1rem;
+    width: 0.2rem;
+    border-radius: var(--k-radius-pill);
+    background: var(--k-line-strong);
+  }
+
+  .k-example__notes strong {
+    display: block;
+    margin-bottom: 0.2rem;
+    color: var(--k-text-strong);
+    font-size: var(--k-step-1);
+    font-weight: 760;
+  }
+
+  .k-example__notes code {
+    white-space: nowrap;
+    font-family: var(--k-font-mono);
+    font-size: 0.85em;
+    padding: 0.08em 0.35em;
+    border-radius: var(--k-radius-xs);
+    background: var(--sl-color-bg-inline-code);
+    color: var(--k-text);
+  }
+
+  .k-example__notes :global(.expressive-code) {
+    margin-top: 0.6rem;
+  }
+
+  .k-example__notes :global(.expressive-code code) {
+    padding: 0;
+    background: none;
+  }
+</style>
