@@ -159,7 +159,7 @@ Rule names match `metrics.prometheusRule` in the chart.
 | `KrunJobLost` | Jobs vanish before krun records them | scheduler downtime vs `config.ttlAfterFinished`; someone deleting Jobs in the jobs namespace; node loss |
 | `KrunHeartbeatTimeouts` | functions stop reporting | the run's `error` and `logTail` via `GetRun`; whether `heartbeatTimeout` is shorter than the work it protects |
 | `KrunDeliveriesDead` | a webhook endpoint failed for about 15 hours | receiver availability; `webhooks.allowedHosts` and `allowedCIDRs`; DNS; signature verification on the receiver |
-| `KrunQuotaRejections` | ResourceQuota or LimitRange refusing Jobs | `kubectl describe quota -n krun-jobs`; function requests vs `limitRange.max` |
+| `KrunQuotaRejections` | a ResourceQuota refusing krun's Secret or Job creates (403 "exceeded quota"; the run stays queued); other admission rejections fail the run with `JOB_CREATE_FAILED` instead | `kubectl describe quota -n krun-jobs`; function requests vs `limitRange.max` |
 | `KrunQueueWaitHigh` | runs wait too long | free slots per function (`krun_runs_current`); `config.maxRunning`; cluster capacity; cold start |
 
 Useful queries: `krun_runs_current` by state and function;
