@@ -1,8 +1,8 @@
 # Operating krun
 
 For the platform team. SPEC.md sections 9, 11 and 13 define the behaviour
-this document explains. Numbers marked "measured" are filled in at PLAN
-P9.3.
+this document explains. Native Job benchmark numbers are measured at PLAN
+P9.3; embedded restore measurements are recorded at P9.6.
 
 ## Install and upgrade
 
@@ -173,6 +173,12 @@ Useful queries: `krun_runs_current` by state and function;
 (permanent 4xx means a broken Function spec or RBAC, 5xx means the API
 server).
 
+Run `node scripts/check-operations-alerts.ts` to compare this complete table
+with the actual rendered PrometheusRule in both database modes. The check
+fails on missing, undocumented, duplicate or malformed rule evidence and
+runs in the normal `make check` tooling tests. It does not test live alert
+firing or replace the operator first checks above.
+
 ## Logs of a run
 
 `kubectl logs -f -n krun-jobs job/krun-<id>` works only while the run is
@@ -197,6 +203,57 @@ in-flight case.
   P9.6). Run the drill before relying on it.
 - Embedded mode without Litestream: the PVC is the only copy; snapshot it
   with the storage class or enable Litestream.
+
+### Measured embedded restore drill (P9.6)
+
+The local unfiltered embedded-mode e2e corpus on 2026-11-04 passed all
+22 scenarios, including the actual embedded Litestream restore. Run
+`make e2e` to exercise the scenario corpus through the owned disposable
+foundation; do not point the fixtures at an operated or production cluster.
+These are local recovery measurements, not publication acceptance or a
+production recovery-time guarantee.
+
+The drill uses real MinIO and digest-pinned Litestream 0.3.13, not
+mocked S3 replies. A test-only native loopback TCP transport adapts that
+version's localhost/path-style S3 URL to the owned MinIO Service without
+changing chart options or network policy. It does not qualify other
+Litestream versions or demonstrate production registry/namespace ownership.
+
+1. Complete a Run before enabling replication. Restore the actual replica to
+   a separate temporary database and query that pre-drill Run there before
+   deleting primary data. Replica existence alone is insufficient evidence.
+2. Stop the exact owned embedded StatefulSet and positively observe its Pod
+   absent. A restricted helper mounts only its existing data PVC, verifies
+   regular database files, removes the primary DB/WAL/SHM, and leaves deliberate
+   orphan WAL/SHM witnesses to exercise the chart's restore-init cleanup.
+3. Confirm the removal witness and remove the helper before restarting the
+   StatefulSet. Require a new serving Pod UID and public API readiness after
+   the chart's actual restore init and migrations.
+4. Restore and compare the exact original Pod template, remove the dedicated
+   test Secret, read the retained pre-drill Run through the API unchanged, and
+   complete another Run. Keep inputs, outputs and credentials out of logs.
+
+Fixture cleanup is part of acceptance, not a best-effort restart. Each
+recovery Secret and helper Pod carries a fresh invocation identity. Cleanup
+reconciles lost create acknowledgements, verifies ownership and deletes with
+an API UID precondition; it never adopts a colliding resource. The workload
+stays stopped if helper absence cannot be positively established, including
+an unresolved create outcome. No scale-up or Helm rollback is allowed in
+that state. Reconcile the exact helper identity and confirm removal before
+manually restarting; do not delete an unrelated colliding resource.
+
+| Embedded e2e segment | Seconds | Measurement boundary |
+|---|---:|---|
+| Independent replica readability | 1.536 | Ready replication workload to a successful separate S3 restore and SQLite Run query |
+| Restore-to-Ready downtime | 56.040 | Scale-to-zero request through positive removal, restart, new Pod UID and public API readiness |
+| Fixture drill lifecycle | 138.997 | Enable replication through exact original-template restoration and helper/Secret cleanup |
+
+Restore-to-Ready is below the default 24-hour finished-Job TTL. API Run
+readback and a successful new Run were separately asserted after restoration
+and fixture cleanup; their latency is not included in the downtime row.
+This is database-file loss on the retained PVC, not complete PVC loss or an
+etcd snapshot/restore rehearsal. Repeat the recovery procedure with the
+operated storage, pinned image and backup policy before relying on its RPO/RTO.
 
 ## Telemetry
 
