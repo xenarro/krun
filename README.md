@@ -38,6 +38,28 @@ The [chart reference](deploy/helm/krun/README.md) lists every value.
 Historical implementation receipts moved unchanged to
 [DEVELOPMENT-HISTORY.md](DEVELOPMENT-HISTORY.md); they are not current status claims.
 
+## Release preparation (not publication)
+
+The [release guide](docs/RELEASE.md) documents a credential-free rehearsal that
+stamps a private snapshot, builds and installs the real Node/Python/CLI/chart
+artifacts, checks all SDK export modes, and verifies a non-root image archive.
+Publisher preflight rejects extra or non-regular inputs, selects only exact
+verified Python paths, and checks canonical npm provenance repository metadata.
+The rehearsal does not modify this checkout or publish anything:
+
+```sh
+node scripts/release-dry-run.ts 97
+```
+
+Version 0.1.0 is prepared, not released. `release-ownership.json` remains
+unverified and the publication gate fails closed. npm/PyPI/GHCR control and exact
+trusted-publisher bindings require owner evidence; public package existence,
+local tests and Git push access do not prove them. The
+[release-PR rehearsal](https://github.com/xenarro/krun/actions/runs/41788170398) passed for source
+`044a6280bf22ad55cdc422135d689069c064e852`, verifying all six distribution artifacts
+and clean installs without publication. Owner-created tags, post-publication
+installs/signatures and the remaining Phase 9 operational gate are not claimed.
+
 ## Quick start: both database modes on disposable kind
 
 This is a source-checkout rehearsal, not a production installer. It uses only

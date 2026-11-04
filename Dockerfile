@@ -16,6 +16,7 @@ RUN node -e "require('node:assert/strict').equal(process.version, 'v' + require(
 FROM manifests AS build
 RUN pnpm install --frozen-lockfile
 COPY tsconfig.base.json ./
+COPY scripts/build-sdk-cjs.ts ./scripts/build-sdk-cjs.ts
 COPY packages/ ./packages/
 COPY sdk/node/ ./sdk/node/
 COPY apps/ ./apps/
@@ -32,6 +33,7 @@ ENV NODE_ENV=production
 ARG KRUN_VERSION=0.0.0
 ARG KRUN_COMMIT=unknown
 LABEL org.opencontainers.image.title="krun" \
+      org.opencontainers.image.source="https://github.com/xenarro/krun" \
       org.opencontainers.image.version="${KRUN_VERSION}" \
       org.opencontainers.image.revision="${KRUN_COMMIT}"
 COPY --from=production-dependencies /app/node_modules ./node_modules

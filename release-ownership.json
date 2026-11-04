@@ -1,0 +1,11 @@
+{
+  "repository": "xenarro/krun",
+  "workflow": "release.yml",
+  "environment": "release",
+  "npmPackages": ["@krun/sdk", "@krun/cli"],
+  "pypiProject": "krun",
+  "image": "ghcr.io/xenarro/krun",
+  "chart": "oci://ghcr.io/xenarro/charts/krun",
+  "verifiedByOwner": false,
+  "evidence": []
+}
