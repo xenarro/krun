@@ -1,15 +1,16 @@
 ---
 title: Contributing
-description: Set up the toolchain, run the checks, follow the commit and branch conventions and the spec-first decision process, and preview this site locally.
+description: Set up the toolchain, run the checks, follow the commit and pull request conventions, and preview this site locally.
 sidebar:
   order: 1
 ---
 
-krun is developed spec-first. [SPEC.md](https://github.com/xenarro/krun/blob/main/SPEC.md)
-is the source of truth for behavior,
-[PLAN.md](https://github.com/xenarro/krun/blob/main/PLAN.md) holds the build order,
-and [docs/STACK.md](https://github.com/xenarro/krun/blob/main/docs/STACK.md) lists every
-approved library. Read them before changing behavior.
+Contributions arrive as pull requests to `main`. Run `make check` before every commit
+and include tests with every change in behavior. The
+[public API](/krun/reference/generated/public-api/), the
+[internal API](/krun/reference/generated/internal-api/) and the
+[architecture](/krun/reference/architecture/) describe what callers and function
+containers rely on; start there before changing behavior.
 
 :::note
 A license has not been published yet, so the terms for contributions are not defined.
@@ -68,31 +69,18 @@ or untracked output. Change their sources, regenerate, and commit both:
 - `deploy/helm/krun/README.md`, from `README.md.gotmpl` and `values.yaml` through
   helm-docs 1.14.2. Never edit it by hand.
 
-## Commits and branches
+## Commits and pull requests
 
 - **Conventional Commits** for every commit, pull request title and squash merge:
   `<type>(<optional-scope>): <short-imperative-description>`, for example
   `feat(store): claim query with lease`. Mark breaking changes with `!` and a
   `BREAKING CHANGE:` footer.
-- **Branch names** follow `<type>/<short-kebab-case-description>`, using `feat/`,
-  `fix/`, `docs/`, `refactor/`, `test/`, `chore/`, `build/`, `ci/` or `perf/`, for
-  example `feat/admin-health-telemetry`. Do not use bare task-id branch names.
-- Open a pull request to `main` and merge it when CI is green. Never push to `main`
-  directly; auto-merge is not enabled. Only the owner creates `v*` tags.
+- **Tests with every change.** Add or update tests alongside any change in behavior;
+  `make check` runs the TypeScript and Python suites, and CI runs the native kind
+  scenarios as well.
+- Open a pull request to `main`; it merges when CI is green. Only the owner creates
+  `v*` tags.
 - Never commit secrets. Tests generate their own keys.
-
-## The decision process
-
-- A change that contradicts SPEC.md needs its row in SPEC.md section 15 (Decisions)
-  added or rewritten first, then the code. The table holds only the decisions in
-  force; history lives in git.
-- A new dependency needs a Decisions row with a one-line reason and an entry in
-  docs/STACK.md before it is added.
-- Never build anything SPEC.md section 1 lists as a non-goal, and add no options,
-  flags or abstractions that no task asks for. Anything not in SPEC.md is out of
-  scope until a Decisions row adds it.
-- Some decisions belong to the owner only: published package names, the public API
-  shape, the security policy in SPEC.md section 9 and the non-goals.
 
 ## CI
 

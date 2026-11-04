@@ -1,6 +1,6 @@
 ---
 /** Releases, contribution and license status, stated exactly as the repository does. */
-import { blob, repository } from "../../lib/links";
+import { blob, repository, withBase } from "../../lib/links";
 import KIcon from "../KIcon.astro";
 
 const stubs = [
@@ -17,10 +17,10 @@ const stubs = [
   {
     icon: "branch",
     label: "Contribute",
-    title: "Spec first, then code",
-    body: "SPEC.md is the source of truth; a change that contradicts it starts with a Decisions row. Run make check before every commit, use Conventional Commits, and open a pull request to main.",
+    title: "Checked, then merged",
+    body: "Run make check before every commit and add tests with every change in behavior. Use Conventional Commits and open a pull request to main; it merges when CI is green.",
     links: [
-      { text: "Read SPEC.md", href: blob("SPEC.md") },
+      { text: "Contributing guide", href: withBase("project/contributing/") },
       { text: "Open an issue", href: `${repository}/issues` },
     ],
   },
@@ -48,7 +48,7 @@ const stubs = [
           {stub.links.map((link) => (
             <a href={link.href}>
               {link.text}
-              <KIcon name="external" size={16} />
+              {link.href.startsWith("https://") && <KIcon name="external" size={16} />}
             </a>
           ))}
         </p>

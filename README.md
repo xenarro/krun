@@ -15,9 +15,9 @@ and classified failures without giving callers Kubernetes credentials.
 
 [![CI status](https://img.shields.io/github/actions/workflow/status/xenarro/krun/ci.yml?branch=main&style=flat-square&label=CI&labelColor=2E2B38)](https://github.com/xenarro/krun/actions/workflows/ci.yml)
 [![Pages deployment status](https://img.shields.io/github/actions/workflow/status/xenarro/krun/pages.yml?branch=main&style=flat-square&label=pages&labelColor=2E2B38)](https://github.com/xenarro/krun/actions/workflows/pages.yml)
-[![Node.js 26](https://img.shields.io/badge/Node.js-26-FF5A1F?style=flat-square&labelColor=2E2B38)](docs/STACK.md)
-[![TypeScript 7](https://img.shields.io/badge/TypeScript-7-FF5A1F?style=flat-square&labelColor=2E2B38)](docs/STACK.md)
-[![Effect 4](https://img.shields.io/badge/Effect-4-FF5A1F?style=flat-square&labelColor=2E2B38)](docs/STACK.md)
+[![Node.js 26](https://img.shields.io/badge/Node.js-26-FF5A1F?style=flat-square&labelColor=2E2B38)](https://xenarro.github.io/krun/reference/architecture/#technology)
+[![TypeScript 7](https://img.shields.io/badge/TypeScript-7-FF5A1F?style=flat-square&labelColor=2E2B38)](https://xenarro.github.io/krun/reference/architecture/#technology)
+[![Effect 4](https://img.shields.io/badge/Effect-4-FF5A1F?style=flat-square&labelColor=2E2B38)](https://xenarro.github.io/krun/reference/architecture/#technology)
 [![Kubernetes 1.33+](https://img.shields.io/badge/Kubernetes-1.33%2B-FF5A1F?style=flat-square&labelColor=2E2B38)](deploy/helm/krun/README.md)
 [![Helm 4](https://img.shields.io/badge/Helm-4-FF5A1F?style=flat-square&labelColor=2E2B38)](deploy/helm/krun/README.md)
 [![Documentation site](https://img.shields.io/badge/docs-xenarro.github.io%2Fkrun-D4F53C?style=flat-square&labelColor=2E2B38)](https://xenarro.github.io/krun/)
@@ -217,8 +217,7 @@ flowchart TB
 - 🚪 **Ports:** public 8080, internal 8081, admin 9090 on both processes (`/healthz`,
   `/readyz`, `/metrics`); the embedded scheduler's admin port is 9091.
 
-📖 Deep dive: [Architecture on the docs site](https://xenarro.github.io/krun/reference/architecture/)
-and [SPEC.md](SPEC.md) section 2.
+📖 Deep dive: [Architecture on the docs site](https://xenarro.github.io/krun/reference/architecture/).
 
 ## How it works 🚉
 
@@ -301,14 +300,11 @@ scheduling and image pull.
 - Not a Kubernetes replacement or an SDK-only local gateway emulator. SDK local
   mode runs a handler once without network access.
 - Not an assertion that package names, OCI artifacts or a release are published.
-  P0.9/P9.5 publication prerequisites and release acceptance remain separate.
+  See the [release guide](docs/RELEASE.md) for publication prerequisites.
 
-The normative design and boundaries are [SPEC.md](SPEC.md), the
-[public API](docs/API.md), [internal API](docs/INTERNAL-API.md),
-[stack](docs/STACK.md) and [operations guide](docs/OPERATIONS.md).
+See the [public API](docs/API.md), [internal API](docs/INTERNAL-API.md)
+and [operations guide](docs/OPERATIONS.md) for usage and deployment details.
 The [chart reference](deploy/helm/krun/README.md) lists every value.
-Historical implementation receipts moved unchanged to
-[DEVELOPMENT-HISTORY.md](DEVELOPMENT-HISTORY.md); they are not current status claims.
 
 ## Quickstart 🚀
 
@@ -699,22 +695,12 @@ for the measurement boundaries and production RPO/RTO limitations.
 `node scripts/check-operations-alerts.ts` checks every documented alert name
 against the real PrometheusRule rendered in both modes.
 
-The P9.6 source snapshot in [PR #100](https://github.com/xenarro/krun/pull/100)
-passed [hosted CI](https://github.com/xenarro/krun/actions/runs/41870385177)
-with all 44 native scenarios, the
-[both-mode fresh quickstarts](https://github.com/xenarro/krun/actions/runs/41870385406)
-and the [release dry-run](https://github.com/xenarro/krun/actions/runs/41870385456).
-This verifies the listed Phase 9 rehearsal gates, not full Phase 9 or v1
-completion: P9.5 registry ownership and publication remain owner-blocked.
-Protected-main independent review and merge are separate from pushed-source
-qualification; no auto-merge is enabled.
-
 For durable installs, capacity, backup/restore, upgrades, key rotation, telemetry,
 alerts, object-store lifecycle and keep/adoption consequences, read
-[OPERATIONS](docs/OPERATIONS.md). The Phase 9 release dry-run/publication gate
-remains separate from quickstart and benchmark qualification.
+[OPERATIONS](docs/OPERATIONS.md). Release rehearsal and publication verification
+remain separate from quickstart and benchmark qualification.
 
-## Measured native Job benchmark (P9.3)
+## Measured native Job benchmark
 
 Measured 2026-11-03 on local kind (not a CI runner): one Kubernetes 1.37.0
 control-plane node, Node 26.7.0, AMD Ryzen 7 5700X 8-Core Processor
@@ -784,8 +770,8 @@ change the benchmark and on demand, with least-privilege permissions and
 always-run owned cluster cleanup. Hosted results remain a separate exact-head
 delivery gate; these local numbers are not attributed to GitHub Actions.
 
-No Phase 9 release gate, publication or production capacity guarantee is
-claimed by this measurement.
+No publication or production capacity guarantee is claimed by this
+measurement.
 
 ## Release preparation (not publication)
 
@@ -800,14 +786,13 @@ The rehearsal does not modify this checkout or publish anything:
 node scripts/release-dry-run.ts 97
 ```
 
-Version 0.1.0 is prepared, not released. `release-ownership.json` remains
+Version 0.1.0 is prepared, not published. `release-ownership.json` remains
 unverified and the publication gate fails closed. npm/PyPI/GHCR control and exact
 trusted-publisher bindings require owner evidence; public package existence,
-local tests and Git push access do not prove them. The
-[release-PR rehearsal](https://github.com/xenarro/krun/actions/runs/41788170398) passed for source
-`044a6280bf22ad55cdc422135d689069c064e852`, verifying all six distribution artifacts
-and clean installs without publication. Owner-created tags, post-publication
-installs/signatures and the remaining Phase 9 operational gate are not claimed.
+local tests and Git push access do not prove them. Publication is owner-gated:
+the owner creates the release tag only after supplying the evidence the release
+guide lists. Use source-checkout artifacts until a release has been published and
+its signatures and clean installs verified.
 
 📖 What is planned and what is blocked: [Releases](https://xenarro.github.io/krun/project/releases/)
 and the [Roadmap](https://xenarro.github.io/krun/project/roadmap/).
@@ -819,15 +804,12 @@ one place. The repository files below are the sources it is built from.
 
 | Document | Read it for |
 |---|---|
-| [SPEC.md](SPEC.md) | The normative design: behavior, limits, non-goals and decisions. |
 | [docs/API.md](docs/API.md) | The public `/v1` API: every route, error, view and example. |
 | [docs/INTERNAL-API.md](docs/INTERNAL-API.md) | The contract between function containers and the gateway. |
 | [docs/OPERATIONS.md](docs/OPERATIONS.md) | Durable installs, capacity, backup/restore, upgrades, telemetry and alerts. |
 | [deploy/helm/krun/README.md](deploy/helm/krun/README.md) | The generated chart reference with every value. |
-| [docs/STACK.md](docs/STACK.md) | The approved runtime, libraries and tooling. |
-| [docs/PROBLEM.md](docs/PROBLEM.md) | Why krun exists, who it is for and its success criteria. |
 | [docs/RELEASE.md](docs/RELEASE.md) | The release boundary and the credential-free rehearsal. |
-| [PLAN.md](PLAN.md) and [CHANGELOG.md](CHANGELOG.md) | Build order, task status and changes. |
+| [CHANGELOG.md](CHANGELOG.md) | Notable changes and the prepared 0.1.0 release notes. |
 | [test/e2e/README.md](test/e2e/README.md) | Pinned tools and the disposable cluster harness. |
 | [sdk/node/README.md](sdk/node/README.md), [sdk/python/README.md](sdk/python/README.md) | The Node.js and Python SDK references. |
 
@@ -837,11 +819,12 @@ decodes `failureReason`, `logTail` and API or CLI errors, and
 
 ## Contributing 🤝
 
-PRs welcome! krun is built spec-first, so a little reading goes a long way.
+PRs welcome! A few conventions keep every change checked and reviewable.
 
-1. 📜 **Read the contract.** [SPEC.md](SPEC.md) is the source of truth for behavior,
-   [PLAN.md](PLAN.md) holds the build order and [docs/STACK.md](docs/STACK.md) lists every
-   approved library.
+1. 📜 **Know the contract.** The [public API](docs/API.md) and the
+   [internal API](docs/INTERNAL-API.md) describe what callers and function containers rely
+   on; the [architecture page](https://xenarro.github.io/krun/reference/architecture/)
+   shows how the pieces fit together.
 2. 🛠️ **Set up.** Node.js 26.7.0 (`.node-version`), pnpm 12.14.0 (`packageManager`) and uv;
    Docker, kind, Helm 4 and kubectl for the cluster suites (versions in
    [the e2e guide](test/e2e/README.md)).
@@ -852,15 +835,13 @@ PRs welcome! krun is built spec-first, so a little reading goes a long way.
    make check   # lint, types, TypeScript and Python tests, unused code: run before every commit
    ```
 
-3. 🏷️ **Follow the conventions.** [Conventional Commits](https://www.conventionalcommits.org/)
+3. 🧪 **Test what you change.** Add or update tests with every change in behavior.
+   `make check` runs the TypeScript and Python suites, and CI also runs the native kind
+   scenarios on every pull request.
+4. 🏷️ **Follow the conventions.** [Conventional Commits](https://www.conventionalcommits.org/)
    for every commit, PR title and squash merge, for example
-   `feat(store): claim query with lease`. Branches are `<type>/<short-kebab-case-description>`
-   with `feat/`, `fix/`, `docs/`, `refactor/`, `test/`, `chore/`, `build/`, `ci/` or `perf/`.
-   Open a pull request to `main`; it merges when CI is green. Nobody pushes to `main`
-   directly, and only the owner creates `v*` tags.
-4. 🧭 **Decide before you diverge.** A change that contradicts SPEC.md needs its section 15
-   Decisions row first. A new dependency also needs an entry in docs/STACK.md. Never build
-   anything SPEC.md section 1 lists as a non-goal.
+   `feat(store): claim query with lease`. Open a pull request to `main`; it merges when CI
+   is green. Only the owner creates `v*` tags.
 5. ♻️ **Regenerate, don't hand-edit.** The CRD, the editor JSON Schema, both OpenAPI documents
    and the chart README are generated. Change the source, run `make generate` and commit
    both; CI fails on drift.
@@ -894,7 +875,7 @@ the terms that apply to your use.
 
 **krun** · one request, one Job, one honest answer.
 
-[Docs](https://xenarro.github.io/krun/) · [Quickstart](#quickstart-) · [Issues](https://github.com/xenarro/krun/issues) · [Changelog](CHANGELOG.md) · [Spec](SPEC.md)
+[Docs](https://xenarro.github.io/krun/) · [Quickstart](#quickstart-) · [Issues](https://github.com/xenarro/krun/issues) · [Changelog](CHANGELOG.md) · [API](docs/API.md)
 
 <sub>One-way tickets only: <code>backoffLimit: 0</code>, no automatic retries.</sub>
 

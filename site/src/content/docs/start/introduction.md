@@ -16,7 +16,7 @@ create or update endpoints. Node.js and Python SDKs implement the small internal
 HTTP contract; any container with an HTTP client can implement it instead.
 
 :::caution[Project status]
-The feature phases in the build plan are implemented and tested, but **nothing has
+The platform, Helm chart, SDKs and CLI are implemented and tested, but **nothing has
 been published yet**: there is no tagged release, container image, OCI chart, npm
 package or PyPI package. Every installation path on this site works from a source
 checkout. See [Releases](/krun/project/releases/) and [Roadmap](/krun/project/roadmap/).

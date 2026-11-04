@@ -18,8 +18,8 @@ Version 0.1.0 is **prepared, not released**. The checked-in
 `release-ownership.json` is unverified, so the publication gate fails closed. The
 changelog records the 0.1.0 entry as "Prepared, not published".
 
-Publication is blocked on owner evidence, tracked as P0.9 and P9.5 in the
-[roadmap](/krun/project/roadmap/):
+Publication is owner-gated and blocked on owner evidence (see the
+[roadmap](/krun/project/roadmap/)):
 
 - control of the npm `@krun` scope for `@krun/sdk` and `@krun/cli`;
 - control of the PyPI project `krun`: a project with that name already exists (as of
@@ -65,9 +65,6 @@ RELEASE_VERSION=0.1.0 node scripts/release-dry-run.ts 97
 ```
 
 Pull requests run the same rehearsal as the read-only dry-run job in `release.yml`.
-The release-PR rehearsal
-[run 41788170398](https://github.com/xenarro/krun/actions/runs/41788170398) verified
-all six distribution artifacts and clean installs without publication.
 
 ## After publication
 

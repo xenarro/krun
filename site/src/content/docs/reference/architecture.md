@@ -208,6 +208,7 @@ admission policy.
 TypeScript on Node.js 26 with Effect 4, Fastify 5 for HTTP, Zod 4 for every schema,
 Kysely over `pg` and the built-in `node:sqlite`, `@kubernetes/client-node`, the AWS SDK
 v3 S3 client and OpenTelemetry. There are no native addons. The SDKs are TypeScript and
-Python without runtime dependencies. The normative design is
-[SPEC.md](https://github.com/xenarro/krun/blob/main/SPEC.md); the stack and its
-rationale are in [docs/STACK.md](https://github.com/xenarro/krun/blob/main/docs/STACK.md).
+Python without runtime dependencies. Dependency versions are declared in each
+package's `package.json` and locked in `pnpm-lock.yaml`; the HTTP contracts are the
+[public API](/krun/reference/generated/public-api/) and the
+[internal API](/krun/reference/generated/internal-api/).
