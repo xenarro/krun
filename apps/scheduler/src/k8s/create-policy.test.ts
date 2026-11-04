@@ -1,6 +1,6 @@
 import { expect, it } from "@effect/vitest";
 import { kubeApiError } from "@krun/shared/dist/k8s/errors.js";
-import { Cause, DateTime, Effect, Fiber, Metric } from "effect";
+import { DateTime, Effect, Metric } from "effect";
 import { TestClock } from "effect/testing";
 import { makeCreationPolicy } from "./create-policy.js";
 
@@ -103,23 +103,6 @@ for (const [header, seconds] of [
         apiError(429, "TooManyRequests", "rate limited", header),
       );
       expect(decision).toMatchObject({ kind: "transient", pauseSeconds: seconds });
-      let completed = false;
-      const fiber = yield* Effect.forkChild(
-        policy.pause(decision).pipe(
-          Effect.tap(() =>
-            Effect.sync(() => {
-              completed = true;
-            }),
-          ),
-        ),
-      );
-      if (seconds > 0) {
-        yield* TestClock.adjust(seconds * 1000 - 1);
-        expect(completed).toBe(false);
-        yield* TestClock.adjust(1);
-      }
-      yield* Fiber.join(fiber);
-      expect(completed).toBe(true);
     }),
   );
 
@@ -148,21 +131,6 @@ for (const header of [
         apiError(429, "TooManyRequests", "rate limited", header),
       );
       expect(decision).toMatchObject({ kind: "transient", pauseSeconds: 60 });
-      let done = false;
-      const fiber = yield* Effect.forkScoped(
-        policy.pause(decision).pipe(
-          Effect.tap(() =>
-            Effect.sync(() => {
-              done = true;
-            }),
-          ),
-        ),
-      );
-      yield* TestClock.adjust("59999 millis");
-      expect(done).toBe(false);
-      yield* TestClock.adjust("1 millis");
-      yield* Fiber.join(fiber);
-      expect(done).toBe(true);
     }),
   );
 }

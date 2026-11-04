@@ -11,6 +11,7 @@ import { toRunSummary } from "./mappers.js";
 import { failureReasons, type RunFilter, states } from "./model.js";
 import { requestIdStorage } from "./request-id.js";
 import { decodeRun, decodeSummaryRow } from "./rows.js";
+import { traced } from "./traced.js";
 
 const utc = z.custom<DateTime.Utc>((value) => DateTime.isDateTime(value) && DateTime.isUtc(value));
 const filterSchema = z.strictObject({
@@ -117,18 +118,6 @@ export const listRunsQuery = (
 };
 
 type Methods = Pick<StoreShape, "getRun" | "listRuns" | "findRunByRequestId">;
-const traced = <A, E>(method: keyof Methods, id: string | undefined, body: Effect.Effect<A, E>) =>
-  body.pipe(
-    Effect.uninterruptible,
-    Effect.withSpan(`store.${method}`, {
-      kind: "client",
-      attributes: {
-        "db.operation.name": method,
-        "db.response.returned_rows": 0,
-        ...(id === undefined ? {} : { "krun.run_id": id }),
-      },
-    }),
-  );
 
 // D45: compose real declared methods, not future-method placeholders.
 export const makeRunQueries = Effect.map(

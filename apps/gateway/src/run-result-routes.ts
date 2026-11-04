@@ -1,8 +1,9 @@
-import { NotFoundError } from "@krun/shared/dist/store/index.js";
+import { isTerminal } from "@krun/shared/dist/store/index.js";
 import { Effect } from "effect";
 import type { FastifyPluginAsync, FastifyReply } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { ApiError } from "./errors.js";
+import { visibleRun } from "./plugins.js";
 import { publicContracts, publicSchemas } from "./public-contracts.js";
 
 // P6.1 supplies the concrete scoped ObjectStore. Absence is configuration,
@@ -20,26 +21,8 @@ export const runResultRoutes =
           request,
           reply,
           Effect.gen(function* () {
-            const key = request.principal;
-            if (!key) return yield* new ApiError({ reason: "INTERNAL" });
-            const row = yield* app.store
-              .getRun(request.params.run)
-              .pipe(
-                Effect.mapError((error) =>
-                  error instanceof NotFoundError
-                    ? new ApiError({ reason: "RUN_NOT_FOUND" })
-                    : error,
-                ),
-              );
-            if (
-              (request.params.function !== "-" && request.params.function !== row.function_name) ||
-              !key.allowsFunction(row.function_name) ||
-              (!key.hasScope("admin") && row.created_by !== key.name)
-            )
-              return yield* new ApiError({ reason: "RUN_NOT_FOUND" });
-            Reflect.set(request, "audit", { run_id: row.id, function: row.function_name });
-            if (row.state !== "succeeded" && row.state !== "failed" && row.state !== "cancelled")
-              return yield* new ApiError({ reason: "RUN_NOT_TERMINAL" });
+            const row = yield* visibleRun(app.store, request);
+            if (!isTerminal(row.state)) return yield* new ApiError({ reason: "RUN_NOT_TERMINAL" });
             if (row.result !== null) {
               if (row.result_ref !== null) return yield* new ApiError({ reason: "INTERNAL" });
               const result = publicSchemas.Result.parse(row.result);

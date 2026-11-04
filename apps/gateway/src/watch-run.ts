@@ -1,11 +1,9 @@
-import { type Run, toRunSummary } from "@krun/shared/dist/store/index.js";
+import { isTerminal, type Run, toRunSummary } from "@krun/shared/dist/store/index.js";
 import { DateTime, Effect, Queue, Semaphore } from "effect";
 import type { FastifyReply } from "fastify";
 import { ApiError } from "./errors.js";
 import { publicSchemas } from "./public-contracts.js";
 
-const terminal = (state: Run["state"]) =>
-  state === "succeeded" || state === "failed" || state === "cancelled";
 const stateTime = (row: Run) => {
   switch (row.state) {
     case "queued":
@@ -111,7 +109,7 @@ export const watchRun = <E>(
       write(`event: ${kind}\nid: ${id}\ndata: ${JSON.stringify(value)}\n\n`);
     const stream = Effect.gen(function* () {
       yield* send("state", initialId, initial);
-      if (terminal(first.state)) return;
+      if (isTerminal(first.state)) return;
       let previous = first;
       const changes = Effect.gen(function* () {
         while (true) {
@@ -132,7 +130,7 @@ export const watchRun = <E>(
           if (row.state !== previous.state)
             yield* send("state", DateTime.formatIso(yield* stateTime(row)), value);
           previous = row;
-          if (terminal(row.state)) return;
+          if (isTerminal(row.state)) return;
         }
       });
       const keepalive = Effect.gen(function* () {

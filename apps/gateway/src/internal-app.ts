@@ -10,7 +10,7 @@ import Fastify, { type FastifyRequest } from "fastify";
 import { serializerCompiler, validatorCompiler } from "fastify-type-provider-zod";
 import { ApiError, errorEnvelope, sendError } from "./errors.js";
 import { internalContracts } from "./internal-contracts.js";
-import { requestRunner } from "./plugins.js";
+import { bearerToken, requestRunner } from "./plugins.js";
 
 // Separate instance and service context: no public key hooks/routes, no cache,
 // no admin handlers. Captures its owning Effect clock/logger/Store once.
@@ -145,12 +145,8 @@ export const makeInternalApp = (config: { readonly maxResultBytes: number }) =>
             request.params !== null && typeof request.params === "object"
               ? Reflect.get(request.params, "run")
               : undefined;
-          let fields = 0;
-          for (let i = 0; i < request.raw.rawHeaders.length; i += 2)
-            if (request.raw.rawHeaders[i]?.toLowerCase() === "authorization") fields++;
-          const token = /^Bearer +([^\s,]+)$/i.exec(request.headers.authorization ?? "")?.[1];
+          const token = bearerToken(request);
           if (
-            fields > 1 ||
             !token ||
             typeof run !== "string" ||
             !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(run)

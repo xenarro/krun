@@ -2,9 +2,10 @@ import type { KeyPrincipal, Keys } from "@krun/shared/dist/auth/keys.js";
 import type { KeyScope } from "@krun/shared/dist/auth/schema.js";
 import type { Functions } from "@krun/shared/dist/functions/cache.js";
 import { withPinoLogger } from "@krun/shared/dist/runtime/logging.js";
-import type { Store } from "@krun/shared/dist/store/index.js";
+import { NotFoundError, type Store } from "@krun/shared/dist/store/index.js";
 import { Cause, type Context, Effect, Exit } from "effect";
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
+import type { z } from "zod";
 import { ApiError } from "./errors.js";
 
 export type GatewayDependencies = Store | Functions | Keys;
@@ -95,6 +96,38 @@ export const requestRunner = <R>(context: Context.Context<R>) => {
   return { runEffect, stop };
 };
 
+// Shared by the public and internal listeners. Node discards duplicate
+// Authorization values from normalized headers, so inspect the raw field names
+// before accepting the otherwise valid first value. HTTP auth schemes are case
+// insensitive; a credential is one opaque token.
+export const bearerToken = (request: FastifyRequest): string | undefined => {
+  let fields = 0;
+  for (let index = 0; index < request.raw.rawHeaders.length; index += 2)
+    if (request.raw.rawHeaders[index]?.toLowerCase() === "authorization") fields++;
+  if (fields > 1) return undefined;
+  return /^Bearer +([^\s,]+)$/i.exec(request.headers.authorization ?? "")?.[1];
+};
+
+// Page tokens are untrusted input: accept only canonical base64url of strict,
+// versioned JSON bound to the context of the list request that issued it.
+export const decodePageToken = <T extends { readonly context: string }>(
+  token: string,
+  schema: z.ZodType<T>,
+  context: string,
+) =>
+  Effect.try({
+    try: () => {
+      if (token.length > 1024 || !/^[A-Za-z0-9_-]+$/.test(token)) throw new Error("Invalid cursor");
+      const bytes = Buffer.from(token, "base64url");
+      if (bytes.toString("base64url") !== token) throw new Error("Invalid cursor");
+      const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+      const parsed = schema.parse(JSON.parse(text));
+      if (parsed.context !== context) throw new Error("Invalid cursor");
+      return parsed;
+    },
+    catch: () => new ApiError({ reason: "REQUEST_INVALID" }),
+  });
+
 // Native Fastify encapsulation: dependencies are visible only to this plugin
 // and descendant route plugins, never an admin/internal listener or sibling.
 export const servicesPlugin: FastifyPluginAsync<{
@@ -118,21 +151,13 @@ const authPlugin: FastifyPluginAsync<{ routes: FastifyPluginAsync }> = async (ap
       request,
       reply,
       Effect.gen(function* () {
-        const header = request.headers.authorization;
-        // Node discards duplicate Authorization values from normalized headers.
-        // Inspect the raw field names before accepting the otherwise valid first key.
-        let authorizationFields = 0;
-        for (let index = 0; index < request.raw.rawHeaders.length; index += 2) {
-          if (request.raw.rawHeaders[index]?.toLowerCase() === "authorization")
-            authorizationFields++;
-        }
-        if (authorizationFields > 1) return yield* new ApiError({ reason: "KEY_INVALID" });
-        if (header === undefined) return yield* new ApiError({ reason: "KEY_MISSING" });
-        // HTTP auth schemes are case insensitive; a credential is one opaque token.
-        const matched = /^Bearer +([^\s,]+)$/i.exec(header);
-        if (!matched?.[1]) return yield* new ApiError({ reason: "KEY_INVALID" });
+        const token = bearerToken(request);
+        if (token === undefined)
+          return yield* new ApiError({
+            reason: request.headers.authorization === undefined ? "KEY_MISSING" : "KEY_INVALID",
+          });
         const key = yield* app.keys
-          .lookup(matched[1])
+          .lookup(token)
           .pipe(Effect.mapError(() => new ApiError({ reason: "KEY_INVALID" })));
         request.principal = key;
         const policy = request.routeOptions.config.krun;
@@ -164,3 +189,29 @@ const authPlugin: FastifyPluginAsync<{ routes: FastifyPluginAsync }> = async (ap
   });
   app.register(options.routes);
 };
+
+// The one run-visibility rule for every run-scoped method. Hidden runs are
+// indistinguishable from absent ones, so every miss is RUN_NOT_FOUND.
+export const visibleRun = (
+  store: Store["Service"],
+  request: FastifyRequest<{ Params: { function: string; run: string } }>,
+) =>
+  Effect.gen(function* () {
+    const key = request.principal;
+    if (!key) return yield* new ApiError({ reason: "INTERNAL" });
+    const row = yield* store
+      .getRun(request.params.run)
+      .pipe(
+        Effect.mapError((error) =>
+          error instanceof NotFoundError ? new ApiError({ reason: "RUN_NOT_FOUND" }) : error,
+        ),
+      );
+    if (
+      (request.params.function !== "-" && request.params.function !== row.function_name) ||
+      !key.allowsFunction(row.function_name) ||
+      (!key.hasScope("admin") && row.created_by !== key.name)
+    )
+      return yield* new ApiError({ reason: "RUN_NOT_FOUND" });
+    request.audit = { run_id: row.id, function: row.function_name };
+    return row;
+  });

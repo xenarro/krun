@@ -15,6 +15,8 @@ export const states = [
   "cancelled",
 ] as const;
 export type State = (typeof states)[number];
+export const isTerminal = (state: State) =>
+  state === "succeeded" || state === "failed" || state === "cancelled";
 export const failureReasons = [
   "exit_code",
   "oom_killed",

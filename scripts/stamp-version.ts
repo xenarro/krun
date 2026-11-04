@@ -13,6 +13,7 @@ export const releaseFiles = [
   "sdk/node/package.json",
   "packages/cli/templates/node/package.json",
   "sdk/python/pyproject.toml",
+  "sdk/python/krun/_runtime.py",
   "packages/cli/templates/python/pyproject.toml",
   "deploy/helm/krun/Chart.yaml",
 ] as const;
@@ -55,6 +56,11 @@ export const stampVersion = async (root: string, value: string) => {
           `dependencies = ["krun~=${version}"]`,
         );
       }
+    } else if (name.endsWith("_runtime.py")) {
+      // The Python SDK's User-Agent version is a source constant, not wheel metadata.
+      if ([...text.matchAll(/^_VERSION = "[^"]*"$/gm)].length !== 1)
+        throw new Error("Invalid Python SDK version inventory");
+      next = text.replace(/^_VERSION = "[^"]*"$/m, `_VERSION = "${version}"`);
     } else {
       const doc = parseDocument(text);
       if (doc.errors.length) throw new Error("Invalid chart version inventory");

@@ -2,11 +2,11 @@ import { DateTime, Effect } from "effect";
 import { sql } from "kysely";
 import { z } from "zod";
 import { Database } from "../runtime/database.js";
-import { DatabaseError } from "./errors.js";
 import type { StoreShape } from "./index.js";
 import { type State, states } from "./model.js";
 import { observeRunChange } from "./observations.js";
 import { decodeRun } from "./rows.js";
+import { adapter, traced } from "./traced.js";
 
 // Match runs_active_idx literally, shared by the actual count/list statements.
 export const activePredicate = sql`state in ('queued','scheduled','running','cancelling')`;
@@ -31,37 +31,6 @@ type Methods = Pick<
   | "listByState"
 >;
 
-const adapter = <A>(
-  operation: keyof Methods,
-  execute: () => Promise<{ value: A; rowCount: number }>,
-) =>
-  Effect.gen(function* () {
-    const result = yield* Effect.tryPromise({
-      try: execute,
-      catch: () => new DatabaseError({ operation }),
-    });
-    yield* Effect.annotateCurrentSpan("db.response.returned_rows", result.rowCount);
-    return result.value;
-  });
-const traced = <A>(
-  operation: keyof Methods,
-  id: string | undefined,
-  body: Effect.Effect<A, DatabaseError>,
-) =>
-  body.pipe(
-    // Driver promises cannot be cancelled safely; finish release/rollback before
-    // allowing the owning Database scope to close, as in createRun.
-    Effect.uninterruptible,
-    Effect.withSpan(`store.${operation}`, {
-      kind: "client",
-      attributes: {
-        "db.operation.name": operation,
-        "db.response.returned_rows": 0,
-        ...(id === undefined ? {} : { "krun.run_id": id }),
-      },
-    }),
-  );
-
 // D45: compose real declared methods, never fill later Store tasks with stubs.
 export const makeRunLeasing = Effect.map(
   Database,
@@ -83,7 +52,17 @@ export const makeRunLeasing = Effect.map(
           ${dialect === "postgres" ? sql`for update skip locked` : sql``}
           limit ${limitSchema.parse(limit)}) returning *`.execute(tx)
               ).rows;
-              return { value: rows.map((row) => decodeRun(row, dialect)), rowCount: rows.length };
+              // RETURNING order is arbitrary in both dialects; the scheduler
+              // processes claims in this order and may stop partway through.
+              const runs = rows
+                .map((row) => decodeRun(row, dialect))
+                .sort(
+                  (a, b) =>
+                    b.priority - a.priority ||
+                    DateTime.toEpochMillis(a.created_at) - DateTime.toEpochMillis(b.created_at) ||
+                    (a.id < b.id ? -1 : 1),
+                );
+              return { value: runs, rowCount: rows.length };
             }),
           );
         }),

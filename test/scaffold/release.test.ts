@@ -49,6 +49,9 @@ it("stamps all workspace, Python, template and chart versions consistently and i
   for (const name of releaseFiles.filter((name) => name.endsWith("pyproject.toml"))) {
     expect(await readFile(join(path, name), "utf8")).toContain('version = "0.1.0"');
   }
+  expect(await readFile(join(path, "sdk/python/krun/_runtime.py"), "utf8")).toContain(
+    '_VERSION = "0.1.0"',
+  );
   const node = JSON.parse(
     await readFile(join(path, "packages/cli/templates/node/package.json"), "utf8"),
   );

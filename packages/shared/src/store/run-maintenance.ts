@@ -3,34 +3,18 @@ import { sql } from "kysely";
 import { v7 } from "uuid";
 import { z } from "zod";
 import { Database } from "../runtime/database.js";
-import { DatabaseError } from "./errors.js";
 import type { StoreShape } from "./index.js";
 import { toRunSummary } from "./mappers.js";
 import { observeRunChange } from "./observations.js";
 import { decodeDelivery, decodeRun } from "./rows.js";
+import { adapter, traced } from "./traced.js";
 
 type Methods = Pick<StoreShape, "expireQueued" | "sweep" | "claimDeliveries" | "updateDelivery">;
 const nonnegative = z.number().int().nonnegative();
-const adapter = <A>(
+const call = <A>(
   operation: keyof Methods,
   execute: () => Promise<{ value: A; rowCount: number }>,
-) =>
-  Effect.gen(function* () {
-    const result = yield* Effect.tryPromise({
-      try: execute,
-      catch: () => new DatabaseError({ operation }),
-    });
-    yield* Effect.annotateCurrentSpan("db.response.returned_rows", result.rowCount);
-    return result.value;
-  }).pipe(
-    // The driver cannot cancel a write safely; settle commit/rollback before
-    // interruption can release the enclosing Database scope.
-    Effect.uninterruptible,
-    Effect.withSpan(`store.${operation}`, {
-      kind: "client",
-      attributes: { "db.operation.name": operation, "db.response.returned_rows": 0 },
-    }),
-  );
+) => traced(operation, undefined, adapter(operation, execute));
 
 // D45: real declared methods only, without placeholders for remaining Store work.
 export const makeRunMaintenance = Effect.map(
@@ -39,7 +23,7 @@ export const makeRunMaintenance = Effect.map(
     expireQueued: (fn, olderThan) =>
       Effect.gen(function* () {
         const now = yield* DateTime.now;
-        const runs = yield* adapter("expireQueued", () =>
+        const runs = yield* call("expireQueued", () =>
           db.transaction().execute(async (tx) => {
             const at = DateTime.formatIso(now);
             const changed = (
@@ -72,7 +56,7 @@ export const makeRunMaintenance = Effect.map(
         return runs;
       }).pipe(Effect.uninterruptible),
     sweep: (finishedBefore, batch) =>
-      adapter("sweep", () =>
+      call("sweep", () =>
         db.transaction().execute(async (tx) => {
           const removed = (
             await sql`delete from runs where id in (
@@ -87,7 +71,7 @@ export const makeRunMaintenance = Effect.map(
         }),
       ),
     claimDeliveries: (now, limit) =>
-      adapter("claimDeliveries", () =>
+      call("claimDeliveries", () =>
         db.transaction().execute(async (tx) => {
           // Selection and lease write are one statement. Postgres skips another
           // worker's locks; SQLite serializes through its BEGIN IMMEDIATE driver.
@@ -101,7 +85,7 @@ export const makeRunMaintenance = Effect.map(
         }),
       ),
     updateDelivery: (id, state, attempt, nextAt, lastError, expectedClaim) =>
-      adapter("updateDelivery", async () => {
+      call("updateDelivery", async () => {
         // next_at is NOT NULL in the normative DDL. null means no replacement time
         // (terminal updates do not reschedule); retain the last claim/retry value.
         const rows = (

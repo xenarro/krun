@@ -29,12 +29,7 @@ export const makeHeartbeatLoop = (options: HeartbeatLoopOptions) =>
       for (const listed of yield* functions.list) {
         if (closed) return;
         const entry = yield* functions.get(listed.name);
-        if (
-          entry?.spec?.heartbeatTimeout === undefined ||
-          !entry.result.ok ||
-          entry.result.heartbeatTimeout === undefined
-        )
-          continue;
+        if (entry === undefined) continue;
         // The SQL selection is only a hint. Each new candidate, and its final
         // pre-DELETE check, reads this effect afresh under the controller gate.
         const currentPolicy = Effect.gen(function* () {
@@ -55,11 +50,10 @@ export const makeHeartbeatLoop = (options: HeartbeatLoopOptions) =>
             }),
           };
         });
-        const before = DateTime.subtract(yield* DateTime.now, {
-          milliseconds: Duration.toMillis(entry.result.heartbeatTimeout),
-        });
+        const initial = yield* currentPolicy;
+        if (initial === undefined) continue;
         yield* Effect.gen(function* () {
-          for (const row of yield* store.listStale(entry.name, before)) {
+          for (const row of yield* store.listStale(entry.name, initial.before)) {
             if (closed) return;
             if (attempted.has(row.id)) continue;
             yield* options.controller

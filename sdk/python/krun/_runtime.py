@@ -151,6 +151,7 @@ class _NoRedirect(HTTPRedirectHandler):
 _workers: set[subprocess.Popen[bytes]] = set()
 _workers_lock = threading.RLock()
 _stopping = False
+_exit_code = 1
 _launch_thread: int | None = None
 
 
@@ -168,12 +169,14 @@ def _stop_requests() -> None:
 
 def _fatal() -> NoReturn:
     # A daemon's SystemExit would not cancel a blocked main-thread handler.
+    # Stopping after a successful exit must not turn it into a failure.
     _stop_requests()
-    os._exit(1)
+    os._exit(_exit_code)
 
 
 def _on_sigterm(signum: int, frame: FrameType | None) -> None:
-    global _stopping
+    global _stopping, _exit_code
+    _exit_code = 1
     _stopping = True
     # Do not exit between creating a process and registering its ownership.
     # A different launching thread holds the lock until registration finishes.
@@ -446,6 +449,8 @@ Handler = Callable[[object, Context], object]
 
 
 def _exit(code: int) -> NoReturn:
+    global _exit_code
+    _exit_code = code
     _stop_requests()
     sys.stdout.flush()
     sys.stderr.flush()

@@ -393,6 +393,26 @@ def test_heartbeat_latest_during_slow_input_and_result(fake: Fake) -> None:
     assert all(b.at - a.at >= 0.99 for a, b in pairwise(statuses))
 
 
+def test_in_flight_heartbeat_keeps_success_exit(fake: Fake) -> None:
+    fake.respond = lambda call: (
+        (204, b"", 2)
+        if call.path.endswith("/status")
+        else (200, b"{}", 0)
+        if call.path.endswith("/input")
+        else (204, b"", 0)
+    )
+    # The exit hook holds finalization open, so the status thread always sees
+    # its attempt killed by the successful exit before the process ends.
+    result = execute(
+        "import atexit\natexit.register(time.sleep, 1)\ntime.sleep(1.5)\nreturn input",
+        fake,
+        KRUN_HEARTBEAT_TIMEOUT="3",
+    )
+    assert_ok(result)
+    assert len(fake.matching("/status")) == 1
+    assert fake.matching("/status")[0].at < fake.matching("/result")[0].at
+
+
 @pytest.mark.parametrize("window", ["3", "9000000000000", "garbage", "0", "NaN"])
 def test_timer_never_delays_exit_or_posts_started_eagerly(
     fake: Fake, window: str

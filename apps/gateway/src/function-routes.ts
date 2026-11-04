@@ -8,6 +8,7 @@ import type { FastifyPluginAsync } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import { ApiError } from "./errors.js";
+import { decodePageToken } from "./plugins.js";
 import { publicContracts, publicSchemas } from "./public-contracts.js";
 
 type ReadLimits = Pick<
@@ -23,19 +24,6 @@ const contextHash = (key: KeyPrincipal) =>
   createHash("sha256")
     .update(JSON.stringify(["ListFunctions:v1", key.name, key.functions, key.scopes]))
     .digest("hex");
-const decodeCursor = (token: string, context: string) =>
-  Effect.try({
-    try: () => {
-      if (token.length > 1024 || !/^[A-Za-z0-9_-]+$/.test(token)) throw new Error("Invalid cursor");
-      const bytes = Buffer.from(token, "base64url");
-      const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-      if (bytes.toString("base64url") !== token) throw new Error("Invalid cursor");
-      const decoded = cursorSchema.parse(JSON.parse(text));
-      if (decoded.context !== context) throw new Error("Invalid cursor");
-      return decoded.last;
-    },
-    catch: () => new ApiError({ reason: "REQUEST_INVALID" }),
-  });
 
 // Compose under makePublicApp's authenticated service scope. The caller owns
 // parsed configuration and eventual listener/process wiring, never this module.
@@ -78,7 +66,7 @@ export const functionReadRoutes = (config: ReadLimits): FastifyPluginAsync => {
               return yield* new ApiError({ reason: "NOT_READY" });
             const context = contextHash(principal);
             const after = request.query.pageToken
-              ? yield* decodeCursor(request.query.pageToken, context)
+              ? (yield* decodePageToken(request.query.pageToken, cursorSchema, context)).last
               : undefined;
             const size = Math.min(request.query.pageSize || 50, 200);
             const entries = yield* app.functions.list;
