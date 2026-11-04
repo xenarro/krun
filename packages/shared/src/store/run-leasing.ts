@@ -83,7 +83,17 @@ export const makeRunLeasing = Effect.map(
           ${dialect === "postgres" ? sql`for update skip locked` : sql``}
           limit ${limitSchema.parse(limit)}) returning *`.execute(tx)
               ).rows;
-              return { value: rows.map((row) => decodeRun(row, dialect)), rowCount: rows.length };
+              // RETURNING order is arbitrary in both dialects; the scheduler
+              // processes claims in this order and may stop partway through.
+              const runs = rows
+                .map((row) => decodeRun(row, dialect))
+                .sort(
+                  (a, b) =>
+                    b.priority - a.priority ||
+                    DateTime.toEpochMillis(a.created_at) - DateTime.toEpochMillis(b.created_at) ||
+                    (a.id < b.id ? -1 : 1),
+                );
+              return { value: runs, rowCount: rows.length };
             }),
           );
         }),

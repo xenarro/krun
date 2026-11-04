@@ -199,6 +199,21 @@ for (const dialect of ["sqlite", "postgres"] as const) {
         }),
       ),
     );
+    it.effect("a multi-row claim returns runs in priority then oldest order", () =>
+      run(
+        Effect.gen(function* () {
+          const m = yield* makeRunLeasing;
+          const now = yield* DateTime.now;
+          yield* seed(1, { priority: 0 });
+          yield* seed(2, { priority: 5, created_at: DateTime.addDuration(now, "2 seconds") });
+          yield* seed(3, { priority: 9, created_at: DateTime.addDuration(now, "3 seconds") });
+          yield* seed(4, { priority: 5, created_at: DateTime.addDuration(now, "1 second") });
+          const until = DateTime.addDuration(now, "30 seconds");
+          const rows = yield* m.claimQueued("function-a", "leader", until, 4);
+          expect(rows.map((r) => r.id)).toEqual([id(3), id(4), id(2), id(1)]);
+        }),
+      ),
+    );
     it.effect(
       "releaseLease clears both fields, allows immediate reclaim, and missing id is a no-op",
       () =>
