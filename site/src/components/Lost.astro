@@ -1,0 +1,113 @@
+---
+/** The 404 page's way back: known stops, resolved from the docs collection. */
+import { firstPageIn, primaryLinks, repository, withBase } from "../lib/links";
+import KIcon from "./KIcon.astro";
+
+const links = await primaryLinks();
+const stops = [
+  { label: "Homepage", note: "the route map and a minimal example", href: withBase("") },
+  { label: "Get started", note: "rehearse krun on a throwaway cluster", href: links.start },
+  { label: "Guides", note: "write, deploy and invoke functions", href: await firstPageIn("guides") },
+  { label: "Reference", note: "API, configuration, CLI and chart", href: await firstPageIn("reference") },
+  { label: "Report a broken link", note: "open an issue on GitHub", href: `${repository}/issues` },
+].filter((stop) => stop.href);
+---
+
+<nav class="k-lost not-content" aria-label="Known stops">
+  <ol>
+    {
+      stops.map((stop) => (
+        <li>
+          <a href={stop.href}>
+            <span class="k-lost__label">{stop.label}</span>
+            <span class="k-lost__note">{stop.note}</span>
+            <KIcon name="arrow" size={20} />
+          </a>
+        </li>
+      ))
+    }
+  </ol>
+</nav>
+
+<style>
+  .k-lost {
+    max-width: 40rem;
+  }
+
+  .k-lost ol {
+    position: relative;
+    display: grid;
+    gap: 0.6rem;
+    margin: 0;
+    padding: 0 0 0 2.25rem;
+    list-style: none;
+  }
+
+  .k-lost ol::before {
+    content: "";
+    position: absolute;
+    left: 0.55rem;
+    top: 1.4rem;
+    bottom: 1.4rem;
+    width: 0.3rem;
+    border-radius: var(--k-radius-pill);
+    background: var(--k-signal);
+  }
+
+  .k-lost li {
+    position: relative;
+    margin: 0;
+  }
+
+  .k-lost li::before {
+    content: "";
+    position: absolute;
+    left: -2.25rem;
+    top: 50%;
+    width: 1.4rem;
+    height: 1.4rem;
+    margin-top: -0.7rem;
+    box-sizing: border-box;
+    border-radius: 50%;
+    border: 0.25rem solid var(--k-text-strong);
+    background: var(--k-bg-raised);
+  }
+
+  .k-lost a {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 0.1rem 1rem;
+    padding: 0.85rem 1.1rem;
+    border: 1px solid var(--k-line);
+    border-radius: var(--k-radius-m);
+    background: var(--k-bg-raised);
+    color: var(--k-text);
+    text-decoration: none;
+    transition:
+      border-color var(--k-dur-fast),
+      transform var(--k-dur-base) var(--k-ease-out);
+  }
+
+  .k-lost a:hover {
+    border-color: var(--k-accent);
+    transform: translateX(4px);
+  }
+
+  .k-lost__label {
+    font-weight: 760;
+    color: var(--k-text-strong);
+  }
+
+  .k-lost__note {
+    grid-row: 2;
+    font-size: var(--k-step--1);
+    color: var(--k-text-muted);
+  }
+
+  .k-lost a :global(.k-icon) {
+    grid-row: 1 / span 2;
+    grid-column: 2;
+    color: var(--k-accent);
+  }
+</style>

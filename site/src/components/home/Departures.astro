@@ -1,0 +1,222 @@
+---
+/**
+ * Use cases as a departure board. Destinations come from docs/PROBLEM.md
+ * ("Who has the problem"); each "via" names the krun mechanism that serves it.
+ * The second board lists what krun is not (README.md, SPEC.md section 1).
+ */
+const departures = [
+  {
+    to: "Report generation",
+    via: "Hold the create open with ?wait= (capped at 60 seconds by default), then poll, watch over SSE, or take a signed webhook when the report lands.",
+  },
+  {
+    to: "Data exports",
+    via: "Results over the inline limit (256 KiB by default) go to S3-compatible storage; callers follow a 307 to a presigned download.",
+  },
+  {
+    to: "Batch inference",
+    via: "Per-Function resources, nodeSelector and activeDeadlineSeconds put each run on the right nodes with a hard stop.",
+  },
+  {
+    to: "Data migrations",
+    via: "A requestId turns a nervous retry into the same run instead of a second migration.",
+  },
+  {
+    to: "Media processing",
+    via: "heartbeatTimeout fails a stuck run as HEARTBEAT_TIMEOUT; an out-of-memory kill comes back as OOM_KILLED with a log tail.",
+  },
+  {
+    to: "Third-party integrations",
+    via: "secretRefs bring credentials in from existing Secrets. Function egress is default-deny apart from DNS, the gateway and any configured object storage, until the platform team adds CIDRs.",
+  },
+];
+
+const notOnThisLine = [
+  "Always-warm, sub-second handlers: every run creates a Job",
+  "Workflows or DAGs",
+  "Cron scheduling: use a CronJob",
+  "Automatic retries",
+  "Hostile multi-tenant code",
+  "A web UI or dashboard",
+];
+---
+
+<div class="k-departures not-content">
+  <div class="k-board" role="table" aria-label="Departures: what krun is good for">
+    <div class="k-board__row k-board__row--head" role="row">
+      <span role="columnheader">No.</span>
+      <span role="columnheader">Destination</span>
+      <span role="columnheader">Via</span>
+    </div>
+    {
+      departures.map((row, index) => (
+        <div class="k-board__row" role="row">
+          <span role="cell" class="k-board__no">{String(index + 1).padStart(2, "0")}</span>
+          <span role="cell" class="k-board__to">{row.to}</span>
+          <span role="cell" class="k-board__via">{row.via}</span>
+        </div>
+      ))
+    }
+  </div>
+
+  <aside class="k-noline" aria-labelledby="k-noline-title">
+    <h3 id="k-noline-title">
+      <span class="k-noline__sign" aria-hidden="true"></span>
+      Not on this line
+    </h3>
+    <ul>
+      {notOnThisLine.map((item) => <li>{item}</li>)}
+    </ul>
+    <p>
+      Function authors and the platform team share one trust boundary. Restricted pods, quotas and
+      default-deny networking reduce the blast radius; image signature checks belong to your
+      admission policy.
+    </p>
+  </aside>
+</div>
+
+<style>
+  .k-departures {
+    display: grid;
+    grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr);
+    gap: 1.25rem;
+    align-items: start;
+  }
+
+  @media (max-width: 60rem) {
+    .k-departures {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  .k-board {
+    border: 1px solid var(--k-line);
+    border-radius: var(--k-radius-l);
+    background: var(--k-board);
+    color: var(--k-on-board);
+    padding: 0.5rem clamp(0.9rem, 2.2vw, 1.75rem) 0.75rem;
+    box-shadow: var(--k-shadow-m);
+  }
+
+  .k-board__row {
+    display: grid;
+    grid-template-columns: 2.5rem minmax(9rem, 0.75fr) 1.6fr;
+    gap: 0.35rem 1.25rem;
+    align-items: baseline;
+    padding: 1rem 0;
+    border-bottom: 1px dashed rgb(255 255 255 / 0.14);
+  }
+
+  .k-board__row:last-child {
+    border-bottom: 0;
+  }
+
+  .k-board__row--head {
+    padding-block: 0.85rem;
+    font-family: var(--k-font-mono);
+    font-size: var(--k-step--2);
+    font-weight: 600;
+    letter-spacing: var(--k-tracking-label);
+    text-transform: uppercase;
+    color: var(--k-on-board-muted);
+  }
+
+  .k-board__no {
+    font-family: var(--k-font-mono);
+    font-weight: 700;
+    color: var(--k-signal-300);
+  }
+
+  .k-board__to {
+    font-family: var(--k-font-mono);
+    font-size: 0.9375rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--k-volt-400);
+  }
+
+  .k-board__via {
+    font-size: 0.9375rem;
+    line-height: 1.55;
+    color: var(--k-on-board);
+  }
+
+  @media (max-width: 36rem) {
+    .k-board__row {
+      grid-template-columns: 2.25rem 1fr;
+    }
+    .k-board__via {
+      grid-column: 2;
+    }
+    .k-board__row--head span:last-child {
+      display: none;
+    }
+  }
+
+  .k-noline {
+    padding: 1.5rem;
+    border: 2px dashed var(--k-line-strong);
+    border-radius: var(--k-radius-l);
+  }
+
+  .k-noline h3 {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    margin: 0 0 1rem;
+    font-size: var(--k-step-1);
+    font-weight: 760;
+    color: var(--k-text-strong);
+  }
+
+  .k-noline__sign {
+    position: relative;
+    width: 1.6rem;
+    height: 1.6rem;
+    border-radius: 50%;
+    border: 0.25rem solid var(--k-state-failed);
+  }
+
+  .k-noline__sign::after {
+    content: "";
+    position: absolute;
+    inset: 50% -0.05rem auto;
+    height: 0.25rem;
+    margin-top: -0.125rem;
+    background: var(--k-state-failed);
+    transform: rotate(-45deg);
+  }
+
+  .k-noline ul {
+    display: grid;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .k-noline li {
+    position: relative;
+    margin: 0;
+    padding-inline-start: 1.4rem;
+    color: var(--k-text);
+  }
+
+  .k-noline li::before {
+    content: "";
+    position: absolute;
+    left: 0.15rem;
+    top: 0.72em;
+    width: 0.7rem;
+    height: 0.15rem;
+    border-radius: 1px;
+    background: var(--k-text-muted);
+  }
+
+  .k-noline p {
+    margin: 1.25rem 0 0;
+    font-size: var(--k-step--1);
+    color: var(--k-text-muted);
+  }
+</style>

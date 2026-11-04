@@ -24,6 +24,13 @@
       "apps/*/vitest.config.ts",
       "apps/*/src/**/*.ts",
       "apps/*/dev/**/*.ts",
+      "site/package.json",
+      "site/tsconfig.json",
+      "site/astro.config.mjs",
+      "site/ec.config.mjs",
+      "site/vitest.config.ts",
+      "site/scripts/**/*.ts",
+      "site/src/**/*.ts",
       "!!**/.cache",
       "!!**/node_modules",
       "!!**/dist",
@@ -32,7 +39,8 @@
       "!!**/.pytest_cache",
       "!!**/.mypy_cache",
       "!!**/.ruff_cache",
-      "!!**/coverage"
+      "!!**/coverage",
+      "!!**/.astro"
     ]
   },
   "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },

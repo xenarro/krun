@@ -1,0 +1,193 @@
+---
+title: Quickstart
+description: Rehearse the complete platform from a source checkout on a disposable kind cluster, in both database modes, and run a real function.
+sidebar:
+  order: 2
+---
+
+import { Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+The quickstart installs the real Helm chart on a throwaway kind cluster, scaffolds a
+Node.js function with `krun init`, deploys it with `krun deploy`, submits one run
+and checks that the result is `{ "rows": 42 }`. It runs in both database modes:
+embedded SQLite and Postgres.
+
+:::caution[A rehearsal, not an installer]
+This is a source-checkout rehearsal, not a production installer. It uses only the
+`kind-krun-test-e2e` context, a private kubeconfig and a loopback registry owned by
+the checkout. It refuses an existing platform or namespace, a foreign registry or a
+non-loopback cluster, and it never uses your ambient Kubernetes context. To install
+on a real cluster, follow [Installation](/krun/start/installation/).
+:::
+
+## Prerequisites
+
+Work from a clone of the repository. The harness expects the pinned tool versions
+recorded in the repository:
+
+| Tool | Version | Pinned in |
+|---|---|---|
+| Node.js | 26.7.0 | `.node-version` |
+| pnpm | 12.14.0 | `package.json` (`packageManager`) |
+| kind | v0.33.0 | `.kind-version` |
+| Helm | 4.3.0 | `test/e2e/README.md`, CI workflows |
+| kubectl | 1.37 (CI uses v1.37.1) | `test/e2e/README.md`, CI workflows |
+| uv | 0.13.1, with Python 3.13 | `test/e2e/README.md`, CI workflows |
+| Docker, npm, GNU `timeout` | any current version | `README.md` |
+
+Kubernetes 1.33 or newer and a CNI that actually enforces NetworkPolicy are
+required. kind 0.33 ships an enforcing kindnetd, so no third-party CNI is needed for
+the rehearsal.
+
+## Run the full acceptance
+
+<Steps>
+
+1. Clone the repository and install the locked dependencies with their existing
+   supply-chain policy:
+
+   ```sh title="Terminal"
+   git clone https://github.com/xenarro/krun.git
+   cd krun
+   pnpm install --frozen-lockfile
+   ```
+
+2. Build every workspace package:
+
+   ```sh title="Terminal"
+   make build
+   ```
+
+3. Run the complete acceptance. It creates a fresh cluster for each mode and keeps
+   an unchanged 1,800-second budget per mode, including a positive
+   open, deny and reopen network-policy control:
+
+   ```sh title="Terminal"
+   make e2e-quickstart
+   ```
+
+</Steps>
+
+`make e2e-quickstart` invokes the actual `scripts/quickstart.sh` with the local
+chart, the pushed platform image, the workspace CLI, the current packed Node SDK and
+the local registry. The script installs the platform, runs `krun init`, vendors the
+SDK before `krun deploy`, tests the generated project, waits for current-generation
+`Ready=True`, submits a real run and verifies `{ "rows": 42 }` through GetRun.
+
+Both modes use the same Node.js function. Postgres mode provisions a pinned,
+restricted, disposable Postgres 18 fixture. API keys and database credentials are
+generated, passed only through private Secret inputs, and never printed. The demo
+needs only an inline result, so object storage and webhooks are not enabled.
+
+## Run one mode yourself
+
+To invoke a single mode with the exact overrides for unpublished artifacts, start a
+fresh cluster, pack the Node.js SDK and call the script directly. Repeat on a fresh
+`make kind-up` for the other mode.
+
+<Tabs syncKey="db-mode">
+<TabItem label="Postgres">
+
+```sh title="Terminal"
+make kind-up
+mkdir -p "$TMPDIR/krun-test-quickstart-sdk"
+pnpm --dir sdk/node pack \
+  --pack-destination "$TMPDIR/krun-test-quickstart-sdk"
+KRUN_CHART="$PWD/deploy/helm/krun" \
+KRUN_IMAGE=localhost:5001/krun:e2e \
+KRUN_CLI="node $PWD/packages/cli/dist/main.js" \
+KRUN_SDK_VENDOR="$TMPDIR/krun-test-quickstart-sdk" \
+KRUN_REGISTRY=localhost:5001 \
+  scripts/quickstart.sh postgres
+make kind-down
+```
+
+</TabItem>
+<TabItem label="Embedded SQLite">
+
+```sh title="Terminal"
+make kind-up
+mkdir -p "$TMPDIR/krun-test-quickstart-sdk"
+pnpm --dir sdk/node pack \
+  --pack-destination "$TMPDIR/krun-test-quickstart-sdk"
+KRUN_CHART="$PWD/deploy/helm/krun" \
+KRUN_IMAGE=localhost:5001/krun:e2e \
+KRUN_CLI="node $PWD/packages/cli/dist/main.js" \
+KRUN_SDK_VENDOR="$TMPDIR/krun-test-quickstart-sdk" \
+KRUN_REGISTRY=localhost:5001 \
+  scripts/quickstart.sh embedded
+make kind-down
+```
+
+</TabItem>
+</Tabs>
+
+- `TMPDIR` must name an existing, writable, private directory. Use the same value for
+  setup, rehearsal and cleanup.
+- The vendor directory must contain exactly one Node SDK `.tgz`. Use a new, empty
+  directory for a new pack.
+- The script takes exactly one argument. Anything else prints
+  `Usage: scripts/quickstart.sh embedded|postgres` and exits 1.
+
+### Quickstart variables
+
+| Variable | Script default | Local acceptance override |
+|---|---|---|
+| `KRUN_CHART` | `oci://ghcr.io/xenarro/charts/krun` (not published yet) | the local `deploy/helm/krun` path |
+| `KRUN_IMAGE` | unset; the chart's image and tag defaults | the pushed `localhost:5001/krun:e2e` (`repository:tag`) |
+| `KRUN_CLI` | `npx @krun/cli` (not published yet) | `node /absolute/checkout/packages/cli/dist/main.js` |
+| `KRUN_SDK_VENDOR` | unset; the generated project resolves its published SDK | a directory containing the current Node SDK `.tgz` |
+| `KRUN_REGISTRY` | `localhost:5001` | the same owned loopback registry; the demo refuses remote publication |
+
+The published defaults are configurable interfaces, not evidence that a release
+exists. Until the release prerequisites are verified, always pass the local
+overrides shown above.
+
+`KRUN_CLI` is an executable plus plain space-separated arguments, not a shell
+program: no `eval`, pipes, substitutions or quoting. Use an executable wrapper when a
+path contains spaces. Chart references must not contain user information, query
+strings or fragments; keep registry authentication in Helm's private configuration.
+
+## Cleanup and recovery
+
+The script removes its own chart release, generated project, credentials, CRD and
+demo namespaces on normal success or failure. The acceptance driver also removes its
+cluster and registry. After a manual run, use `make kind-down`; never delete an
+unrelated cluster or change an ambient context.
+
+A shared foundation lease prevents setup and teardown from racing another job, and
+busy locks fail closed. After a hard interruption, verify that every owning and
+borrowing process has stopped before recovering the lock, as explained in
+[the e2e guide](https://github.com/xenarro/krun/blob/main/test/e2e/README.md).
+
+:::caution
+The disposable cleanup deliberately disables the chart's `crds.keep` and
+`jobsNamespace.keep` values. Do not copy that setting into a durable installation.
+:::
+
+## Measured durations
+
+Actual local qualification runs on 2026-11-04, in seconds, rounded to three decimals:
+
+| Mode | `quickstart.sh` including demo cleanup | Fresh setup, rehearsal and infrastructure cleanup | Exit |
+|---|---:|---:|---:|
+| embedded | 119.026 | 325.989 | 0 |
+| postgres | 39.688 | 291.738 | 0 |
+
+Both modes finished below the unchanged 1,800-second per-mode limit. The complete duration
+includes kind and registry provisioning, MinIO provisioning, freshly packed SDK
+fixtures, the chart's positive CNI control, the script itself and cluster removal.
+The platform image was already cached on the node and host Docker layer caches were
+warm.
+
+:::note[What these numbers are not]
+These are measured local rehearsals of the Node.js template. They are not a
+cold-cache guarantee, a hosted CI result, package-publication acceptance or a
+production-capacity claim.
+:::
+
+## Next steps
+
+- Install krun on a real cluster: [Installation](/krun/start/installation/).
+- Write your own function: [Writing a function](/krun/guides/writing-a-function/).
+- Learn every `krun init` and `krun deploy` option: [Using the CLI](/krun/guides/cli/).

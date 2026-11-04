@@ -1,0 +1,74 @@
+---
+/** A homepage section: mono station label, display heading, optional lede. */
+interface Props {
+  id: string;
+  stop: string;
+  title: string;
+  lede?: string;
+}
+
+const { id, stop, title, lede } = Astro.props;
+---
+
+<section class="k-section" aria-labelledby={id}>
+  <header class="k-section__head not-content">
+    <p class="k-section__stop"><span aria-hidden="true"></span>{stop}</p>
+    <h2 id={id}>{title}</h2>
+    {lede && <p class="k-section__lede">{lede}</p>}
+  </header>
+  <slot />
+</section>
+
+<style>
+  .k-section {
+    margin-top: var(--k-space-3xl) !important;
+    scroll-margin-top: calc(var(--sl-nav-height) + 1rem);
+  }
+
+  .k-section__head {
+    max-width: 44rem;
+    margin-bottom: clamp(1.75rem, 3vw, 2.5rem);
+  }
+
+  .k-section__stop {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    margin: 0 0 0.9rem;
+    font-family: var(--k-font-mono);
+    font-size: var(--k-step--2);
+    font-weight: 700;
+    letter-spacing: var(--k-tracking-label);
+    text-transform: uppercase;
+    color: var(--k-accent);
+  }
+
+  .k-section__stop span {
+    position: relative;
+    width: 2.75rem;
+    height: 0.75rem;
+    background:
+      radial-gradient(circle closest-side, var(--k-bg) 42%, var(--k-signal) 46% 92%, transparent 100%)
+        right center / 0.75rem 0.75rem no-repeat,
+      linear-gradient(var(--k-signal), var(--k-signal)) left center / calc(100% - 0.5rem) 0.3rem
+        no-repeat;
+  }
+
+  .k-section h2 {
+    margin: 0;
+    font-size: var(--k-step-4);
+    font-weight: 800;
+    line-height: 1.02;
+    letter-spacing: -0.035em;
+    text-wrap: balance;
+    color: var(--k-text-strong);
+  }
+
+  .k-section__lede {
+    margin: 1rem 0 0;
+    font-size: var(--k-step-1);
+    line-height: 1.55;
+    color: var(--k-text-muted);
+    text-wrap: pretty;
+  }
+</style>

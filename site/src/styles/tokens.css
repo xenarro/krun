@@ -1,0 +1,155 @@
+/*
+ * krun design tokens.
+ *
+ * Direction: "one-way ticket". Every run is issued a ticket over HTTP, rides
+ * one line of stations (QUEUED, SCHEDULED, RUNNING) and stops at a terminal
+ * (SUCCEEDED, FAILED, CANCELLED). Warm ticket paper, transit ink, a signal
+ * orange for the brand, and a volt green for "it worked". The motif is the
+ * notched ticket edge plus the route line with station dots.
+ *
+ * Starlight sets data-theme on <html>: dark is the base, light overrides it.
+ * Every text pair below passes WCAG AA (4.5:1) in its theme.
+ */
+:root {
+  /* Raw palette */
+  --k-ink-950: #121016;
+  --k-ink-900: #17151e;
+  --k-ink-850: #1a1822;
+  --k-ink-800: #1c1a24;
+  --k-ink-700: #2e2b38;
+  --k-ink-600: #3d3947;
+  --k-ink-500: #55505f;
+  --k-ink-400: #948ea3;
+  --k-ink-300: #a9a3b5;
+  --k-ink-200: #d9d4e0;
+  --k-paper-50: #fffdf7;
+  --k-paper-100: #f7f3ea;
+  --k-paper-200: #efe9dc;
+  --k-paper-300: #ddd5c4;
+  --k-paper-400: #c9bfab;
+  --k-signal-300: #ff8a5c;
+  --k-signal-500: #ff5a1f;
+  --k-signal-700: #b63a0b;
+  --k-volt-400: #d4f53c;
+  --k-volt-800: #4a6400;
+  --k-cobalt-300: #a9b0ff;
+  --k-cobalt-600: #3a47e8;
+  --k-amber-300: #ffc870;
+  --k-amber-800: #8a4b00;
+  --k-red-300: #ff8080;
+  --k-red-700: #c0261a;
+
+  /* Semantic colours, dark ticket (default) */
+  --k-bg: var(--k-ink-950);
+  --k-bg-raised: var(--k-ink-800);
+  --k-bg-sunken: #0d0c11;
+  --k-text: #f3efe6;
+  --k-text-strong: var(--k-paper-50);
+  --k-text-muted: var(--k-ink-300);
+  --k-line: var(--k-ink-700);
+  --k-line-strong: #4a4558;
+  --k-accent: var(--k-signal-300);
+  --k-signal: var(--k-signal-500);
+  --k-on-signal: var(--k-ink-900);
+  --k-volt: var(--k-volt-400);
+  --k-on-volt: var(--k-ink-900);
+  --k-focus: var(--k-volt-400);
+  --k-board: var(--k-ink-900);
+  --k-on-board: var(--k-paper-100);
+  --k-on-board-muted: var(--k-ink-300);
+
+  /* Run states: text-safe hue per state */
+  --k-state-queued: var(--k-ink-300);
+  --k-state-scheduled: var(--k-cobalt-300);
+  --k-state-running: var(--k-signal-300);
+  --k-state-succeeded: var(--k-volt-400);
+  --k-state-failed: var(--k-red-300);
+  --k-state-cancelling: var(--k-amber-300);
+  --k-state-cancelled: var(--k-ink-200);
+
+  /* Typography */
+  --k-font-sans: "Bricolage Grotesque", "Bricolage Grotesque Fallback", -apple-system,
+    BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --k-font-mono: "JetBrains Mono", "JetBrains Mono Fallback", ui-monospace, SFMono-Regular, Menlo,
+    Consolas, monospace;
+  --k-step--2: 0.75rem;
+  --k-step--1: 0.875rem;
+  --k-step-0: 1rem;
+  --k-step-1: 1.1875rem;
+  --k-step-2: clamp(1.375rem, 1.2rem + 0.8vw, 1.75rem);
+  --k-step-3: clamp(1.75rem, 1.4rem + 1.6vw, 2.5rem);
+  --k-step-4: clamp(2.25rem, 1.6rem + 3vw, 3.75rem);
+  --k-step-5: clamp(3rem, 1.4rem + 7.2vw, 7rem);
+  --k-leading-tight: 1.04;
+  --k-leading-snug: 1.25;
+  --k-leading-body: 1.7;
+  --k-tracking-label: 0.08em;
+
+  /* Spacing */
+  --k-space-3xs: 0.25rem;
+  --k-space-2xs: 0.5rem;
+  --k-space-xs: 0.75rem;
+  --k-space-s: 1rem;
+  --k-space-m: 1.5rem;
+  --k-space-l: 2rem;
+  --k-space-xl: 3rem;
+  --k-space-2xl: 4.5rem;
+  --k-space-3xl: clamp(4.5rem, 3rem + 6vw, 8rem);
+
+  /* Shape */
+  --k-radius-xs: 0.375rem;
+  --k-radius-s: 0.5rem;
+  --k-radius-m: 0.875rem;
+  --k-radius-l: 1.5rem;
+  --k-radius-pill: 999px;
+  --k-notch: 0.7rem;
+  --k-route: 0.375rem;
+
+  /* Depth */
+  --k-shadow-s: 0 1px 0 rgb(0 0 0 / 0.35);
+  --k-shadow-m: 0 1px 0 rgb(0 0 0 / 0.4), 0 18px 40px -24px rgb(0 0 0 / 0.8);
+  --k-shadow-l: 0 2px 0 rgb(0 0 0 / 0.4), 0 40px 80px -40px rgb(0 0 0 / 0.9);
+
+  /* Motion */
+  --k-ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --k-ease-spring: cubic-bezier(0.3, 1.4, 0.5, 1);
+  --k-dur-fast: 140ms;
+  --k-dur-base: 260ms;
+  --k-dur-slow: 700ms;
+}
+
+:root[data-theme="light"] {
+  --k-bg: var(--k-paper-100);
+  --k-bg-raised: var(--k-paper-50);
+  --k-bg-sunken: var(--k-paper-200);
+  --k-text: var(--k-ink-900);
+  --k-text-strong: #0e0d12;
+  --k-text-muted: var(--k-ink-500);
+  --k-line: var(--k-paper-300);
+  --k-line-strong: var(--k-paper-400);
+  --k-accent: var(--k-signal-700);
+  --k-focus: var(--k-cobalt-600);
+  --k-board: var(--k-ink-900);
+  --k-on-board: var(--k-paper-100);
+  --k-on-board-muted: var(--k-ink-300);
+
+  --k-state-queued: var(--k-ink-500);
+  --k-state-scheduled: var(--k-cobalt-600);
+  --k-state-running: var(--k-signal-700);
+  --k-state-succeeded: var(--k-volt-800);
+  --k-state-failed: var(--k-red-700);
+  --k-state-cancelling: var(--k-amber-800);
+  --k-state-cancelled: var(--k-ink-600);
+
+  --k-shadow-s: 0 1px 0 rgb(23 21 30 / 0.06);
+  --k-shadow-m: 0 1px 0 rgb(23 21 30 / 0.06), 0 18px 40px -26px rgb(23 21 30 / 0.35);
+  --k-shadow-l: 0 2px 0 rgb(23 21 30 / 0.06), 0 40px 80px -44px rgb(23 21 30 / 0.45);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --k-dur-fast: 0ms;
+    --k-dur-base: 0ms;
+    --k-dur-slow: 0ms;
+  }
+}

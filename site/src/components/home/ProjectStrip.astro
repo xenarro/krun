@@ -1,0 +1,130 @@
+---
+/** Releases, contribution and license status, stated exactly as the repository does. */
+import { blob, repository } from "../../lib/links";
+import KIcon from "../KIcon.astro";
+
+const stubs = [
+  {
+    icon: "ticket",
+    label: "Releases",
+    title: "Prepared, not published",
+    body: "Version 0.1.0 is prepared and its release rehearsal passes without publishing anything. There is no tag, image, chart or package yet; all versions in the repository are 0.0.0.",
+    links: [
+      { text: "Changelog", href: blob("CHANGELOG.md") },
+      { text: "Release guide", href: blob("docs/RELEASE.md") },
+    ],
+  },
+  {
+    icon: "branch",
+    label: "Contribute",
+    title: "Spec first, then code",
+    body: "SPEC.md is the source of truth; a change that contradicts it starts with a Decisions row. Run make check before every commit, use Conventional Commits, and open a pull request to main.",
+    links: [
+      { text: "Read SPEC.md", href: blob("SPEC.md") },
+      { text: "Open an issue", href: `${repository}/issues` },
+    ],
+  },
+  {
+    icon: "stamp",
+    label: "License",
+    title: "Not published yet",
+    body: "A license has not been published yet. The repository has no LICENSE file and no package declares one, so check back before you reuse or redistribute the code.",
+    links: [{ text: "Repository", href: repository }],
+  },
+] as const;
+---
+
+<ul class="k-stubs not-content">
+  {
+    stubs.map((stub) => (
+      <li class="k-stub">
+        <div class="k-stub__head">
+          <KIcon name={stub.icon} size={22} />
+          <span>{stub.label}</span>
+        </div>
+        <h3>{stub.title}</h3>
+        <p>{stub.body}</p>
+        <p class="k-stub__links">
+          {stub.links.map((link) => (
+            <a href={link.href}>
+              {link.text}
+              <KIcon name="external" size={16} />
+            </a>
+          ))}
+        </p>
+      </li>
+    ))
+  }
+</ul>
+
+<style>
+  .k-stubs {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+    gap: 1rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .k-stub {
+    position: relative;
+    margin: 0;
+    padding: 1.4rem 1.5rem 1.5rem;
+    border: 1px solid var(--k-line);
+    border-radius: var(--k-radius-m);
+    background: var(--k-bg-raised);
+    -webkit-mask:
+      radial-gradient(circle var(--k-notch) at 0 4.1rem, #0000 97%, #000) left / 51% 100% no-repeat,
+      radial-gradient(circle var(--k-notch) at 100% 4.1rem, #0000 97%, #000) right / 51% 100% no-repeat;
+    mask:
+      radial-gradient(circle var(--k-notch) at 0 4.1rem, #0000 97%, #000) left / 51% 100% no-repeat,
+      radial-gradient(circle var(--k-notch) at 100% 4.1rem, #0000 97%, #000) right / 51% 100% no-repeat;
+  }
+
+  .k-stub__head {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding-bottom: 1rem;
+    margin-bottom: 1rem;
+    border-bottom: 2px dashed var(--k-line-strong);
+    font-family: var(--k-font-mono);
+    font-size: var(--k-step--2);
+    font-weight: 700;
+    letter-spacing: var(--k-tracking-label);
+    text-transform: uppercase;
+    color: var(--k-accent);
+  }
+
+  .k-stub h3 {
+    margin: 0 0 0.4rem;
+    font-size: var(--k-step-2);
+    font-weight: 780;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+    color: var(--k-text-strong);
+  }
+
+  .k-stub p {
+    margin: 0;
+    font-size: 0.9375rem;
+    color: var(--k-text-muted);
+  }
+
+  .k-stub__links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.25rem;
+    margin-top: 1rem !important;
+  }
+
+  .k-stub__links a {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-weight: 650;
+    color: var(--k-accent);
+    text-underline-offset: 0.2em;
+  }
+</style>

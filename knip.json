@@ -37,6 +37,17 @@
       "entry": ["src/index.ts"],
       "project": ["src/**/*.ts"]
     },
+    "site": {
+      "entry": [
+        "scripts/sync-docs.ts",
+        "scripts/check-links.ts",
+        "src/routes/*.ts",
+        "src/route-middleware.ts",
+        "src/components/overrides/*.astro",
+        "src/content/docs/**/*.mdx"
+      ],
+      "project": ["*.{mjs,ts}", "scripts/**/*.ts", "src/**/*.{astro,ts,mdx}"]
+    },
     "apps/*": {
       "entry": ["src/main.ts"],
       "project": ["src/**/*.ts", "dev/**/*.ts"]

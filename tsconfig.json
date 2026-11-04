@@ -6,6 +6,7 @@
     "test/scaffold/**/*.test.ts",
     "test/e2e/**/*.ts",
     "test/sdk-conformance/**/*.ts",
-    "scripts/**/*.ts"
+    "scripts/**/*.ts",
+    "site/scripts/**/*.ts"
   ]
 }

@@ -1,0 +1,468 @@
+/*
+ * Maps the krun tokens onto Starlight so the documentation and the homepage
+ * share one design system, then adds the ticket and route-line details.
+ * Unlayered rules here win over Starlight's cascade layers.
+ */
+:root {
+  --sl-font: var(--k-font-sans);
+  --sl-font-mono: var(--k-font-mono);
+
+  --sl-color-white: var(--k-text-strong);
+  --sl-color-gray-1: #ece7dc;
+  --sl-color-gray-2: var(--k-ink-200);
+  --sl-color-gray-3: var(--k-ink-300);
+  --sl-color-gray-4: #6f6980;
+  --sl-color-gray-5: var(--k-ink-700);
+  --sl-color-gray-6: var(--k-ink-800);
+  --sl-color-black: var(--k-ink-950);
+
+  --sl-color-accent-low: #3a1a0e;
+  --sl-color-accent: var(--k-signal-500);
+  --sl-color-accent-high: var(--k-signal-300);
+  --sl-color-text: var(--k-ink-200);
+  --sl-color-text-accent: var(--k-signal-300);
+  --sl-color-text-invert: var(--k-ink-900);
+  --sl-color-bg: var(--k-bg);
+  --sl-color-bg-nav: var(--k-bg);
+  --sl-color-bg-sidebar: var(--k-bg);
+  --sl-color-bg-inline-code: #262330;
+  --sl-color-bg-accent: var(--k-signal-500);
+  --sl-color-hairline-light: #3a3648;
+  --sl-color-hairline: var(--k-line);
+  --sl-color-hairline-shade: var(--k-bg-sunken);
+  --sl-color-backdrop-overlay: rgb(13 12 17 / 0.72);
+
+  --sl-color-orange: var(--k-amber-300);
+  --sl-color-orange-high: #ffe2b8;
+  --sl-color-orange-low: #3b2a0c;
+  --sl-color-green: var(--k-volt-400);
+  --sl-color-green-high: #ecffa3;
+  --sl-color-green-low: #283208;
+  --sl-color-blue: var(--k-cobalt-300);
+  --sl-color-blue-high: #dadfff;
+  --sl-color-blue-low: #1c2150;
+  --sl-color-red: var(--k-red-300);
+  --sl-color-red-high: #ffd1d1;
+  --sl-color-red-low: #43151a;
+  --sl-color-purple: #e7a6ff;
+  --sl-color-purple-high: #f5dcff;
+  --sl-color-purple-low: #351b43;
+
+  --sl-shadow-sm: var(--k-shadow-s);
+  --sl-shadow-md: var(--k-shadow-m);
+  --sl-shadow-lg: var(--k-shadow-l);
+
+  --sl-line-height: var(--k-leading-body);
+  --sl-line-height-headings: 1.12;
+  --sl-text-h1: var(--k-step-4);
+  --sl-text-h2: clamp(1.625rem, 1.35rem + 1.1vw, 2.125rem);
+  --sl-text-h3: clamp(1.3125rem, 1.2rem + 0.5vw, 1.5rem);
+  --sl-text-h4: var(--k-step-1);
+  --sl-text-code: 0.875rem;
+  --sl-content-width: 46rem;
+}
+
+:root[data-theme="light"] {
+  --sl-color-white: var(--k-text-strong);
+  --sl-color-gray-1: var(--k-ink-900);
+  --sl-color-gray-2: #2a2733;
+  --sl-color-gray-3: var(--k-ink-500);
+  --sl-color-gray-4: #7d778a;
+  --sl-color-gray-5: var(--k-paper-300);
+  --sl-color-gray-6: var(--k-paper-200);
+  --sl-color-gray-7: #fbf8f1;
+  --sl-color-black: var(--k-paper-100);
+
+  --sl-color-accent-low: #ffe3d6;
+  --sl-color-accent: var(--k-signal-500);
+  --sl-color-accent-high: var(--k-signal-700);
+  --sl-color-text: #2a2733;
+  --sl-color-text-accent: var(--k-signal-700);
+  --sl-color-text-invert: var(--k-paper-50);
+  --sl-color-bg-nav: var(--k-bg);
+  --sl-color-bg-sidebar: var(--k-bg);
+  --sl-color-bg-inline-code: #ede6d7;
+  --sl-color-hairline-light: var(--k-paper-300);
+  --sl-color-hairline: var(--k-paper-300);
+  --sl-color-hairline-shade: var(--k-paper-300);
+  --sl-color-backdrop-overlay: rgb(23 21 30 / 0.45);
+
+  --sl-color-orange: #e08a00;
+  --sl-color-orange-high: var(--k-amber-800);
+  --sl-color-orange-low: #fff0d6;
+  --sl-color-green: #8fb800;
+  --sl-color-green-high: var(--k-volt-800);
+  --sl-color-green-low: #f0fbc8;
+  --sl-color-blue: var(--k-cobalt-600);
+  --sl-color-blue-high: #1f2aa8;
+  --sl-color-blue-low: #e4e6ff;
+  --sl-color-red: #e0483c;
+  --sl-color-red-high: var(--k-red-700);
+  --sl-color-red-low: #ffe4e1;
+  --sl-color-purple: #9b3fbf;
+  --sl-color-purple-high: #6a1f8a;
+  --sl-color-purple-low: #f6e6fc;
+}
+
+/* ---------- Base ---------- */
+
+html {
+  background: var(--k-bg);
+  overflow-x: clip;
+}
+
+body {
+  font-optical-sizing: auto;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--k-volt-400);
+  color: var(--k-ink-900);
+}
+
+:focus-visible {
+  outline: 3px solid var(--k-focus);
+  outline-offset: 2px;
+  border-radius: var(--k-radius-xs);
+}
+
+code,
+kbd,
+samp,
+pre {
+  font-variant-ligatures: none;
+}
+
+/* ---------- Header ---------- */
+
+header.header {
+  border-bottom-color: var(--k-line);
+  backdrop-filter: saturate(1.2) blur(10px);
+  background-color: color-mix(in srgb, var(--k-bg) 88%, transparent);
+}
+
+.site-title img {
+  height: 2rem;
+  width: auto;
+}
+
+site-search button[data-open-modal] {
+  border-radius: var(--k-radius-pill);
+  border-color: var(--k-line-strong);
+  background: var(--k-bg-raised);
+  font-family: var(--k-font-mono);
+  font-size: var(--k-step--1);
+}
+
+site-search button[data-open-modal]:hover {
+  border-color: var(--sl-color-text-accent);
+}
+
+/* ---------- Sidebar: departure-board labels, signal pill for the current page ---------- */
+
+.sidebar-content .top-level > li > details > summary .group-label .large,
+.sidebar-content .top-level > li > details > summary .large {
+  font-family: var(--k-font-mono);
+  font-size: var(--k-step--2);
+  font-weight: 600;
+  letter-spacing: var(--k-tracking-label);
+  text-transform: uppercase;
+  color: var(--k-text-muted);
+}
+
+.sidebar-content ul ul .large {
+  font-size: var(--sl-text-sm);
+  font-weight: 650;
+  color: var(--sl-color-white);
+}
+
+.sidebar-content a {
+  border-radius: var(--k-radius-pill);
+  transition: background-color var(--k-dur-fast) var(--k-ease-out), color var(--k-dur-fast);
+}
+
+.sidebar-content a:hover {
+  background: color-mix(in srgb, var(--sl-color-text-accent) 10%, transparent);
+}
+
+.sidebar-content a[aria-current="page"],
+.sidebar-content a[aria-current="page"]:hover,
+.sidebar-content a[aria-current="page"]:focus {
+  background: var(--k-signal);
+  color: var(--k-on-signal);
+  font-weight: 650;
+}
+
+.sidebar-content ul ul li {
+  border-inline-start-color: var(--k-line);
+}
+
+/* ---------- Page title: the route line ---------- */
+
+.content-panel h1#_top {
+  font-weight: 780;
+  letter-spacing: -0.025em;
+  line-height: 1.04;
+  text-wrap: balance;
+}
+
+[data-has-sidebar] h1#_top::after {
+  content: "";
+  display: block;
+  width: 4.75rem;
+  height: 0.75rem;
+  margin-top: 0.85rem;
+  background:
+    radial-gradient(circle closest-side, var(--k-bg) 42%, var(--k-signal) 46% 92%, transparent 100%)
+      right center / 0.75rem 0.75rem no-repeat,
+    linear-gradient(var(--k-signal), var(--k-signal)) left center / calc(100% - 0.5rem)
+      var(--k-route) no-repeat;
+}
+
+/* ---------- Markdown content ---------- */
+
+.sl-markdown-content {
+  font-size: 1.0625rem;
+}
+
+.sl-markdown-content :is(h2, h3, h4, h5) {
+  font-weight: 720;
+  letter-spacing: -0.018em;
+  text-wrap: balance;
+}
+
+.sl-markdown-content h2 {
+  margin-top: 2.75rem;
+}
+
+.sl-markdown-content :is(h2, h3) + * {
+  margin-top: 0.75rem;
+}
+
+.sl-markdown-content a:not(:where(.not-content *)) {
+  text-decoration-thickness: 0.08em;
+  text-underline-offset: 0.2em;
+  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
+  transition: text-decoration-color var(--k-dur-fast);
+}
+
+.sl-markdown-content a:not(:where(.not-content *)):hover {
+  text-decoration-color: currentColor;
+}
+
+.sl-markdown-content :not(pre) > code {
+  border-radius: var(--k-radius-xs);
+  padding: 0.1em 0.38em;
+  font-size: 0.88em;
+  /* Break a long token only when it would overflow its line. Unlike `anywhere`,
+     this keeps table columns at least as wide as their longest identifier. */
+  overflow-wrap: break-word;
+}
+
+.sl-markdown-content :is(td, th) code {
+  overflow-wrap: normal;
+}
+
+.sl-markdown-content strong {
+  font-weight: 700;
+  color: var(--sl-color-white);
+}
+
+/* Tables read like a departure board: mono labels, quiet rules. */
+.sl-markdown-content table {
+  font-size: var(--k-step--1);
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--k-line);
+  border-radius: var(--k-radius-m);
+  overflow: auto;
+}
+
+.sl-markdown-content :is(th, td) {
+  border-bottom: 1px solid var(--k-line);
+  padding: 0.6rem 0.85rem;
+}
+
+.sl-markdown-content tr:last-child td {
+  border-bottom: 0;
+}
+
+.sl-markdown-content th {
+  font-family: var(--k-font-mono);
+  font-size: var(--k-step--2);
+  font-weight: 600;
+  letter-spacing: var(--k-tracking-label);
+  text-transform: uppercase;
+  color: var(--k-text-muted);
+  background: var(--k-bg-raised);
+}
+
+.sl-markdown-content blockquote {
+  border-inline-start: var(--k-route) solid var(--k-signal);
+  border-radius: var(--k-radius-xs);
+}
+
+/* Asides: the ticket notch on the leading edge. */
+.starlight-aside {
+  border-radius: var(--k-radius-m);
+  border-inline-start-width: var(--k-route);
+  position: relative;
+}
+
+.starlight-aside__title {
+  font-family: var(--k-font-mono);
+  font-size: var(--k-step--1);
+  letter-spacing: 0.02em;
+}
+
+/* Expressive Code: on phones, shrink type a little; blocks soft-wrap. */
+.expressive-code .frame pre {
+  scrollbar-width: thin;
+}
+
+@media (max-width: 40rem) {
+  .expressive-code {
+    --ec-codeFontSize: 0.8125rem;
+    --ec-codePadInl: 0.9rem;
+  }
+}
+
+/* Titles never slide under the terminal window dots; long ones end in an ellipsis. */
+.expressive-code .frame.is-terminal .header {
+  padding-inline: 4.25rem;
+}
+
+.expressive-code .frame .header .title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Touch screens show the copy button all the time: keep the lines it covers clear. */
+@media (hover: none) {
+  .expressive-code .frame pre > code > .ec-line:nth-child(-n + 2) .code {
+    padding-inline-end: 3.25rem;
+  }
+}
+
+/* Tabs: labels stay on one line; on phones the padding tightens so bars fit. */
+starlight-tabs .tab > [role="tab"] {
+  padding-inline: 1rem;
+  font-family: var(--k-font-mono);
+  font-size: var(--k-step--1);
+  white-space: nowrap;
+}
+
+starlight-tabs .tab [aria-selected="true"] {
+  color: var(--sl-color-white);
+  border-color: var(--k-signal);
+}
+
+/* Phones: the tab bar becomes a wrapping row of station pills, so every label
+   stays visible without a hidden horizontal scroll. */
+@media (max-width: 40rem) {
+  starlight-tabs [role="tablist"] {
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    border-bottom: 0;
+  }
+
+  starlight-tabs .tab > [role="tab"] {
+    padding: 0.4rem 0.85rem;
+    border: 1px solid var(--k-line-strong);
+    border-radius: var(--k-radius-pill);
+    box-shadow: none;
+    font-size: 0.8125rem;
+  }
+
+  starlight-tabs .tab [aria-selected="true"] {
+    border-color: var(--k-signal);
+    background: var(--k-signal);
+    color: var(--k-on-signal);
+  }
+}
+
+@media (max-width: 22.5rem) {
+  starlight-tabs .tab > [role="tab"] {
+    padding-inline: 0.6rem;
+    font-size: 0.75rem;
+  }
+}
+
+/* Steps: stations on a line. */
+.sl-steps {
+  --bullet-size: 1.75rem;
+}
+
+.sl-steps > li::before {
+  background-color: var(--k-signal) !important;
+  color: var(--k-on-signal) !important;
+  font-family: var(--k-font-mono);
+  font-weight: 700;
+  box-shadow: 0 0 0 3px var(--k-bg);
+}
+
+.sl-steps > li::after {
+  background-color: var(--k-line-strong) !important;
+  width: 0.2rem !important;
+  border-radius: var(--k-radius-pill);
+}
+
+/* ---------- Table of contents ---------- */
+
+starlight-toc a[aria-current="true"],
+mobile-starlight-toc a[aria-current="true"] {
+  color: var(--sl-color-text-accent);
+  font-weight: 650;
+}
+
+starlight-toc h2,
+.right-sidebar h2 {
+  font-family: var(--k-font-mono);
+  font-size: var(--k-step--2) !important;
+  letter-spacing: var(--k-tracking-label);
+  text-transform: uppercase;
+  color: var(--k-text-muted) !important;
+}
+
+/* ---------- Footer: edit link and ticket-stub pagination ---------- */
+
+.pagination-links a {
+  position: relative;
+  border-radius: var(--k-radius-m);
+  border: 1px solid var(--k-line);
+  background: var(--k-bg-raised);
+  box-shadow: none;
+  transition:
+    border-color var(--k-dur-fast) var(--k-ease-out),
+    transform var(--k-dur-base) var(--k-ease-out);
+  -webkit-mask: radial-gradient(circle var(--k-notch) at 0 50%, #0000 98%, #000) left / 51% 100% no-repeat,
+    radial-gradient(circle var(--k-notch) at 100% 50%, #0000 98%, #000) right / 51% 100% no-repeat;
+  mask: radial-gradient(circle var(--k-notch) at 0 50%, #0000 98%, #000) left / 51% 100% no-repeat,
+    radial-gradient(circle var(--k-notch) at 100% 50%, #0000 98%, #000) right / 51% 100% no-repeat;
+}
+
+.pagination-links a:hover {
+  border-color: var(--sl-color-text-accent);
+  transform: translateY(-2px);
+}
+
+.pagination-links a .link-title {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+/* ---------- Reduced motion ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

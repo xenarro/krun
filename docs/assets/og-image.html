@@ -1,0 +1,226 @@
+<!doctype html>
+<!--
+  Source of og-image.png (1200x630 social preview). Render it with any headless
+  Chromium from the repository root, for example:
+
+    chrome-headless-shell --hide-scrollbars --force-device-scale-factor=1 \
+      --window-size=1200,630 --virtual-time-budget=3000 \
+      --screenshot=docs/assets/og-image.png docs/assets/og-image.html
+
+  It uses only the site's self-hosted fonts and the brand mark next to it.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>krun social preview</title>
+    <style>
+      @font-face {
+        font-family: "Bricolage Grotesque";
+        src: url("../../site/src/fonts/bricolage-grotesque-latin.woff2") format("woff2");
+        font-weight: 400 800;
+      }
+      @font-face {
+        font-family: "JetBrains Mono";
+        src: url("../../site/src/fonts/jetbrains-mono-latin.woff2") format("woff2");
+        font-weight: 100 800;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        width: 1200px;
+        height: 630px;
+        overflow: hidden;
+      }
+      body {
+        position: relative;
+        background: #121016;
+        color: #f7f3ea;
+        font-family: "Bricolage Grotesque", sans-serif;
+        font-optical-sizing: auto;
+      }
+      .dots {
+        position: absolute;
+        inset: 0;
+        background-image: radial-gradient(#2e2b38 1.6px, transparent 1.8px);
+        background-size: 26px 26px;
+        -webkit-mask-image: radial-gradient(ellipse 70% 80% at 80% 40%, #000 20%, transparent 80%);
+      }
+      .brand {
+        position: absolute;
+        left: 72px;
+        top: 60px;
+        height: 58px;
+      }
+      h1 {
+        position: absolute;
+        left: 68px;
+        top: 140px;
+        margin: 0;
+        font-size: 128px;
+        font-weight: 800;
+        line-height: 0.95;
+        letter-spacing: -0.045em;
+      }
+      h1 span {
+        display: block;
+      }
+      .mark {
+        display: inline-block;
+        margin-top: 10px;
+        padding: 0 0.12em 0.07em 0.06em;
+        border-radius: 0.1em;
+        background: #d4f53c;
+        color: #17151e;
+        transform: rotate(-1.6deg);
+        transform-origin: left bottom;
+      }
+      p {
+        position: absolute;
+        left: 72px;
+        top: 420px;
+        width: 720px;
+        margin: 0;
+        font-size: 27px;
+        line-height: 1.3;
+        color: #d9d4e0;
+      }
+      .route {
+        position: absolute;
+        left: 72px;
+        right: 72px;
+        bottom: 44px;
+        height: 60px;
+        font-family: "JetBrains Mono", monospace;
+        font-size: 15px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        color: #a9a3b5;
+      }
+      .route::before {
+        content: "";
+        position: absolute;
+        left: 10px;
+        right: 330px;
+        top: 9px;
+        height: 8px;
+        border-radius: 4px;
+        background: #ff5a1f;
+      }
+      .route span {
+        position: absolute;
+        top: 32px;
+      }
+      .route i {
+        position: absolute;
+        top: 0;
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        border: 6px solid #f7f3ea;
+        background: #1c1a24;
+      }
+      .route i.end {
+        top: -6px;
+        width: 38px;
+        height: 38px;
+        border-width: 8px;
+        background: #d4f53c;
+      }
+      .url {
+        position: absolute;
+        right: 0;
+        top: 4px;
+        font-size: 19px;
+        color: #f7f3ea;
+        letter-spacing: 0.02em;
+      }
+      .ticket {
+        position: absolute;
+        right: 70px;
+        top: 96px;
+        width: 250px;
+        height: 330px;
+        border-radius: 26px;
+        background: #ff5a1f;
+        color: #17151e;
+        transform: rotate(6deg);
+        -webkit-mask:
+          radial-gradient(circle 16px at 0 50%, #0000 97%, #000) left / 51% 100% no-repeat,
+          radial-gradient(circle 16px at 100% 50%, #0000 97%, #000) right / 51% 100% no-repeat;
+        font-family: "JetBrains Mono", monospace;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+      }
+      .ticket .label {
+        position: absolute;
+        left: 28px;
+        top: 30px;
+        font-size: 16px;
+      }
+      .ticket .stamp {
+        position: absolute;
+        left: 30px;
+        top: 92px;
+        padding: 10px 14px;
+        border: 4px solid #17151e;
+        border-radius: 10px;
+        background: #d4f53c;
+        font-size: 22px;
+        transform: rotate(-10deg);
+      }
+      .ticket .perf {
+        position: absolute;
+        left: 24px;
+        right: 24px;
+        top: 164px;
+        border-top: 3px dashed rgb(23 21 30 / 0.55);
+      }
+      .ticket .bars {
+        position: absolute;
+        left: 28px;
+        right: 28px;
+        bottom: 64px;
+        height: 70px;
+        background: repeating-linear-gradient(
+          90deg,
+          #17151e 0 3px,
+          transparent 3px 6px,
+          #17151e 6px 10px,
+          transparent 10px 13px,
+          #17151e 13px 14px,
+          transparent 14px 18px
+        );
+      }
+      .ticket .serial {
+        position: absolute;
+        left: 28px;
+        bottom: 28px;
+        font-size: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="dots"></div>
+    <img class="brand" src="logo-dark.svg" alt="" />
+    <h1><span>HTTP in.</span><span class="mark">Result out.</span></h1>
+    <p>HTTP-triggered functions executed as one-off Kubernetes Jobs. Durable status, classified failures.</p>
+    <div class="ticket">
+      <span class="label">One-way</span>
+      <span class="stamp">Succeeded</span>
+      <span class="perf"></span>
+      <span class="bars"></span>
+      <span class="serial">krun · run ticket</span>
+    </div>
+    <div class="route">
+      <i style="left: 0"></i><span style="left: 0">QUEUED</span>
+      <i style="left: 210px"></i><span style="left: 190px">SCHEDULED</span>
+      <i style="left: 440px"></i><span style="left: 425px">RUNNING</span>
+      <i class="end" style="left: 690px"></i><span style="left: 660px; color: #d4f53c">SUCCEEDED</span>
+      <span class="url">xenarro.github.io/krun</span>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,11 @@
+---
+// Docs pages keep Starlight's footer (edit link and previous/next) and add a
+// compact brand line; splash pages close with the full site footer.
+import Default from "@astrojs/starlight/components/Footer.astro";
+import SiteFooter from "../SiteFooter.astro";
+
+const splash = Astro.locals.starlightRoute.entry.data.template === "splash";
+---
+
+{!splash && <Default />}
+<SiteFooter compact={!splash} />

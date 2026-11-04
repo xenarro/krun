@@ -417,14 +417,14 @@ curl -sSi -X POST "$KRUN_API_URL/v1/functions/report-generator/runs?requestId=$R
 curl -sS "$KRUN_API_URL/v1/functions/-/runs/$RUN" -H "Authorization: Bearer $KRUN_API_KEY"
 
 # wait again
-curl -sS -X POST "$KRUN_API_URL/v1/functions/-/runs/$RUN:wait" \
+curl -sS -X POST "$KRUN_API_URL/v1/functions/-/runs/${RUN}:wait" \
   -H "Authorization: Bearer $KRUN_API_KEY" -H "Content-Type: application/json" -d '{ "timeout": "60s" }'
 
 # result: the inline document, or a 307 to object storage (follow without the bearer header)
-curl -sS "$KRUN_API_URL/v1/functions/-/runs/$RUN:getResult" -H "Authorization: Bearer $KRUN_API_KEY" -o result.json -w '%{http_code}\n'
+curl -sS "$KRUN_API_URL/v1/functions/-/runs/${RUN}:getResult" -H "Authorization: Bearer $KRUN_API_KEY" -o result.json -w '%{http_code}\n'
 
 # cancel
-curl -sS -X POST "$KRUN_API_URL/v1/functions/-/runs/$RUN:cancel" \
+curl -sS -X POST "$KRUN_API_URL/v1/functions/-/runs/${RUN}:cancel" \
   -H "Authorization: Bearer $KRUN_API_KEY" -H "Content-Type: application/json" -d '{}'
 
 # list failed runs of one function since a time
@@ -432,7 +432,7 @@ curl -sS -G "$KRUN_API_URL/v1/functions/report-generator/runs" -H "Authorization
   --data-urlencode 'filter=state = FAILED AND createTime >= "2026-10-22T00:00:00Z"' --data-urlencode 'pageSize=20'
 
 # watch
-curl -sS -N "$KRUN_API_URL/v1/functions/-/runs/$RUN:watch" -H "Authorization: Bearer $KRUN_API_KEY"
+curl -sS -N "$KRUN_API_URL/v1/functions/-/runs/${RUN}:watch" -H "Authorization: Bearer $KRUN_API_KEY"
 ```
 
 `WatchRun` transcript, connect while `RUNNING`, one status report, then

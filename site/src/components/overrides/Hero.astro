@@ -1,0 +1,12 @@
+---
+// The homepage gets the ticket hero and the 404 page its own lost-and-found
+// hero; any other splash page keeps Starlight's hero with krun styling.
+import Default from "@astrojs/starlight/components/Hero.astro";
+import HomeHero from "../home/HomeHero.astro";
+import LostHero from "../LostHero.astro";
+
+const { id } = Astro.locals.starlightRoute.entry;
+const Hero = id === "index" || id === "" ? HomeHero : id === "404" ? LostHero : Default;
+---
+
+<Hero />

@@ -1,0 +1,317 @@
+---
+title: Invoking runs over HTTP
+description: Create runs, wait for them, stream their progress, fetch results, list, cancel and receive signed webhooks through the public /v1 API.
+sidebar:
+  order: 5
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Callers use the public `/v1` API on the gateway's public port (8080). JSON fields are
+lowerCamelCase; states, failure reasons and other enums are UPPER_SNAKE_CASE.
+Functions are read-only through HTTP: Kubernetes is their write API.
+
+The examples below assume two environment variables:
+
+```sh title="Terminal"
+export KRUN_API_URL=https://krun.example.com
+export KRUN_API_KEY=...   # delivered privately; never commit or echo it
+```
+
+## Authentication and scopes
+
+Send `Authorization: Bearer <api key>` on every call. A key reaches only the
+functions matching its globs and only the runs it created; `admin` reaches
+everything. Anything else is indistinguishable from a missing resource
+(`404 FUNCTION_NOT_FOUND` or `404 RUN_NOT_FOUND`).
+
+| Method | HTTP | Scope |
+|---|---|---|
+| ListFunctions | `GET /v1/functions` | `functions:read` |
+| GetFunction | `GET /v1/functions/{function}` | `functions:read` |
+| CreateRun | `POST /v1/functions/{function}/runs` | `runs:write` |
+| GetRun | `GET /v1/functions/{function}/runs/{run}` | `runs:read` |
+| ListRuns | `GET /v1/functions/{function}/runs` | `runs:read` |
+| WaitRun | `POST /v1/functions/{function}/runs/{run}:wait` | `runs:read` |
+| CancelRun | `POST /v1/functions/{function}/runs/{run}:cancel` | `runs:write` |
+| GetRunResult | `GET /v1/functions/{function}/runs/{run}:getResult` | `runs:read` |
+| WatchRun | `GET /v1/functions/{function}/runs/{run}:watch` | `runs:read` |
+
+A run's full resource name is `functions/{function}/runs/{run}`, where `{run}` is a
+lowercase UUIDv7. The wildcard `-` may replace `{function}` in GetRun, ListRuns and
+the run methods, so `functions/-/runs/{run}` finds a run by id alone. The
+`runs:priority` scope is needed to create a run with `priority` above 0.
+
+## Discover functions and limits
+
+```sh title="Terminal"
+curl -sS "$KRUN_API_URL/v1/functions/reports-demo" \
+  -H "Authorization: Bearer $KRUN_API_KEY"
+```
+
+A Function exposes its `inputSchema`, `maxConcurrency`, `maxQueued`, `queueTimeout`,
+`activeDeadlineSeconds`, optional `heartbeatTimeout` and `callback`, and the
+installation's `maxInputBytes`, `maxResultBytes` and `maxWait`. ListFunctions returns
+only Ready functions your key may use, ordered by name.
+
+## Create a run
+
+```sh title="Terminal"
+curl -sS -X POST \
+  "$KRUN_API_URL/v1/functions/reports-demo/runs?requestId=$(uuidgen)&wait=30s" \
+  -H "Authorization: Bearer $KRUN_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"input":{"name":"reports-demo"}}'
+```
+
+The body is a Run, of which only three fields are read:
+
+| Field | Required | Notes |
+|---|---|---|
+| `input` | yes | Validated against the Function's `inputSchema`; at most `maxInputBytes` (default 262144). |
+| `priority` | no | 0 to 9, default 0, higher runs first. Above 0 needs `runs:priority`. |
+| `callback` | no | `{ "url": "https://..." }` for a webhook at the terminal state. Defaults to the Function's `callback`. |
+
+The response is `201 Created` with the full Run and a `Location` header. The run's
+`name`, such as `functions/reports-demo/runs/019a1c0e-...`, is the handle for every
+later call. The examples below keep it in `RUN_NAME`, for instance with `jq`:
+
+```sh title="Terminal"
+RUN_NAME=$(curl -sS --fail-with-body -X POST \
+  "$KRUN_API_URL/v1/functions/reports-demo/runs" \
+  -H "Authorization: Bearer $KRUN_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"input":{"name":"reports-demo"}}' | jq -r .name)
+```
+
+### Idempotency with `requestId`
+
+`CreateRun` is the only non-idempotent method. Send an optional `requestId` (at most
+128 characters; a UUID is recommended) whenever you might retry:
+
+- A repeat with the same key, function, `requestId` and the same `input`, `priority`
+  and `callback` returns the run as it is now, with `201` and
+  `Idempotent-Replay: true`.
+- A repeat with a different body is `409 ABORTED` with reason
+  `IDEMPOTENCY_CONFLICT`.
+- A request id lives as long as its run row, which is kept for the retention window.
+
+### Waiting on create
+
+`wait` delays the response until the run is terminal or the duration elapses,
+capped at `maxWait` (default `60s`). The status stays `201` either way, so read
+`state`: a non-terminal state means "wait again". Set your HTTP client timeout above
+`wait`. A client that disconnects does not cancel the run.
+
+## Follow a run to completion
+
+<Tabs>
+<TabItem label="WaitRun">
+
+```sh title="Terminal"
+curl -sS -X POST "$KRUN_API_URL/v1/${RUN_NAME}:wait" \
+  -H "Authorization: Bearer $KRUN_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"timeout":"60s"}'
+```
+
+Returns `200` with the full Run as soon as it is terminal, or when `timeout` (default
+and cap `maxWait`) elapses. There is no error on timeout; loop until `state` is
+terminal.
+
+</TabItem>
+<TabItem label="WatchRun (SSE)">
+
+```sh title="Terminal"
+curl -sS -N "$KRUN_API_URL/v1/${RUN_NAME}:watch" \
+  -H "Authorization: Bearer $KRUN_API_KEY"
+```
+
+A `text/event-stream` of BASIC Run snapshots. The first event is `state` with the
+current run; a terminal run gets that one event and the stream closes. After that,
+each change sends one `state`, `status` or `job_status` event, with keepalive
+comments every 15 seconds. A stream that ends without a terminal `state` event is not
+an error: reconnect and you receive a fresh snapshot. `Last-Event-ID` is ignored.
+
+```text title="Example stream"
+event: state
+id: 2026-10-22T10:00:09.000Z
+data: {"name":"functions/report-generator/runs/019a...","state":"RUNNING",...}
+
+event: status
+id: 2026-10-22T10:00:12.000Z
+data: {..."runtimeStatus":{"message":"loading","progress":0.1,...},...}
+
+: keepalive
+
+event: state
+id: 2026-10-22T10:00:40.000Z
+data: {..."state":"SUCCEEDED","endTime":"2026-10-22T10:00:40.000Z",...}
+```
+
+</TabItem>
+<TabItem label="GetRun">
+
+```sh title="Terminal"
+curl -sS "$KRUN_API_URL/v1/${RUN_NAME}" \
+  -H "Authorization: Bearer $KRUN_API_KEY"
+```
+
+Returns the full Run. Add `?view=BASIC` to omit `input`, `result`, `logTail` and
+`error.details`. Poll politely; WaitRun and WatchRun avoid polling altogether.
+
+</TabItem>
+</Tabs>
+
+### Run states
+
+| State | Meaning |
+|---|---|
+| `QUEUED` | Accepted and waiting for a free slot. |
+| `SCHEDULED` | The Job exists; the pod is not running yet. |
+| `RUNNING` | The function container is running. |
+| `SUCCEEDED` | Terminal: the container exited 0. |
+| `FAILED` | Terminal: see `failureReason` and `error`. |
+| `CANCELLING` | A cancel was accepted; the Job is being deleted. |
+| `CANCELLED` | Terminal: the Job is gone. |
+
+Branch on `state` and `failureReason`, never on `error.message`. Response enums are
+open: treat unknown values as opaque and ignore unknown fields.
+
+## Fetch the result
+
+```sh title="Terminal"
+curl -sS -o result.json -w '%{http_code} %{redirect_url}\n' \
+  "$KRUN_API_URL/v1/${RUN_NAME}:getResult" \
+  -H "Authorization: Bearer $KRUN_API_KEY"
+```
+
+| Response | Meaning |
+|---|---|
+| `200` | The body is the result document itself, `application/json`. |
+| `307` | The result is in object storage. `Location` is a presigned URL valid for 300 seconds, sent with `Cache-Control: no-store`. |
+| `404 RESULT_MISSING` | The run is terminal but has no result. |
+| `400 RUN_NOT_TERMINAL` | The run has not finished yet. |
+
+Follow a 307 at once **without** the `Authorization` header or any krun header,
+never store the URL, and call `:getResult` again for a fresh URL if it expires:
+
+```sh title="Terminal"
+curl -sS -o result.json "$PRESIGNED_URL"
+```
+
+A `200` means a result exists, not that the run succeeded: a `FAILED` or `CANCELLED`
+run may keep an inline result. Always read `state`.
+
+## List runs
+
+```sh title="Terminal"
+curl -sS -G "$KRUN_API_URL/v1/functions/reports-demo/runs" \
+  -H "Authorization: Bearer $KRUN_API_KEY" \
+  --data-urlencode 'filter=state = FAILED AND createTime >= "2026-10-22T00:00:00Z"' \
+  --data-urlencode 'pageSize=20'
+```
+
+- Items are BASIC Runs ordered by `createTime` descending, then run id descending.
+- `pageSize` defaults to 50; values above 200 are coerced to 200.
+- Pass `nextPageToken` back as `pageToken`; it is an empty string on the last page.
+  Tokens are opaque and bound to the parent and the filter.
+- `functions/-/runs` lists across all functions your key can see.
+
+The filter grammar is a small subset of AIP-160, joined with `AND`:
+
+```text title="Filter grammar"
+state ( = | != ) STATE
+createTime ( >= | <= | > | < ) "RFC 3339 timestamp"
+failureReason = REASON
+```
+
+## Cancel a run
+
+```sh title="Terminal"
+curl -sS -X POST "$KRUN_API_URL/v1/${RUN_NAME}:cancel" \
+  -H "Authorization: Bearer $KRUN_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{}'
+```
+
+From `QUEUED`, `SCHEDULED` or `RUNNING` the run moves to `CANCELLING` and the call
+returns `200` with the full Run. Repeating the call on a `CANCELLING` or `CANCELLED`
+run also returns `200`. On a `SUCCEEDED` or `FAILED` run it is
+`400 FAILED_PRECONDITION` with reason `RUN_TERMINAL`. Cancellation completes
+asynchronously: watch or wait for `CANCELLED`. A `CANCELLED` run may carry a result
+accepted before the cancel, but never `resultUri`.
+
+## Receive webhooks
+
+When a run with a `callback` reaches a terminal state, the scheduler POSTs its BASIC
+Run as JSON to `callback.url` with these headers:
+
+| Header | Content |
+|---|---|
+| `X-Krun-Delivery` | Delivery id, constant across every attempt of one delivery. Deduplicate on it. |
+| `X-Krun-Run-Id` | The bare run UUIDv7. |
+| `X-Krun-Signature` | `t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<body>">`, one `v1=` per active signing secret. |
+
+Delivery is at least once: six attempts over about 15 hours (retries after 1 minute,
+5 minutes, 30 minutes, 2 hours and 12 hours), 10 seconds each, redirects not
+followed; any `2xx` acknowledges. The payload omits `result`; fetch it with
+GetRunResult. The platform team must allow the callback host, and the address must be
+public unless it is inside an allowed CIDR; otherwise CreateRun answers
+`400 CALLBACK_NOT_ALLOWED`.
+
+Verify every delivery against the raw request body. This Node.js sketch follows the
+signature rules above:
+
+```js title="verify-webhook.js"
+import { createHmac, timingSafeEqual } from "node:crypto";
+
+export function verify(rawBody, header, secret, now = Date.now() / 1000) {
+  const parts = header.split(",").map((part) => part.split("="));
+  const t = parts.find(([key]) => key === "t")?.[1];
+  if (!t || Math.abs(now - Number(t)) > 300) return false;
+  const expected = createHmac("sha256", secret).update(`${t}.${rawBody}`).digest();
+  return parts
+    .filter(([key]) => key === "v1")
+    .some(([, hex]) => {
+      const given = Buffer.from(hex, "hex");
+      return given.length === expected.length && timingSafeEqual(given, expected);
+    });
+}
+```
+
+## Errors and retries
+
+Every error uses the AIP-193 envelope. Branch on `status` and the first detail's
+`reason`, never on `message`:
+
+```json title="Error envelope"
+{ "error": {
+    "code": 400,
+    "message": "input does not match the function's input schema",
+    "status": "INVALID_ARGUMENT",
+    "details": [
+      { "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+        "reason": "INPUT_SCHEMA_VIOLATION", "domain": "krun.io",
+        "metadata": { "function": "report-generator" } },
+      { "@type": "type.googleapis.com/google.rpc.BadRequest",
+        "fieldViolations": [
+          { "field": "input.from", "description": "must match format \"date\"" } ] }
+    ] } }
+```
+
+- On `429` (`RATE_LIMITED` or `QUEUE_FULL`) and `503 NOT_READY`, honor
+  `Retry-After`.
+- On `5xx` and refused connections (for example during a rollout), retry with
+  backoff. Retry `CreateRun` only with a `requestId`.
+- Never retry other `4xx` responses: they describe a problem with the request.
+- Unknown query parameters, unknown body fields and `null` values are rejected with
+  `400 REQUEST_INVALID`, so a misspelled `requestId` cannot silently create a
+  duplicate run.
+- Send `X-Request-Id` (up to 128 characters) to correlate with gateway logs; it is
+  echoed on every response.
+
+Each key is limited to `KRUN_RATE_LIMIT_RPS` requests per second (default 10) with a
+burst of `KRUN_RATE_LIMIT_BURST` (default 50), per gateway replica. The complete
+contract, including every error reason and field, is the
+[public API reference](/krun/reference/generated/public-api/).

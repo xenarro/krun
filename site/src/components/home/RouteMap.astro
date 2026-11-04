@@ -1,0 +1,454 @@
+---
+/**
+ * Architecture as a transit map (SPEC.md section 2): the run line carries a
+ * request from your service through the gateway, the database and the elected
+ * scheduler to a Kubernetes Job; the result line carries input, status and the
+ * result back through the gateway's internal listener. Object storage is an
+ * optional branch for large results. Two drawings: wide and tall.
+ */
+const steps = [
+  {
+    title: "Submit",
+    body: "Your service POSTs JSON to /v1/functions/{function}/runs with an API key. The gateway checks it against the Function's JSON Schema and stores a QUEUED run.",
+  },
+  {
+    title: "Claim",
+    body: "The elected scheduler claims queued runs with compare-and-set transitions, inside the Function's maxConcurrency and the global KRUN_MAX_RUNNING.",
+  },
+  {
+    title: "Run",
+    body: "It creates an immutable per-run Secret and a Job named krun-<run id> in the hardened jobs namespace: backoffLimit 0, non-root, read-only root filesystem, no service account token.",
+  },
+  {
+    title: "Report",
+    body: "The container fetches its input from the internal API on port 8081 with its per-run token, reports status and writes a result, or uploads a large one through a presigned URL.",
+  },
+  {
+    title: "Land",
+    body: "The scheduler records the terminal state from what Kubernetes reports, never from the function, then deletes the Job and Secret. Callers read it over /v1 or get a signed webhook.",
+  },
+];
+---
+
+<div class="k-map not-content">
+  <svg class="k-map__svg k-map__svg--wide" viewBox="0 0 1120 470" role="img" aria-labelledby="k-map-title k-map-desc">
+    <title id="k-map-title">How a krun run travels</title>
+    <desc id="k-map-desc">
+      Run line: your service sends POST /v1 to krun-gateway on port 8080, which inserts a QUEUED run
+      into the database (Postgres or embedded SQLite). The elected krun-scheduler claims it and
+      creates a Kubernetes Job named krun-run-id in the jobs namespace. Result line: the Job gets its
+      input and reports status and its result to the gateway's internal port 8081 with a per-run
+      token, and your service reads the run back with GetRun, WaitRun, WatchRun and getResult. An
+      optional branch uploads large results to S3-compatible object storage.
+    </desc>
+    <rect class="zone" x="952" y="70" width="156" height="284" rx="22"></rect>
+    <text class="zone-label" x="1108" y="60" text-anchor="end">jobs namespace · default-deny</text>
+
+    <g class="lines">
+      <path class="casing" d="M90 170H1030"></path>
+      <path class="line line--run" d="M90 170H1030"></path>
+      <path class="casing" d="M1030 320H90"></path>
+      <path class="line line--result" d="M1030 320H90"></path>
+      <path class="line line--branch" d="M1030 340V418"></path>
+    </g>
+
+    <g class="stations">
+      <rect class="pill" x="74" y="152" width="32" height="186" rx="16"></rect>
+      <rect class="pill" x="324" y="152" width="32" height="186" rx="16"></rect>
+      <circle class="stop" cx="580" cy="170" r="13"></circle>
+      <circle class="stop" cx="810" cy="170" r="13"></circle>
+      <rect class="pill pill--terminal" x="1012" y="152" width="36" height="186" rx="18"></rect>
+      <circle class="stop stop--optional" cx="1030" cy="430" r="12"></circle>
+    </g>
+
+    <g class="names" text-anchor="middle">
+      <text x="90" y="104">Your service</text>
+      <text x="340" y="104">krun-gateway</text>
+      <text x="580" y="104">Database</text>
+      <text x="810" y="104">krun-scheduler</text>
+      <text x="1030" y="104">Kubernetes Job</text>
+    </g>
+    <g class="details" text-anchor="middle">
+      <text x="90" y="128">API key only</text>
+      <text x="340" y="128">:8080 /v1 · :8081 internal</text>
+      <text x="580" y="128">Postgres or SQLite</text>
+      <text x="810" y="128">Lease leader</text>
+      <text x="1030" y="128">krun-&lt;run id&gt;</text>
+    </g>
+
+    <g class="segments" text-anchor="middle">
+      <text x="215" y="203">POST …/runs</text>
+      <text x="460" y="203">insert · QUEUED</text>
+      <text x="695" y="203">claim run</text>
+      <text x="920" y="203">create Job</text>
+      <text x="685" y="353">GET input · POST status · PUT result</text>
+      <text class="muted" x="685" y="373">per-run token, internal port 8081</text>
+      <text x="215" y="353">GetRun · Wait · Watch</text>
+      <text class="muted" x="215" y="373">getResult over /v1</text>
+    </g>
+
+    <g text-anchor="end">
+      <text class="name-sm" x="1004" y="426">Object storage</text>
+      <text class="detail-sm" x="1004" y="446">optional · large results</text>
+    </g>
+  </svg>
+
+  <svg class="k-map__svg k-map__svg--tall" viewBox="0 0 360 830" role="img" aria-labelledby="k-map-title-tall">
+    <title id="k-map-title-tall">How a krun run travels, from your service to a Kubernetes Job and back</title>
+    <rect class="zone" x="14" y="626" width="332" height="94" rx="20"></rect>
+    <text class="zone-label" x="346" y="616" text-anchor="end">jobs namespace · default-deny</text>
+    <g class="lines">
+      <path class="casing" d="M100 60V670"></path>
+      <path class="line line--run" d="M100 60V670"></path>
+      <path class="casing" d="M44 670V60"></path>
+      <path class="line line--result" d="M44 670V60"></path>
+      <path class="line line--branch" d="M100 688V770"></path>
+    </g>
+    <g class="stations">
+      <rect class="pill" x="28" y="44" width="88" height="32" rx="16"></rect>
+      <rect class="pill" x="28" y="214" width="88" height="32" rx="16"></rect>
+      <circle class="stop" cx="100" cy="380" r="13"></circle>
+      <circle class="stop" cx="100" cy="520" r="13"></circle>
+      <rect class="pill pill--terminal" x="26" y="652" width="92" height="36" rx="18"></rect>
+      <circle class="stop stop--optional" cx="100" cy="782" r="12"></circle>
+    </g>
+    <g class="names">
+      <text x="140" y="56">Your service</text>
+      <text x="140" y="226">krun-gateway</text>
+      <text x="140" y="376">Database</text>
+      <text x="140" y="516">krun-scheduler</text>
+      <text x="140" y="666">Kubernetes Job</text>
+      <text class="name-sm" x="128" y="778">Object storage</text>
+    </g>
+    <g class="details">
+      <text x="140" y="78">API key only</text>
+      <text x="140" y="248">:8080 /v1 · :8081 internal</text>
+      <text x="140" y="398">Postgres or SQLite</text>
+      <text x="140" y="538">Lease leader</text>
+      <text x="140" y="688">krun-&lt;run id&gt;</text>
+      <text class="detail-sm" x="128" y="798">optional · large results</text>
+    </g>
+    <g class="segments">
+      <text x="140" y="148">POST …/runs</text>
+      <text x="140" y="314">insert · QUEUED</text>
+      <text x="140" y="458">claim run</text>
+      <text x="140" y="586">create Job</text>
+    </g>
+  </svg>
+
+  <ul class="k-map__legend" aria-label="Map legend">
+    <li><span class="swatch swatch--run"></span>Run line: the request, out to a Job</li>
+    <li><span class="swatch swatch--result"></span>Result line: input, status and result, back to you</li>
+    <li><span class="swatch swatch--branch"></span>Optional branch</li>
+  </ul>
+
+  <ol class="k-map__steps">
+    {
+      steps.map((step, index) => (
+        <li>
+          <span class="k-map__num" aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
+          <h3>{step.title}</h3>
+          <p>{step.body}</p>
+        </li>
+      ))
+    }
+  </ol>
+</div>
+
+<style>
+  .k-map {
+    --run: var(--k-signal);
+    --result: var(--k-volt);
+    --casing: transparent;
+    --stop-fill: var(--k-bg-raised);
+    --stop-stroke: var(--k-text-strong);
+  }
+
+  :global(:root[data-theme="light"]) .k-map {
+    --casing: var(--k-ink-900);
+  }
+
+  .k-map__svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    overflow: visible;
+    font-family: var(--k-font-sans);
+  }
+
+  .k-map__svg--tall {
+    display: none;
+    max-width: 26rem;
+    margin-inline: auto;
+  }
+
+  /* The wide drawing scales with the page; below 60rem its labels would drop
+     under 11 px, so tablets and phones get the tall drawing instead. */
+  @media (max-width: 60rem) {
+    .k-map__svg--wide {
+      display: none;
+    }
+    .k-map__svg--tall {
+      display: block;
+    }
+    .k-map__legend {
+      flex-direction: column;
+      align-items: flex-start;
+      width: fit-content;
+      margin-inline: auto;
+    }
+  }
+
+  /* Tablets: the tall map and the five steps side by side. */
+  @media (min-width: 46.01rem) and (max-width: 60rem) {
+    .k-map {
+      display: grid;
+      grid-template-columns: minmax(0, 23rem) minmax(0, 1fr);
+      grid-template-areas: "map steps" "legend steps";
+      align-items: start;
+      column-gap: 2.5rem;
+    }
+    .k-map__svg--tall {
+      grid-area: map;
+      width: 100%;
+      margin: 0;
+    }
+    .k-map__legend {
+      grid-area: legend;
+      margin-inline: 0;
+    }
+    .k-map__steps {
+      grid-area: steps;
+      grid-template-columns: minmax(0, 1fr);
+      margin: 0;
+    }
+  }
+
+  .zone {
+    fill: none;
+    stroke: var(--k-line-strong);
+    stroke-width: 2;
+    stroke-dasharray: 2 7;
+    stroke-linecap: round;
+  }
+
+  .zone-label {
+    font-family: var(--k-font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    fill: var(--k-text-muted);
+  }
+
+  /* The tall drawing renders near 1:1; keep its zone label clear of the line. */
+  .k-map__svg--tall .zone-label {
+    font-size: 11px;
+  }
+
+  .lines path {
+    fill: none;
+    stroke-linecap: round;
+  }
+
+  .casing {
+    stroke: var(--casing);
+    stroke-width: 15;
+  }
+
+  .line {
+    stroke-width: 10;
+  }
+
+  .line--run {
+    stroke: var(--run);
+  }
+
+  .line--result {
+    stroke: var(--result);
+  }
+
+  /* Lines draw themselves as the map scrolls into view, where supported. */
+  @supports (animation-timeline: view()) {
+    @media (prefers-reduced-motion: no-preference) {
+      .line--run,
+      .line--result {
+        stroke-dasharray: 1400;
+        animation: k-draw linear both;
+        animation-timeline: view();
+        animation-range: entry 0% cover 45%;
+      }
+      .line--result {
+        animation-range: entry 15% cover 55%;
+      }
+    }
+  }
+
+  .line--branch {
+    stroke: var(--k-text-muted);
+    stroke-width: 4;
+    stroke-dasharray: 2 9;
+  }
+
+  .pill,
+  .stop {
+    fill: var(--stop-fill);
+    stroke: var(--stop-stroke);
+    stroke-width: 4;
+  }
+
+  .pill--terminal {
+    stroke-width: 5;
+  }
+
+  .stop--optional {
+    stroke: var(--k-text-muted);
+    stroke-dasharray: 3 4;
+  }
+
+  .names text,
+  .name-sm {
+    font-size: 20px;
+    font-weight: 760;
+    letter-spacing: -0.01em;
+    fill: var(--k-text-strong);
+  }
+
+  .name-sm {
+    font-size: 16px;
+  }
+
+  .details text,
+  .detail-sm {
+    font-family: var(--k-font-mono);
+    font-size: 13.5px;
+    fill: var(--k-text-muted);
+  }
+
+  .segments text {
+    font-family: var(--k-font-mono);
+    font-size: 13.5px;
+    font-weight: 600;
+    fill: var(--k-text);
+    paint-order: stroke;
+    stroke: var(--k-bg);
+    stroke-width: 5px;
+    stroke-linejoin: round;
+  }
+
+  .segments .muted {
+    font-weight: 500;
+    fill: var(--k-text-muted);
+  }
+
+  .k-map__legend {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.5rem 1.75rem;
+    margin: 1.75rem 0 0;
+    padding: 0;
+    list-style: none;
+    font-size: var(--k-step--1);
+    color: var(--k-text-muted);
+  }
+
+  .k-map__legend li {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+  }
+
+  .swatch {
+    width: 1.75rem;
+    height: 0.5rem;
+    border-radius: var(--k-radius-pill);
+    box-shadow: 0 0 0 2px var(--casing);
+  }
+
+  .swatch--run {
+    background: var(--run);
+  }
+
+  .swatch--result {
+    background: var(--result);
+  }
+
+  .swatch--branch {
+    height: 0.25rem;
+    box-shadow: none;
+    background: repeating-linear-gradient(90deg, var(--k-text-muted) 0 3px, transparent 3px 8px);
+  }
+
+  .k-map__steps {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 12.5rem), 1fr));
+    gap: 1rem;
+    margin: 2.5rem 0 0;
+    padding: 0;
+    list-style: none;
+    counter-reset: step;
+  }
+
+  /* Wide screens: five stops in a row. Laptops: three, then two wider ones. */
+  @media (min-width: 75.01rem) {
+    .k-map__steps {
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+  }
+
+  @media (min-width: 60.01rem) and (max-width: 75rem) {
+    .k-map__steps {
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+    }
+    .k-map__steps li {
+      grid-column: span 2;
+    }
+    .k-map__steps li:nth-child(n + 4) {
+      grid-column: span 3;
+    }
+  }
+
+  .k-map__steps li {
+    position: relative;
+    margin: 0;
+    padding: 1.1rem 1.1rem 1.2rem;
+    border: 1px solid var(--k-line);
+    border-radius: var(--k-radius-m);
+    background: var(--k-bg-raised);
+  }
+
+  .k-map__num {
+    display: inline-grid;
+    place-items: center;
+    width: 2.1rem;
+    height: 2.1rem;
+    border-radius: 50%;
+    border: 3px solid var(--k-signal);
+    font-family: var(--k-font-mono);
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--k-text-strong);
+  }
+
+  .k-map__steps h3 {
+    margin: 0.75rem 0 0.35rem;
+    font-size: var(--k-step-1);
+    font-weight: 760;
+    letter-spacing: -0.01em;
+    color: var(--k-text-strong);
+  }
+
+  .k-map__steps p {
+    margin: 0;
+    font-size: 0.9375rem;
+    line-height: 1.6;
+    color: var(--k-text-muted);
+  }
+
+  @keyframes k-draw {
+    from {
+      stroke-dashoffset: 1400;
+    }
+  }
+</style>
