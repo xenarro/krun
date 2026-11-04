@@ -301,6 +301,16 @@ for the measurement boundaries and production RPO/RTO limitations.
 `node scripts/check-operations-alerts.ts` checks every documented alert name
 against the real PrometheusRule rendered in both modes.
 
+The P9.6 source snapshot in [PR #100](https://github.com/xenarro/krun/pull/100)
+passed [hosted CI](https://github.com/xenarro/krun/actions/runs/41870385177)
+with all 44 native scenarios, the
+[both-mode fresh quickstarts](https://github.com/xenarro/krun/actions/runs/41870385406)
+and the [release dry-run](https://github.com/xenarro/krun/actions/runs/41870385456).
+This verifies the listed Phase 9 rehearsal gates, not full Phase 9 or v1
+completion: P9.5 registry ownership and publication remain owner-blocked.
+Protected-main independent review and merge are separate from pushed-source
+qualification; no auto-merge is enabled.
+
 For durable installs, capacity, backup/restore, upgrades, key rotation, telemetry,
 alerts, object-store lifecycle and keep/adoption consequences, read
 [OPERATIONS](docs/OPERATIONS.md). The Phase 9 release dry-run/publication gate
