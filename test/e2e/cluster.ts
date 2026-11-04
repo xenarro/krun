@@ -15,6 +15,7 @@ import {
   parsePushDigest,
   probeVerdict,
 } from "./lib/contracts.ts";
+import { acquireFoundationLease } from "./lib/foundation-lease.ts";
 import { buildSdkFunctions, sdkFunctionsSchema } from "./lib/sdk-functions.ts";
 import { securityPrincipals } from "./lib/security.ts";
 
@@ -838,11 +839,12 @@ if (
   console.error("Usage: cluster.ts up|down|verify|diagnostics|uninstall|install embedded|postgres");
   process.exitCode = 1;
 } else {
-  await mkdir(stateDir, { recursive: true, mode: 0o700 });
-  let locked = false;
+  let lease: Awaited<ReturnType<typeof acquireFoundationLease>> | undefined;
   try {
-    await mkdir(lock, { mode: 0o700 });
-    locked = true;
+    lease = await acquireFoundationLease(lock, process.env.KRUN_TEST_FOUNDATION_LEASE).catch(() => {
+      throw new StepFailure("E2E foundation lease unavailable");
+    });
+    await mkdir(stateDir, { recursive: true, mode: 0o700 });
     if (command === "install" && mode.success) await install(mode.data);
     else if (command === "uninstall") await uninstall();
     else if (command === "up") await up();
@@ -856,12 +858,12 @@ if (
         : "E2E foundation failed; no private diagnostic values are printed",
     );
     try {
-      await diagnostics();
+      if (lease) await diagnostics();
     } catch {
       /* Diagnostics must not expose raw credentials or mask the failure. */
     }
     process.exitCode = 1;
   } finally {
-    if (locked) await rm(lock, { recursive: true, force: true });
+    await lease?.release();
   }
 }

@@ -96,6 +96,42 @@ acceptance,PLAN closure,production use or publication. P7.7 monitoring/full
 Phase7 remain separate. The historical sections below record the earlier
 raw-foundation gates;the chart procedure above is the current entrypoint.
 
+## Fresh-cluster README rehearsal (P9.4)
+
+`make e2e-quickstart` builds the workspace, then runs
+`timeout 1800s node test/e2e/quickstart.ts MODE` for each database mode. Each
+mode requires an absent `krun-test-e2e` cluster, creates the stock owned kind
+foundation and runs the real chart's positive open/deny/reopen CNI control.
+It removes that control release before calling `scripts/quickstart.sh` with
+the local chart, pushed `repository:tag` platform image, workspace CLI, freshly
+packed Node SDK and owned loopback registry. This is separate from the existing
+Vitest scenario corpus: no timeout, retry, worker or security allowance changes.
+
+The actual quickstart runs init, installs the vendored SDK, tests, builds/pushes
+and deploys the generated Function, observes current-generation Ready, submits
+once, waits for terminal success and reads the exact result through GetRun.
+Its key and optional Postgres credentials are generated privately; no Secret
+value enters values, argv or output. The demo uses only an inline result.
+Quickstart cleanup reads back the absence of its namespaces and CRD; the driver
+always removes its owned foundation, and the CI matrix has a separate always-run
+cleanup step. A cleanup error fails acceptance. Existing foreign resources or
+an unowned foundation fail closed instead of being adopted or deleted.
+A shared, fail-closed foundation lease spans inventory, setup, the rehearsal and
+joined teardown. Stock lifecycle commands and manual quickstarts participate in
+that same lease; child commands borrow it without releasing the owner's lock.
+Busy locks are never stolen. After a hard interruption, verify all owning and
+borrowing processes have stopped before exclusive recovery of its checkout/TMPDIR
+lock; do not blindly delete a busy lock or another job's resources.
+The port-forward has a bounded TERM grace, exact-child KILL escalation and join;
+resource and lease cleanup are still attempted if that shutdown fails.
+
+The driver prints a sanitized `quickstart_acceptance` receipt plus the separate
+owned-foundation cleanup receipt. The script's `durationSeconds` includes its
+chart/project cleanup; the complete outer command duration also includes
+foundation provisioning, the positive CNI control and infrastructure cleanup.
+See the root README for real local measurements and manual overrides. Hosted
+CI and independently reviewed delivery remain separate from implementation.
+
 ## CLI deploy acceptance (P8.7)
 
 `deploy.e2e.ts` reuses the real CLI-generated, vendored projects prepared by the
