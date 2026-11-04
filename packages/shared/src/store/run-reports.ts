@@ -29,7 +29,7 @@ const adapter = (operation: keyof Methods, execute: () => Promise<boolean>) =>
     return changed;
   });
 
-// D45: only real declared methods; full Store assembly follows the final slice.
+// Expose the concrete reporting operations.
 export const makeRunReports = Effect.map(Database, ({ db, dialect }): Methods => {
   const report = (
     operation: ReportMethod,

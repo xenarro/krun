@@ -24,7 +24,7 @@
       "apps/*/vitest.config.ts",
       "apps/*/src/**/*.ts",
       "apps/*/dev/**/*.ts",
-      "!!**/.agent-state",
+      "!!**/.cache",
       "!!**/node_modules",
       "!!**/dist",
       "!!**/.venv",

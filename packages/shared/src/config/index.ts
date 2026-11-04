@@ -41,7 +41,7 @@ const cidrs = z.string().transform((value, ctx) => {
   }
 });
 
-// SPEC section 12 order fixes field-error precedence. Unknown process/OS fields
+// Schema field order fixes field-error precedence. Unknown process/OS fields
 // are stripped; each process selects only the fields it actually consumes.
 const fields = {
   KRUN_DB_MODE: field(z.enum(["postgres", "embedded"]).default("postgres")),
@@ -91,7 +91,7 @@ const fields = {
   OTEL_EXPORTER_OTLP_ENDPOINT: field(z.string().optional()),
   OTEL_SERVICE_NAME: field(z.string().default("krun-gateway")),
   OTEL_TRACES_SAMPLER: field(z.string().default("parentbased_traceidratio")),
-  // OTEL validates its own sampler policy later; P0.5 must not reject it.
+  // OTEL validates its own sampler policy; configuration parsing must not reject it.
   OTEL_TRACES_SAMPLER_ARG: field(z.string().default("0.1")),
 };
 const all = z.object(fields);

@@ -162,7 +162,6 @@ describe("README rehearsal boundaries", () => {
       "## Public API summary",
       "docs/API.md",
       "docs/OPERATIONS.md",
-      "SPEC.md",
       "scripts/quickstart.sh postgres",
       "make e2e-quickstart",
       "KRUN_SDK_VENDOR",

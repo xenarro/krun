@@ -1,6 +1,6 @@
 import { type Kysely, sql } from "kysely";
 
-// D74: internal reports have the same opaque JSON/Unicode domain as input and
+// internal reports have the same opaque JSON/Unicode domain as input and
 // result. Preserve shipped values and existing pg JSON decoding; no down path.
 export async function up(db: Kysely<unknown>): Promise<void> {
   await sql`alter table runs add column runtime_status_at timestamptz`.execute(db);

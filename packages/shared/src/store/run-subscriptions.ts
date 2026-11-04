@@ -32,7 +32,7 @@ const notification = (payload: string): Result.Result<Event, void> => {
   });
 };
 
-// Incremental D45 factory: no partial/fake full Store layer. Each SQLite
+// Each SQLite
 // consumer initializes its OWN cursor when consumed, not when the factory or
 // lazy stream value is created. Postgres shares the Database-owned transport.
 export const makeRunSubscriptions: Effect.Effect<

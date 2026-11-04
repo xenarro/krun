@@ -7,7 +7,7 @@ import { Clock, Data, DateTime, Effect, Option, Schedule, Semaphore, Stream } fr
 import { type InformerEvent, JobPodSource, runIdOf } from "./k8s/informers.js";
 import { Kube } from "./k8s/kube.js";
 
-/** Required P6.2 boundary: return null only for a disabled store/absent object.
+/** Required boundary: return null only for a disabled store/absent object.
  * Transport/configuration failures must fail, never silently mean not-found.
  */
 export class ResultCheckError extends Data.TaggedError("ResultCheckError")<{
@@ -135,7 +135,7 @@ export const makeJobController = (options: {
     const gates = new Map<string, { semaphore: Semaphore.Semaphore; users: number }>();
     const tails = new Map<string, string | null>();
     const exitTimes = new Map<string, DateTime.Utc>();
-    // D88: one entry per unresolved terminal deletion. No timer/cap may silently
+    // one entry per unresolved terminal deletion. No timer/cap may silently
     // discard a completion; cleanup/disposition prunes it, scope close forgets it.
     const knownDeleted = new Map<string, { job: V1Job; pod: V1Pod | undefined }>();
     const firstAbsent = new Map<string, number>();

@@ -25,7 +25,7 @@ import { DnsLookup } from "../webhook/index.js";
 import { TelemetryLive } from "./telemetry.js";
 
 it.effect(
-  "P4.6 native fake Job lifecycle exposes exact leader metrics and correlates create/per-run/Kube spans",
+  "native fake Job lifecycle exposes exact leader metrics and correlates create/per-run/Kube spans",
   () => {
     const exporter = new InMemorySpanExporter();
     const processor = new SimpleSpanProcessor(exporter);

@@ -31,7 +31,7 @@ interface JobInput extends ResourceInput {
     | "KRUN_TTL_AFTER_FINISHED"
     | "KRUN_JOB_HOST_USERS"
   >;
-  // Supplied only by configured object-storage orchestration (P6.2). Never
+  // Supplied only by configured object-storage orchestration. Never
   // sign, normalize or log this opaque URL inside a manifest builder.
   readonly resultUploadUrl?: string;
 }
@@ -88,7 +88,7 @@ const metadata = ({
 };
 
 // Pure data constructors. Mint/adopt a token and persist its hash before Job
-// creation in P4.3b; do not couple the Secret to Function/Job garbage collection.
+// creation; do not couple the Secret to Function/Job garbage collection.
 export const buildSecret = (
   input: ResourceInput & { readonly token: string },
 ): Result.Result<V1Secret, ManifestInvalid> => {

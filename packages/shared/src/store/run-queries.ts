@@ -80,7 +80,7 @@ export const validateRunCursor = (cursor: string, filter: RunFilter): void => {
 const encodeCursor = (at: DateTime.Utc, id: string, filter: RunFilter) =>
   Buffer.from(`${DateTime.formatIso(at)}|${id}|${scopeHash(filter)}`, "utf8").toString("base64url");
 
-// Exactly the SPEC BASIC projection: never fetch the three FULL-only columns.
+// Exactly the BASIC projection: never fetch the three FULL-only columns.
 const summaryColumns = sql`id,idempotency_key,request_hash,function_name,state,priority,attempt,
   lease_owner,lease_until,job_name,job_token_hash,result_ref,error,failure_reason,
   runtime_status,job_status,callback_url,created_by,created_at,scheduled_at,started_at,finished_at`;
@@ -119,7 +119,7 @@ export const listRunsQuery = (
 
 type Methods = Pick<StoreShape, "getRun" | "listRuns" | "findRunByRequestId">;
 
-// D45: compose real declared methods, not future-method placeholders.
+// Expose the concrete query operations.
 export const makeRunQueries = Effect.map(
   Database,
   ({ db, dialect }): Methods => ({

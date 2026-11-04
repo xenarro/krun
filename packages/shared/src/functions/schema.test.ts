@@ -54,7 +54,7 @@ it("reuses the config duration wire schema without transforms or heartbeat polic
   });
 });
 
-it("enumerates only the SPEC Ready reasons, not a condition required-field policy", () => {
+it("enumerates the documented Ready condition reasons", () => {
   const reasons = [
     "Valid",
     "SchemaInvalid",

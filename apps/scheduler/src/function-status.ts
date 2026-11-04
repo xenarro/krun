@@ -36,7 +36,7 @@ const same = (a: Observation | undefined, b: Observation) =>
   a?.uid === b.uid && a.generation === b.generation && a.resourceVersion === b.resourceVersion;
 
 /** Acquire inside the elected leader term, never the process/gateway scope.
- * P4.11 supplies this cache capability and forks run in runLeaderElection's work.
+ * The runtime supplies this cache capability and forks run in runLeaderElection's work.
  * reconcile is also safe for that leader's explicit full reconciliation pass.
  */
 export const makeFunctionStatusWriter = (options: {

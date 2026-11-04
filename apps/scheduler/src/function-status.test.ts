@@ -64,7 +64,7 @@ const fixture = Effect.gen(function* () {
 afterEach(() => vi.restoreAllMocks());
 
 it.effect(
-  "P4.7: invalid Function gets Ready=False with validation reason; repeated input patches once",
+  "invalid Function gets Ready=False with validation reason; repeated input patches once",
   () =>
     Effect.gen(function* () {
       const patch = vi

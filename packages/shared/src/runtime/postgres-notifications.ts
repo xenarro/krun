@@ -4,7 +4,7 @@ import { DatabaseError } from "../store/errors.js";
 
 // One lazy, ref-counted transport per Database layer, not one pool borrower or
 // connection per Store consumer. Notifications are hints; wait/SSE re-reads
-// remain the correctness path (SPEC section 6). Bound both callback and fan-out
+// remain the correctness path. Bound both callback and fan-out
 // buffers so an abandoned/slow consumer cannot retain unbounded payloads.
 export const makePostgresNotifications = (dsn: string) =>
   Stream.callback<string, DatabaseError>(

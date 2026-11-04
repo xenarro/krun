@@ -94,7 +94,7 @@ const gateway = Layer.unwrap(
         const store = yield* Store;
         const readiness = yield* Readiness;
         const shutdown = yield* GatewayShutdown;
-        // Migrations are an explicit init/hook operation (SPEC13), never a racing
+        // Migrations are an explicit init/hook operation, never a racing
         // serving replica side effect. Refuse readiness on an unusable schema.
         yield* store.countByState();
         yield* Effect.addFinalizer((exit) =>

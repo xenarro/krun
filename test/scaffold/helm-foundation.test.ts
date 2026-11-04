@@ -36,14 +36,9 @@ const render = (sets: string[] = [], keys = "krun-test-api-keys") => {
   };
 };
 
-it("ships the complete section13 values without additional knobs", () => {
-  const spec = readFileSync(new URL("../../SPEC.md", import.meta.url), "utf8");
-  const section = spec.slice(spec.indexOf("## 13. Deployment"));
+it("keeps the documented Helm defaults stable", () => {
   const expected = parse(
-    section.slice(
-      section.indexOf("```yaml") + 7,
-      section.indexOf("```", section.indexOf("```yaml") + 7),
-    ),
+    readFileSync(new URL("./fixtures/helm-defaults.yaml", import.meta.url), "utf8"),
   );
   expect(parse(readFileSync(`${chart}/values.yaml`, "utf8"))).toEqual(expected);
 });

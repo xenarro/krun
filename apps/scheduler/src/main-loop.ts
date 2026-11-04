@@ -50,9 +50,9 @@ interface Options {
   readonly owner: string;
   readonly config: Config;
   readonly objectStore?: ObjectStore["Service"] | undefined;
-  // P4.4 supplies its cache-backed handler; no default/no-op or API re-read.
+  // Use the cache-backed handler; no default/no-op or API re-read.
   readonly replayCached: (run: Run) => Effect.Effect<void, DatabaseError | KubeApiError>;
-  // P4.5 supplies the same leader-scoped check used by controller reconciliation.
+  // Use the same leader-scoped check as controller reconciliation.
   readonly checkLost: Effect.Effect<void, DatabaseError | KubeApiError>;
 }
 const isExisting = (error: KubeApiError) =>
@@ -63,7 +63,7 @@ const encodedToken = z
 
 /** Construct within one leader term; run owns its ticker/subscription fibers.
  * Steps 1-6 live here; cache-backed replay and loss checks are required
- * capabilities. Production process assembly remains a separate PLAN task. Existing Store writes settle before cancellation.
+ * capabilities. The runtime assembles these components. Existing Store writes settle before cancellation.
  */
 export const makeMainLoop = (options: Options) =>
   Effect.gen(function* () {

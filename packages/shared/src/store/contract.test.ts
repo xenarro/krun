@@ -97,7 +97,7 @@ interface ExpectedStore {
   readonly migrate: () => Effect.Effect<void, DatabaseError>;
 }
 
-it("matches every SPEC Store method under the mandated Effect translation", () => {
+it("matches every Store method under the mandated Effect translation", () => {
   expectTypeOf<StoreShape>().toEqualTypeOf<ExpectedStore>();
   expectTypeOf(Store).toHaveProperty("key");
   expect(Store.key).toBe("krun/Store");

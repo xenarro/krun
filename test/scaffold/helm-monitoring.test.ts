@@ -172,7 +172,7 @@ for (const mode of ["postgres", "embedded"]) {
       quotaRejectionsPerMinute: 2,
     },
   ]) {
-    it(`renders exact SPEC rules with thresholds ${JSON.stringify(t)} and passes real promtool in ${mode}`, () => {
+    it(`renders exact documented rules with thresholds ${JSON.stringify(t)} and passes real promtool in ${mode}`, () => {
       const doc = render(mode, { prometheusRule: { enabled: true, thresholds: t } }).find(
         (doc) => doc.kind === "PrometheusRule",
       );
@@ -193,7 +193,6 @@ for (const mode of ["postgres", "embedded"]) {
       ).toEqual(expectedRules(t));
       const names = rules.map((rule: { alert: string }) => rule.alert).sort();
       expect(names).toHaveLength(7);
-      expect(names).toEqual(documentedNames("SPEC.md"));
       expect(names).toEqual(documentedNames("docs/OPERATIONS.md"));
       const directory = mkdtempSync(join(tmpdir(), "krun-test-promtool-"));
       try {

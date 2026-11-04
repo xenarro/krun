@@ -57,7 +57,7 @@ const platformSecretReference = (value: unknown): boolean => {
   return false;
 };
 
-// D107 requires this one capability in the Function environment. Do not exempt
+// The Function environment requires this one capability. Do not exempt
 // other fields, other containers, foreign keys, input, or inline credentials.
 export const privatePodManifest = (
   content: string,

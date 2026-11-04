@@ -1,7 +1,7 @@
 import { expect, it } from "@effect/vitest";
 import { durationStringSchema } from "./duration.js";
 
-it("keeps Function duration values as strings using the exact SPEC grammar", () => {
+it("keeps Function duration values as strings using the exact duration grammar", () => {
   for (const value of ["0ms", "1ms", "10s", "20m", "720h"]) {
     expect(durationStringSchema.parse(value)).toBe(value);
   }

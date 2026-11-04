@@ -12,7 +12,7 @@ import { makeListStale } from "./run-stale.js";
 import { makeRunSubscriptions } from "./run-subscriptions.js";
 import { makeTransition } from "./transition.js";
 
-// D45: P1.11 completes the interface. Compose only the real implementations,
+// Compose only the concrete implementations,
 // all capturing this one scoped Database, including deferred migrate calls.
 const makeStore: Effect.Effect<StoreShape, never, Database> = Effect.gen(function* () {
   const database = yield* Database;

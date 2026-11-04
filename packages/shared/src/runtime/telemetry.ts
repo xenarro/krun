@@ -16,7 +16,7 @@ import { MetricsReader } from "../health/metrics.js";
 
 class TelemetryUnavailable extends Data.TaggedError("TelemetryUnavailable") {}
 
-// P0.5 supplies defaults as strings. Do not delegate their interpretation to
+// Configuration supplies defaults as strings. Do not delegate their interpretation to
 // the SDK's ambient environment or its different parentbased_always_on default.
 export const makeSampler = (name: string, argument: string): Effect.Effect<Sampler> =>
   Effect.gen(function* () {

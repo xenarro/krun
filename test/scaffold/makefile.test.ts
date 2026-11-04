@@ -7,7 +7,7 @@ import { expect, it } from "vitest";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 
-it("defines all PLAN target names", () => {
+it("defines all supported Make targets", () => {
   const source = readFileSync(join(root, "Makefile"), "utf8");
   for (const target of [
     "build",

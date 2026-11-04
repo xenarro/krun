@@ -1498,7 +1498,7 @@ it.effect("P45-C1: ingress during the fresh Store read fences the old loss decis
 );
 
 for (const mode of ["present", "absent", "failure", "inline"] as const) {
-  it.effect(`P6.2 configured ObjectStore ${mode} controls CAS and delivery`, () => {
+  it.effect(`configured ObjectStore ${mode} controls CAS and delivery`, () => {
     let checks = 0;
     const fake = Layer.succeed(
       ObjectStore,
@@ -1548,7 +1548,7 @@ for (const mode of ["present", "absent", "failure", "inline"] as const) {
 
 for (const stream of ["job", "pod"] as const) {
   it.effect(
-    `P6.2 repair: ${stream} dispatch isolates independent failures from stalled HEAD and repeated same-Run events`,
+    `${stream} dispatch isolates independent failures from stalled HEAD and repeated same-Run events`,
     () =>
       test((f) =>
         Effect.gen(function* () {
@@ -1666,7 +1666,7 @@ for (const stream of ["job", "pod"] as const) {
 }
 
 it.effect(
-  "P6.2 repair: coalesced ingress retains terminal deletion and newest generation after an active HEAD fails",
+  "coalesced ingress retains terminal deletion and newest generation after an active HEAD fails",
   () =>
     test((f) =>
       Effect.gen(function* () {
@@ -1720,7 +1720,7 @@ it.effect(
     ),
 );
 
-it.effect("P6.2 repair: independent event workers respect the configured dispatch bound", () =>
+it.effect("independent event workers respect the configured dispatch bound", () =>
   test((f) =>
     Effect.gen(function* () {
       yield* f.seed();

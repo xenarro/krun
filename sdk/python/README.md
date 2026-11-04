@@ -90,5 +90,5 @@ for child consumers without changing their transport or scheduling budgets.
 `make test` and `make check` include this suite. The pinned uv build backend is
 build-only; wheels include the typed standard-library SDK with no runtime
 dependencies. Packing is local preparation, not publication or proof of package
-ownership. Shared bilingual scenarios, generated templates and SDK-built native
-kind acceptance are separate later Phase 8 tasks.
+ownership. Shared bilingual scenarios and SDK-built Kubernetes functions are
+covered by the repository's conformance and end-to-end suites.

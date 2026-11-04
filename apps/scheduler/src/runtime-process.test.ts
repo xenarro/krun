@@ -238,7 +238,7 @@ for (const mode of ["SIGTERM", "leadership loss"] as const)
     }
   }, 20000);
 
-it("P6.2 real scheduler retries object HEAD failure before CAS and publishes the configured ref", async () => {
+it("real scheduler retries object HEAD failure before CAS and publishes the configured ref", async () => {
   let status = 503;
   let requests = 0;
   const server = createServer((_request, response) => {
@@ -289,7 +289,7 @@ it("P6.2 real scheduler retries object HEAD failure before CAS and publishes the
   }
 }, 20000);
 
-it("P6.2 leader loss aborts an active object HEAD and preserves the nonterminal run", async () => {
+it("leader loss aborts an active object HEAD and preserves the nonterminal run", async () => {
   let received = false,
     closed = false;
   const server = createServer((request, _response) => {
@@ -330,7 +330,7 @@ it("P6.2 leader loss aborts an active object HEAD and preserves the nonterminal 
   }
 }, 20000);
 
-it("P6.2 repair: an unsafe installation default requires explicit TTL before claims or resources", async () => {
+it("an unsafe installation default requires explicit TTL before claims or resources", async () => {
   const storage = {
     endpoint: "https://krun-test.invalid",
     accessKeyId: randomBytes(16).toString("hex"),
@@ -354,7 +354,7 @@ it("P6.2 repair: an unsafe installation default requires explicit TTL before cla
     await process.close();
   }
 }, 20000);
-it("P6.2 repair: explicit TTL permits a high installation ceiling and real Job scheduling", async () => {
+it("explicit TTL permits a high installation ceiling and real Job scheduling", async () => {
   const storage = {
     endpoint: "https://krun-test.invalid",
     accessKeyId: randomBytes(16).toString("hex"),

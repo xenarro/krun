@@ -17,7 +17,7 @@ import {
 const image = `example.invalid/krun-test/function@sha256:${"0".repeat(64)}`;
 const minimal = { image, inputSchema: { type: "object" } } satisfies FunctionSpecInput;
 
-it("applies only SPEC defaults and distinguishes input from parsed output", () => {
+it("applies only documented defaults and distinguishes input from parsed output", () => {
   const parsed: FunctionSpec = functionSpecSchema.parse(minimal);
   expect(parsed).toEqual({
     ...minimal,

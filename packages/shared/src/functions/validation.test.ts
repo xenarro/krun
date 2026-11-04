@@ -212,7 +212,7 @@ describe("pure second-layer Function validation", () => {
     ).toBe("RegistryNotAllowed");
   });
 
-  it("reuses P2.1 glob case/dot semantics and checks only host, never DNS or addresses", () => {
+  it("reuses glob case/dot semantics and checks only host, never DNS or addresses", () => {
     const limits = { ...ceilings, webhookAllowedHosts: ["*.EXAMPLE.com", "127.0.0.1"] };
     for (const url of [
       "https://API.example.com/raw?x=%41",

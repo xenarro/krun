@@ -9,11 +9,9 @@ Postgres gateway/scheduler Deployments or one embedded SQLite StatefulSet with
 an optional Litestream restore/replication sidecar. It does not provision a
 database, credentials, object-storage bucket, Function resources or a Gateway.
 
-This reference documents current templates, not a completed production release.
-Chart-installed serving, CNI/data-plane, upgrade and rollback acceptance is
-exercised by `make e2e`. P7.7 adds opt-in PodMonitor/PrometheusRule rendering
-and real promtool rule checks. Local chart acceptance is not independent review,
-committed/hosted delivery or a production release.
+The chart supports opt-in PodMonitor and PrometheusRule resources.
+`make e2e` exercises serving, network isolation, upgrades and rollback;
+`make helm-lint` checks rendered resources and Prometheus rules.
 
 ## Prerequisites and Secret references
 
@@ -92,8 +90,7 @@ file. With `crds.install=false`, apply `deploy/crds/functions.krun.io.yaml`
 yourself before every install or upgrade. `crds.keep=true` retains the CRD on
 uninstall; deleting it deletes every Function. A kept CRD or jobs namespace
 retains the old release's Helm ownership annotations: reinstall with the same
-release name/namespace, or explicitly re-annotate ownership as described in
-[SPEC section 13](../../../SPEC.md#13-deployment).
+release name/namespace, or explicitly update the ownership annotations as shown below.
 For adoption by a different release, first verify that no other release still
 owns these resources, then replace the uppercase placeholders below with the
 intended names and explicitly transfer the retained resources:
@@ -114,9 +111,9 @@ restoring those controls before allowing untrusted Jobs. Embedded PVC data has
 its own lifecycle; do not assume `helm uninstall` is a database backup.
 
 Use `helm upgrade` for changes. Migrations are forward-only expand/contract;
-one-minor `helm rollback` compatibility is the specified policy. P7.6 exercises
+one-minor `helm rollback` compatibility is supported. The end-to-end tests exercise
 a configuration-only upgrade and rollback to revision 1 with the current-source
-image; it does not prove compatibility of future different binary releases.
+image; compatibility with future binary releases requires separate validation.
 Keep scheduler downtime below
 `config.ttlAfterFinished` so finished Job observations remain available.
 See [operations](../../../docs/OPERATIONS.md) for migration, recovery, retained
@@ -139,7 +136,7 @@ on 9090. These are container port names, not a new Service. Select the actual
 Prometheus namespace in `networkPolicy.metricsFrom`; rendering a PodMonitor does
 not grant network access, prove a successful scrape or enable remote-write.
 
-The PrometheusRule contains exactly the seven SPEC section 13 alerts, with their
+The PrometheusRule contains the seven documented alerts, with their
 specified expressions, durations and severity. Its four `thresholds` values may
 be overridden, including zero; no implicit fallback replaces zero. See the
 [operations alert table](../../../docs/OPERATIONS.md#alerts-and-first-checks)
@@ -212,9 +209,9 @@ regeneration does not install a chart, contact a cluster or publish artifacts.
 | config.k8sConcurrency | int | `8` | Maximum concurrent scheduler Kubernetes API operations. |
 | config.logLevel | string | `"info"` | Serving process log level, parsed by the existing runtime configuration. |
 | config.maxActiveDeadline | int | `86400` | Maximum allowed Function activeDeadlineSeconds; not a platform Pod deadline. |
-| config.maxInputBytes | int | `262144` | Default maximum input body size in bytes; runtime validation enforces the SPEC hard cap. |
+| config.maxInputBytes | int | `262144` | Default maximum input body size in bytes; runtime validation enforces the 1 MiB hard cap. |
 | config.maxQueued | int | `1000` | Maximum queued runs before submission is rejected. |
-| config.maxResultBytes | int | `262144` | Default maximum inline result body size in bytes; runtime validation enforces the SPEC hard cap. |
+| config.maxResultBytes | int | `262144` | Default maximum inline result body size in bytes; runtime validation enforces the 1 MiB hard cap. |
 | config.maxRunning | int | `100` | Maximum concurrently active function runs; must not exceed the jobs Pod quota when the chart creates that namespace. |
 | config.maxWait | string | `"60s"` | Maximum synchronous CreateRun/WaitRun wait duration, expressed as a runtime duration. |
 | config.rateLimitBurst | int | `50` | Per-key submission token-bucket burst capacity. |
@@ -265,7 +262,7 @@ regeneration does not install a chart, contact a cluster or publish artifacts.
 | jobsNamespace.userNamespaces | bool | `false` | Set function-pod hostUsers false through scheduler configuration only; requires compatible Kubernetes, CRI, kernel and storage support. |
 | metrics.podMonitor.enabled | bool | `false` | Render a same-release PodMonitor with named admin endpoints (admin plus embedded admin-sched). Requires operator-installed Prometheus Operator CRDs and an allowed metricsFrom namespace. |
 | metrics.podMonitor.labels | object | `{}` | Additional PodMonitor labels for Prometheus selection; fixed chart identity labels take precedence on collision. |
-| metrics.prometheusRule.enabled | bool | `false` | Render the seven SPEC alert rules as a PrometheusRule; requires operator-installed Prometheus Operator CRDs and Prometheus rule selection. |
+| metrics.prometheusRule.enabled | bool | `false` | Render the seven documented alert rules as a PrometheusRule; requires operator-installed Prometheus Operator CRDs and Prometheus rule selection. |
 | metrics.prometheusRule.labels | object | `{}` | Additional PrometheusRule labels for Prometheus selection; fixed chart identity labels take precedence on collision. |
 | metrics.prometheusRule.thresholds.heartbeatTimeoutsPerHour | int | `5` | Heartbeat-timeout alert threshold for the summed failed-run counter increase over one hour. |
 | metrics.prometheusRule.thresholds.jobLostPerHour | int | `1` | Lost-job alert threshold for the summed failed-run counter increase over one hour. |

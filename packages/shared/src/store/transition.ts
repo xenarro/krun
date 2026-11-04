@@ -30,7 +30,7 @@ const json = (value: unknown) =>
 const time = (value: DateTime.Utc | null | undefined) =>
   value === null || value === undefined ? value : DateTime.formatIso(value);
 
-// D45: provide the real declared method without placeholders for later tasks.
+// Expose the atomic transition operation.
 export const makeTransition = Effect.map(
   Database,
   ({ db, dialect }): StoreShape["transition"] =>

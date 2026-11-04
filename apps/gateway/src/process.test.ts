@@ -92,7 +92,7 @@ const fixture = (holdList = false, overrides: Record<string, string> = {}) =>
       KRUN_SHUTDOWN_DELAY: "2s",
       ...overrides,
     };
-    // SPEC13 owns migration in a separate init/hook command, not serving replicas.
+    // the deployment lifecycle owns migration in a separate init/hook command, not serving replicas.
     const migrated = spawnSync(process.execPath, [cli, "migrate"], {
       cwd: root,
       env,
@@ -559,7 +559,7 @@ it.live(
 );
 
 it.live(
-  "P6.2 real gateway process wires configured fixed-TTL GET signing without secret logs",
+  "real gateway process wires configured fixed-TTL GET signing without secret logs",
   () =>
     Effect.scoped(
       Effect.gen(function* () {

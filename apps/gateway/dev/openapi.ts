@@ -71,8 +71,8 @@ const renderOpenApi = (internal = false): Promise<PublicDocument> =>
                 title: internal ? "krun internal API" : "krun public API",
                 version: "v1",
                 description: internal
-                  ? "Normative docs/INTERNAL-API.md; per-run token, isolated internal listener."
-                  : "Normative docs/API.md contract. This artifact does not imply that later PLAN method/listener tasks are implemented.",
+                  ? "Function-container API; per-run token, isolated internal listener."
+                  : "Public API reference; see docs/API.md for resource conventions and examples.",
               },
               components: {
                 securitySchemes: {

@@ -7,7 +7,7 @@ the chart, the SDKs and the CLI.
 
 Release preparation is not publication. Version 0.1.0 remains blocked on
 owner-confirmed registry control and exact trusted-publisher bindings;
-post-publication verification and the remaining Phase 9 gate are not claimed.
+Post-publication installation and signature verification remain required.
 
 ## [0.1.0] - Prepared, not published
 
@@ -33,8 +33,4 @@ post-publication verification and the remaining Phase 9 gate are not claimed.
 - Package identities and OIDC bindings are not inferred from public registry
   existence or GitHub push access. No fallback package name is selected.
 - No tag, registry upload, package publication or successful release is recorded
-  by this preparation entry. Operational drill verification remains P9.6.
-
-### Initial documentation
-
-- SPEC.md, PLAN.md, docs/PROBLEM.md, docs/OPERATIONS.md and docs/AGENT-KICKOFF.md.
+  by this preparation entry.

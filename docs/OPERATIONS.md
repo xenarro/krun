@@ -1,8 +1,6 @@
 # Operating krun
 
-For the platform team. SPEC.md sections 9, 11 and 13 define the behaviour
-this document explains. Native Job benchmark numbers are measured at PLAN
-P9.3; embedded restore measurements are recorded at P9.6.
+Deployment, capacity, monitoring and recovery guidance for the platform team.
 
 ## Install and upgrade
 
@@ -38,10 +36,10 @@ P9.3; embedded restore measurements are recorded at P9.6.
   hours); beyond it, runs finished during the outage become `job_lost`.
 - CRD: `crds.keep` leaves the CRD on uninstall. Deleting the CRD deletes
   every Function. Re-install under the same release name and namespace, or
-  re-annotate the CRD as SPEC section 13 describes.
+  update its Helm ownership annotations as described in the chart reference.
 
 The serving scheduler requires `KRUN_POD_NAME` from downward API
-`metadata.name` as its Lease identity (SPEC D98); do not substitute a shared
+`metadata.name` as its Lease identity; do not substitute a shared
 constant or infer it from the host name. Run explicit migrations before serving.
 Its standby remains ready after database/Function synchronization and reports
 `leader: false`; Job/Pod watches and work are acquired only by the leader.
@@ -49,20 +47,16 @@ Use a distinct admin address from the gateway when colocating the processes.
 
 ## Disposable development cluster
 
-The P4.12 local foundation is separate from the production Helm workflow.
+The disposable test cluster is separate from the production Helm workflow.
 Use the pinned prerequisites and Make targets in `test/e2e/README.md`:
 `make kind-up`, `make e2e`, then `make kind-down`. The harness owns only the
 `krun-test-e2e` cluster and its labelled loopback `kind-registry`; all Kubernetes
 commands use a private kubeconfig and explicit test context. Keep its private
 state during recovery, never publish it or generated credentials, and use the
 same checkout/TMPDIR for cleanup. E2E verifies real default-deny enforcement
-before its five Phase 4 scenarios: result/status round-trip, exit 1, image-pull
-deadline, two statuses then exit 3, and heartbeat expiry with Job removal. The
-P4.13 gate passes locally and in exact source-head hosted `verify`/`kind`
-([CI](https://github.com/xenarro/krun/actions/runs/40523418351),
-[PR #59](https://github.com/xenarro/krun/pull/59)). Required repository review
-and merge remain distinct from this verified delivery. This raw embedded setup
-is disposable, not a durable production deployment.
+before exercising result/status round-trips, exit failures, image-pull deadlines,
+heartbeat expiry and Job removal. This setup is disposable, not a durable
+production deployment.
 Each scenario cleans and reads back its own Function-labelled resources. The
 curl-based fixtures are built locally from a pinned base and pushed only to the
 owned loopback registry; generated credentials and raw private state stay local.
@@ -89,7 +83,7 @@ owned loopback registry; generated credentials and raw private state stay local.
   `ephemeral-storage` limit (default 2Gi); a function exceeding it is
   evicted and classified `evicted`.
 
-## Measured native Job benchmark (P9.3)
+## Measured native Job benchmark
 
 Measured 2026-11-03 on local kind (not a CI runner): one Kubernetes 1.37.0
 control-plane node, Node 26.7.0, AMD Ryzen 7 5700X 8-Core Processor
@@ -151,12 +145,12 @@ change the benchmark and on demand, with least-privilege permissions and
 always-run owned cluster cleanup. Hosted results remain a separate exact-head
 delivery gate; these local numbers are not attributed to GitHub Actions.
 
-No Phase 9 release gate, publication or production capacity guarantee is
+No publication or production capacity guarantee is
 claimed by this measurement.
 
 ## Alerts and first checks
 
-Rule names match `metrics.prometheusRule` in the chart (SPEC section 13).
+Rule names match `metrics.prometheusRule` in the chart.
 
 | Rule | Meaning | First checks |
 |---|---|---|
@@ -183,7 +177,7 @@ firing or replace the operator first checks above.
 
 `kubectl logs -f -n krun-jobs job/krun-<id>` works only while the run is
 `scheduled` or `running`: the scheduler deletes the Job at the terminal
-transition (SPEC D28). For a finished run, `GetRun`
+transition. For a finished run, `GetRun`
 (`GET /v1/functions/-/runs/{id}`) returns `logTail` on failure only (last 100 lines, 16 KB, may be null when the
 container never ran). Successful runs leave no logs in krun; use the
 cluster's log aggregation. Function authors get `krun-job-viewer` for the
@@ -199,12 +193,12 @@ in-flight case.
   `krun.db-shm` (or delete the PVC for the corrupt-volume case); scale back
   to 1; the restore init container removes orphan `-wal` and `-shm` files
   when `krun.db` is absent, pulls the latest replica, then `krun migrate`
-  runs. A run created before the drill must be readable after it (PLAN
-  P9.6). Run the drill before relying on it.
+  runs. A run created before the drill must be readable after it. Run the
+  drill before relying on it.
 - Embedded mode without Litestream: the PVC is the only copy; snapshot it
   with the storage class or enable Litestream.
 
-### Measured embedded restore drill (P9.6)
+### Measured embedded restore drill
 
 The local unfiltered embedded-mode e2e corpus on 2026-11-04 passed all
 22 scenarios, including the actual embedded Litestream restore. Run

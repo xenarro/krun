@@ -30,4 +30,4 @@
 **/*.pem
 **/*.key
 **/.git
-**/.agent-state
+**/.cache

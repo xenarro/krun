@@ -13,7 +13,7 @@ const pageSchema = z.object({
   metadata: z.object({ _continue: z.string().optional() }).optional(),
 });
 
-/** Acquire and run in the elected leader scope. P4.11 owns process assembly. */
+/** Acquire and run in the elected leader scope. */
 export const makeSweepLoop = (options: {
   readonly namespace: string;
   readonly retention: Duration.Duration;

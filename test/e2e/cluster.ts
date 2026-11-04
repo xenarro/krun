@@ -294,7 +294,7 @@ const up = async () => {
   state.image = `localhost:5001/krun@${parsePushDigest(pushed.stdout)}`;
   state.sdkFunctions = await buildSdkFunctions(stateDir);
   await saveState(state);
-  // Reuse D106's checksum-enforced upstream binary fixture, never a fake S3 server.
+  // Reuse the checksum-enforced upstream binary fixture, never a fake S3 server.
   run(
     "docker",
     ["build", "-t", "krun-test-e2e-minio:local", "-f", "test/minio/Dockerfile", "test/minio"],
