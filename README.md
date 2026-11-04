@@ -29,14 +29,11 @@ on restart/upgrade; optional Litestream replication is an operations concern.
 - Not a Kubernetes replacement or an SDK-only local gateway emulator. SDK local
   mode runs a handler once without network access.
 - Not an assertion that package names, OCI artifacts or a release are published.
-  P0.9/P9.5 publication prerequisites and release acceptance remain separate.
+  See the release guide for publication prerequisites.
 
-The normative design and boundaries are [SPEC.md](SPEC.md), the
-[public API](docs/API.md), [internal API](docs/INTERNAL-API.md),
-[stack](docs/STACK.md) and [operations guide](docs/OPERATIONS.md).
+See the [public API](docs/API.md), [internal API](docs/INTERNAL-API.md)
+and [operations guide](docs/OPERATIONS.md) for usage and deployment details.
 The [chart reference](deploy/helm/krun/README.md) lists every value.
-Historical implementation receipts moved unchanged to
-[DEVELOPMENT-HISTORY.md](DEVELOPMENT-HISTORY.md); they are not current status claims.
 
 ## Release preparation (not publication)
 
@@ -54,11 +51,8 @@ node scripts/release-dry-run.ts 97
 Version 0.1.0 is prepared, not released. `release-ownership.json` remains
 unverified and the publication gate fails closed. npm/PyPI/GHCR control and exact
 trusted-publisher bindings require owner evidence; public package existence,
-local tests and Git push access do not prove them. The
-[release-PR rehearsal](https://github.com/xenarro/krun/actions/runs/41788170398) passed for source
-`044a6280bf22ad55cdc422135d689069c064e852`, verifying all six distribution artifacts
-and clean installs without publication. Owner-created tags, post-publication
-installs/signatures and the remaining Phase 9 operational gate are not claimed.
+local tests and Git push access do not prove them. Use source-checkout artifacts
+until a release has been published and its signatures and clean installs verified.
 
 ## Quick start: both database modes on disposable kind
 
@@ -301,22 +295,12 @@ for the measurement boundaries and production RPO/RTO limitations.
 `node scripts/check-operations-alerts.ts` checks every documented alert name
 against the real PrometheusRule rendered in both modes.
 
-The P9.6 source snapshot in [PR #100](https://github.com/xenarro/krun/pull/100)
-passed [hosted CI](https://github.com/xenarro/krun/actions/runs/41870385177)
-with all 44 native scenarios, the
-[both-mode fresh quickstarts](https://github.com/xenarro/krun/actions/runs/41870385406)
-and the [release dry-run](https://github.com/xenarro/krun/actions/runs/41870385456).
-This verifies the listed Phase 9 rehearsal gates, not full Phase 9 or v1
-completion: P9.5 registry ownership and publication remain owner-blocked.
-Protected-main independent review and merge are separate from pushed-source
-qualification; no auto-merge is enabled.
-
 For durable installs, capacity, backup/restore, upgrades, key rotation, telemetry,
 alerts, object-store lifecycle and keep/adoption consequences, read
-[OPERATIONS](docs/OPERATIONS.md). The Phase 9 release dry-run/publication gate
+[OPERATIONS](docs/OPERATIONS.md). Release rehearsal and publication verification
 remains separate from quickstart and benchmark qualification.
 
-## Measured native Job benchmark (P9.3)
+## Measured native Job benchmark
 
 Measured 2026-11-03 on local kind (not a CI runner): one Kubernetes 1.37.0
 control-plane node, Node 26.7.0, AMD Ryzen 7 5700X 8-Core Processor
@@ -378,5 +362,5 @@ change the benchmark and on demand, with least-privilege permissions and
 always-run owned cluster cleanup. Hosted results remain a separate exact-head
 delivery gate; these local numbers are not attributed to GitHub Actions.
 
-No Phase 9 release gate, publication or production capacity guarantee is
+No publication or production capacity guarantee is
 claimed by this measurement.

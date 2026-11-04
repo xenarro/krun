@@ -66,7 +66,7 @@ const bounded = <A>(
   );
 
 // Explicit parsed settings, not ambient AWS credentials or process.env. Callers
-// omit this layer when object storage is disabled; process wiring is P6.2.
+// omit this layer when object storage is disabled.
 export const ObjectStoreS3 = (options: z.infer<typeof configSchema>) =>
   Layer.effect(
     ObjectStore,

@@ -1,8 +1,7 @@
 # krun public API contract, v1
 
-Status: normative for the public API, 2026-10-22. SPEC.md section 4 summarises
-this document and defers to it; the internal API that job pods use is not
-resource-oriented and stays in SPEC.md section 4. The design follows the
+This document describes the public API. Function containers use the separate
+[internal API](INTERNAL-API.md). The public API follows the
 Google API Improvement Proposals (AIPs): resource-oriented design (AIP-121),
 resource names (AIP-122), enums (AIP-126), standard methods (AIP-131 to
 AIP-133), custom methods (AIP-136), timestamps and durations (AIP-142),
@@ -44,7 +43,7 @@ pagination (AIP-158), reading across collections (AIP-159), filtering
 - Authentication: `Authorization: Bearer <api key>` on every call. Scopes:
   `functions:read`, `runs:read`, `runs:write`, `runs:priority`, `admin`.
   A key reaches only the functions matching its globs and the runs it
-  created; `admin` reaches everything (SPEC.md section 9).
+  created; `admin` reaches everything.
 - `X-Request-Id`: accepted up to 128 characters, else replaced by a UUID;
   echoed on every response; present in every log line as `reqId`.
 - Unknown query parameters and unknown body fields are rejected with
@@ -65,7 +64,7 @@ pagination (AIP-158), reading across collections (AIP-159), filtering
 ### 2.1 Function
 
 Read-only through this API; managed as a Kubernetes custom resource
-(SPEC.md section 3). Only Ready functions the key may use exist from the
+Only Ready functions the key may use exist from the
 API's point of view.
 
 | Field | Type | Behaviour | Notes |
@@ -160,7 +159,7 @@ State machine:
 - Terminal: `SUCCEEDED`, `FAILED`, `CANCELLED`.
 
 The truth comes from Kubernetes, never from the function's reports
-(SPEC.md section 8).
+as described by the scheduler lifecycle.
 
 ## 3. Methods
 
@@ -176,8 +175,8 @@ The truth comes from Kubernetes, never from the function's reports
 | `GetRunResult` | `GET /v1/functions/{function}/runs/{run}:getResult` | `runs:read` | the result document |
 | `WatchRun` | `GET /v1/functions/{function}/runs/{run}:watch` | `runs:read` | `text/event-stream` |
 
-There is no `DeleteRun`: runs expire with the retention window (SPEC.md
-section 10). There is no `UpdateRun`: every settable field is IMMUTABLE.
+There is no `DeleteRun`: runs expire with the retention window. There is no
+`UpdateRun`: every settable field is IMMUTABLE.
 
 ### 3.1 ListFunctions (AIP-132)
 
@@ -479,7 +478,7 @@ For implementers: the database keeps lowercase states and reasons
 `runtimeStatus.reportTime`, `job_status.observedAt` to
 `jobStatus.observeTime`, `error.source` values to UPPER_SNAKE. `toRun(row)`
 and `toRunSummary(row)` in `packages/shared/src/store` are the only
-row-to-wire mappers (SPEC.md section 6); `RunSummary` is the BASIC view.
+row-to-wire mappers; `RunSummary` is the BASIC view.
 
 ## 11. Deviations from the AIPs, and why
 

@@ -16,7 +16,7 @@ const call = <A>(
   execute: () => Promise<{ value: A; rowCount: number }>,
 ) => traced(operation, undefined, adapter(operation, execute));
 
-// D45: real declared methods only, without placeholders for remaining Store work.
+// Expose the concrete maintenance operations.
 export const makeRunMaintenance = Effect.map(
   Database,
   ({ db, dialect }): Methods => ({

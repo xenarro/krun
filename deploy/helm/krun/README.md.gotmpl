@@ -13,11 +13,9 @@ Postgres gateway/scheduler Deployments or one embedded SQLite StatefulSet with
 an optional Litestream restore/replication sidecar. It does not provision a
 database, credentials, object-storage bucket, Function resources or a Gateway.
 
-This reference documents current templates, not a completed production release.
-Chart-installed serving, CNI/data-plane, upgrade and rollback acceptance is
-exercised by `make e2e`. P7.7 adds opt-in PodMonitor/PrometheusRule rendering
-and real promtool rule checks. Local chart acceptance is not independent review,
-committed/hosted delivery or a production release.
+The chart supports opt-in PodMonitor and PrometheusRule resources.
+`make e2e` exercises serving, network isolation, upgrades and rollback;
+`make helm-lint` checks rendered resources and Prometheus rules.
 
 ## Prerequisites and Secret references
 
@@ -96,8 +94,7 @@ file. With `crds.install=false`, apply `deploy/crds/functions.krun.io.yaml`
 yourself before every install or upgrade. `crds.keep=true` retains the CRD on
 uninstall; deleting it deletes every Function. A kept CRD or jobs namespace
 retains the old release's Helm ownership annotations: reinstall with the same
-release name/namespace, or explicitly re-annotate ownership as described in
-[SPEC section 13](../../../SPEC.md#13-deployment).
+release name/namespace, or explicitly update the ownership annotations as shown below.
 For adoption by a different release, first verify that no other release still
 owns these resources, then replace the uppercase placeholders below with the
 intended names and explicitly transfer the retained resources:
@@ -118,9 +115,9 @@ restoring those controls before allowing untrusted Jobs. Embedded PVC data has
 its own lifecycle; do not assume `helm uninstall` is a database backup.
 
 Use `helm upgrade` for changes. Migrations are forward-only expand/contract;
-one-minor `helm rollback` compatibility is the specified policy. P7.6 exercises
+one-minor `helm rollback` compatibility is supported. The end-to-end tests exercise
 a configuration-only upgrade and rollback to revision 1 with the current-source
-image; it does not prove compatibility of future different binary releases.
+image; compatibility with future binary releases requires separate validation.
 Keep scheduler downtime below
 `config.ttlAfterFinished` so finished Job observations remain available.
 See [operations](../../../docs/OPERATIONS.md) for migration, recovery, retained
@@ -143,7 +140,7 @@ on 9090. These are container port names, not a new Service. Select the actual
 Prometheus namespace in `networkPolicy.metricsFrom`; rendering a PodMonitor does
 not grant network access, prove a successful scrape or enable remote-write.
 
-The PrometheusRule contains exactly the seven SPEC section 13 alerts, with their
+The PrometheusRule contains the seven documented alerts, with their
 specified expressions, durations and severity. Its four `thresholds` values may
 be overridden, including zero; no implicit fallback replaces zero. See the
 [operations alert table](../../../docs/OPERATIONS.md#alerts-and-first-checks)

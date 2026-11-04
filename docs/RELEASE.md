@@ -1,9 +1,8 @@
 # Release preparation and owner boundary
 
-P9.5 prepares v0.1.0; it does not establish publication or registry ownership.
-P0.9 remains the owner-reserved namespace/permission/trusted-publisher checkpoint.
-The checked-in `release-ownership.json` deliberately refuses publication. The
-remaining operational drill and full Phase 9 acceptance are separate.
+Version 0.1.0 is prepared, not published. Registry control and trusted-publisher
+bindings must be verified before publication. The checked-in
+`release-ownership.json` disables publication until that evidence is supplied.
 
 ## Credential-free rehearsal
 
@@ -65,7 +64,7 @@ main/types pass attw's complete resolution matrix with no profiles or exclusions
 The CLI's private shared implementation is vendored inside the release artifact,
 not published as a third package. Its frozen patched Ajv and format adapter are
 vendored as well; module specifiers are rewritten relative to those copies.
-A permanent semantic regression checks D48's `__proto__` property validation.
+A permanent semantic regression checks `__proto__` property validation.
 A consumer must not reapply the checkout's patch declarations to packages absent
 from its graph. Its release-age, strict-age, peer-install and script-denial
 controls remain unchanged; there is no unused-patch exception or relaxed audit.
@@ -93,7 +92,7 @@ After owner verification, review/merge the release preparation and all pending
 parent PRs normally. Obtain exact-head green hosted CI including the readonly
 release dry-run. Replace the prepared changelog status with the actual release
 record, review it, and let the owner create the stable `v0.1.0` tag on accepted
-main. This implementation job neither enables that gate nor creates the tag.
+main. The rehearsal neither enables publication nor creates a tag.
 
 The release job rechecks the tag actor, exact repository/workflow/tag identity,
 main ancestry, clean source, complete archive inventory, checksums and package

@@ -1,4 +1,4 @@
-# Shared SDK wire conformance (P8.3)
+# Shared SDK wire conformance
 
 `scenarios.json` is the single data-only table read by Vitest in
 `sdk/node/src/conformance.test.ts` and pytest in
@@ -50,7 +50,7 @@ whole-attempt deadline/resource tests and package tests remain intact.
   spacing; 900ms is the tolerance for the real one-second send gate/backoff.
   The first timeout retry waits the native 10-second attempt, not a scaled timer.
   Its lower bound is measured from SDK process launch, not first server receipt:
-  Python worker startup consumes part of the whole-attempt budget (D125).
+  Python worker startup consumes part of the whole-attempt budget.
   `during: [[pending,ping]]` requires the ping strictly between a pending
   request's receipt and response completion. `sinceStartMs` rejects eager ticks.
 - Every internal call must authenticate and use the exact SDK versioned
@@ -111,6 +111,6 @@ forwards SIGTERM/SIGINT, escalates cancellation to SIGKILL after two seconds,
 waits for child close, clears timers, and closes all owned listeners/connections.
 Those are fixture lifecycle bounds, not replacements for SDK operation budgets.
 
-This task does not satisfy the Phase 8 gate: generated vendored projects,
-SDK-built native kind Functions and deploy remain P8.4-P8.7. No package
-publication, tags or production resources are involved.
+These tests use only local fixtures. Generated-project and Kubernetes integration
+tests are documented in `test/e2e/README.md`; no package publication or production
+resources are involved.

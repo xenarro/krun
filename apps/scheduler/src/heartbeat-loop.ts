@@ -10,7 +10,7 @@ interface HeartbeatLoopOptions {
     "heartbeat" | "retryHeartbeats"
   >;
 }
-/** Leader-scoped component; P4.11 owns starting it alongside the shared controller. */
+/** Leader-scoped component, started alongside the shared controller. */
 export const makeHeartbeatLoop = (options: HeartbeatLoopOptions) =>
   Effect.gen(function* () {
     const store = yield* Store;

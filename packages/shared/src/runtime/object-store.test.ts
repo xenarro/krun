@@ -85,7 +85,7 @@ for (const ttl of [Duration.millis(0), Duration.hours(999)]) {
 }
 
 for (const mode of ["boundary", "unsupported", "override", "disabled"] as const) {
-  it.effect(`P6.2 repair: scheduler installation TTL policy ${mode}`, () =>
+  it.effect(`scheduler installation TTL policy ${mode}`, () =>
     Effect.gen(function* () {
       const destroy = vi.spyOn(S3Client.prototype, "destroy");
       const config = yield* parseSchedulerConfig({

@@ -16,7 +16,7 @@ type StoredRuntimeStatus = Omit<RuntimeStatus, "at"> & { at: string };
 type StoredJobStatus = Omit<JobStatus, "observedAt"> & { observedAt: string };
 
 // Kysely consumes plain table interfaces. Domain ids/times are application-issued;
-// D46 adds only the SQLite-generated storage cursor, never a public/domain id.
+// The schema adds only the SQLite-generated storage cursor, never a public/domain id.
 // Callers supply numeric defaults explicitly. Driver
 // encoding/decoding is a later dialect-adapter responsibility, not wire mapping.
 interface RunsTable<Timestamp, Serialized extends boolean> {

@@ -3,9 +3,8 @@
 Status: normative for the internal API, 2026-10-22. This is the HTTP
 contract between a function container and the krun gateway: how a run
 fetches its input, reports progress, and hands back its result or its
-error. SPEC.md section 4 summarises it and defers to it; the SDKs
-(SPEC.md section 7.1) are one implementation of it, and anything with an
-HTTP client is another. docs/API.md is the public, resource-oriented API
+error. The SDKs implement this contract; any HTTP client can implement it.
+[API.md](API.md) describes the public, resource-oriented API
 for callers; this one is private, per-run, token-scoped and served on a
 separate listener.
 
@@ -14,11 +13,11 @@ separate listener.
 - Base path `/internal/v1`, served only on the gateway's internal listener
   (`KRUN_INTERNAL_LISTEN_ADDR`, default `:8081`) behind the Service
   `krun-gateway-internal`, reachable only from the jobs namespace through
-  NetworkPolicy (SPEC.md section 9). Never behind the ingress. Plain HTTP
+  NetworkPolicy. Never behind the ingress. Plain HTTP
   inside the cluster in v1; the per-run token is the credential and the
   NetworkPolicy is the perimeter (section 10, note 1).
 - The caller is the `function` container of one Job pod. It learns
-  everything it needs from its environment (SPEC.md section 7):
+  everything it needs from its environment:
 
 | Variable | Meaning |
 |---|---|
@@ -309,8 +308,8 @@ envelope.
 
 | Limit | Value | Source |
 |---|---|---|
-| input | installation `maxInputBytes` (gateway `KRUN_MAX_INPUT_BYTES`, not in the container), default 262144, hard 1048576 | SPEC.md section 10 |
-| inline result | `KRUN_MAX_RESULT_BYTES`, default 262144, hard 1048576 | SPEC.md section 10 |
+| input | installation `maxInputBytes` (gateway `KRUN_MAX_INPUT_BYTES`, not in the container), default 262144, hard 1048576 | gateway configuration |
+| inline result | `KRUN_MAX_RESULT_BYTES`, default 262144, hard 1048576 | gateway configuration |
 | uploaded result | no cap | this document |
 | status body | 16384 bytes | this document |
 | status `message` | 1024 bytes | this document |
@@ -320,13 +319,12 @@ envelope.
 | error `message` | 4096 bytes | this document |
 | error `type` | 128 bytes | this document |
 | error `details` | 8192 bytes | this document |
-| token | 32 bytes base64url | SPEC.md section 7 |
+| token | 32 bytes base64url | per-run token generation |
 | store call | 5 seconds, then 503 | this document |
 
 ## 9. Example: a conforming function in shell
 
-A `curlimages/curl` image is enough; the Phase 4 e2e uses exactly this
-shape (PLAN.md).
+A `curlimages/curl` image is enough; the end-to-end tests use this shape.
 
 ```sh
 #!/bin/sh

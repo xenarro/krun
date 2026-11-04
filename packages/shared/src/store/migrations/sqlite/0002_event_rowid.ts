@@ -1,7 +1,7 @@
 import { type Kysely, sql } from "kysely";
 
-// D46: keep the mandated rowid cursor monotonic when retention deletes the
-// maximum/all events. Migrator owns the immediate transaction (D43). Preserve
+// keep the mandated rowid cursor monotonic when retention deletes the
+// maximum/all events. Migrator owns the immediate transaction. Preserve
 // existing rowids and shared columns so older six-column writers/readers work.
 export async function up(db: Kysely<unknown>): Promise<void> {
   await sql`

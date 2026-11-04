@@ -62,7 +62,7 @@ try {
     .filter(Boolean);
   const sourceHashes: Record<string, string> = {};
   for (const name of paths) {
-    if (name.startsWith(".agent-state/") || /(^|\/)\.(env|npmrc|pypirc)(\.|$)/.test(name)) continue;
+    if (/(^|\/)\.(env|npmrc|pypirc)(\.|$)/.test(name)) continue;
     sourceHashes[name] = await hashFile(join(root, name));
     await mkdir(dirname(join(checkout, name)), { recursive: true });
     await cp(join(root, name), join(checkout, name), { recursive: false, dereference: false });
@@ -109,7 +109,7 @@ try {
   );
   const policy = parse(await readFile(join(checkout, "pnpm-workspace.yaml"), "utf8"));
   policy.packages = [];
-  // D48's patched validator is inside the CLI artifact. Do not try to apply
+  // The patched validator is inside the CLI artifact. Do not try to apply
   // workspace patch declarations to a consumer graph without those packages.
   // All release-age, script-denial and peer-install controls are retained.
   delete policy.patchedDependencies;

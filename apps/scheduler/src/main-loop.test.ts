@@ -1284,43 +1284,41 @@ for (const [duration, expected] of [
   ["2m", 120],
   ["1500ms", 2],
 ] as const) {
-  it.effect(
-    `P6.2 signs the actual Job upload URL with TTL ${duration ?? "Function deadline"}`,
-    () =>
-      database(
-        Effect.gen(function* () {
-          const calls: Array<[string, number]> = [];
-          const signed = `https://krun-test.invalid/result?signature=${randomBytes(16).toString("hex")}`;
-          const objectStore = ObjectStore.of({
-            presignPut: (runId, ttl) =>
-              Effect.sync(() => {
-                calls.push([runId, ttl]);
-                return signed;
-              }),
-            presignGet: () => Effect.die("unexpected GET"),
-            exists: () => Effect.die("unexpected HEAD during Job creation"),
-            ref: (runId) => `s3://krun-test-results/runs/${runId}/result.json`,
-          });
-          const f = yield* fixture({
-            objectStore,
-            presignTtl: duration,
-            entries: [entry("echo", { activeDeadlineSeconds: 321 })],
-          });
-          yield* f.seed(1);
-          yield* f.loop.iterate;
-          expect(calls).toEqual([[id(1), expected]]);
-          const env = f.jobs.get(`krun-${id(1)}`)?.spec?.template.spec?.containers[0]?.env ?? [];
-          expect(env.filter((value) => value.name === "KRUN_RESULT_UPLOAD_URL").length).toBe(1);
-          expect(
-            env.find((value) => value.name === "KRUN_RESULT_UPLOAD_URL")?.value === signed,
-          ).toBe(true);
-          expect((yield* f.store.getRun(id(1))).state).toBe("scheduled");
-        }),
-      ),
+  it.effect(`signs the actual Job upload URL with TTL ${duration ?? "Function deadline"}`, () =>
+    database(
+      Effect.gen(function* () {
+        const calls: Array<[string, number]> = [];
+        const signed = `https://krun-test.invalid/result?signature=${randomBytes(16).toString("hex")}`;
+        const objectStore = ObjectStore.of({
+          presignPut: (runId, ttl) =>
+            Effect.sync(() => {
+              calls.push([runId, ttl]);
+              return signed;
+            }),
+          presignGet: () => Effect.die("unexpected GET"),
+          exists: () => Effect.die("unexpected HEAD during Job creation"),
+          ref: (runId) => `s3://krun-test-results/runs/${runId}/result.json`,
+        });
+        const f = yield* fixture({
+          objectStore,
+          presignTtl: duration,
+          entries: [entry("echo", { activeDeadlineSeconds: 321 })],
+        });
+        yield* f.seed(1);
+        yield* f.loop.iterate;
+        expect(calls).toEqual([[id(1), expected]]);
+        const env = f.jobs.get(`krun-${id(1)}`)?.spec?.template.spec?.containers[0]?.env ?? [];
+        expect(env.filter((value) => value.name === "KRUN_RESULT_UPLOAD_URL").length).toBe(1);
+        expect(env.find((value) => value.name === "KRUN_RESULT_UPLOAD_URL")?.value === signed).toBe(
+          true,
+        );
+        expect((yield* f.store.getRun(id(1))).state).toBe("scheduled");
+      }),
+    ),
   );
 }
 it.effect(
-  "P6.2 disabled storage omits upload env and signing failure releases the claim before any resources",
+  "disabled storage omits upload env and signing failure releases the claim before any resources",
   () =>
     database(
       Effect.gen(function* () {
@@ -1353,7 +1351,7 @@ it.effect(
 );
 
 it.effect(
-  "P6.2 repair: a presign failure releases only its claim and does not skip healthy scheduling, cancellation or loss checks",
+  "a presign failure releases only its claim and does not skip healthy scheduling, cancellation or loss checks",
   () =>
     Effect.gen(function* () {
       let lost = 0;

@@ -1353,7 +1353,7 @@
     }
   },
   "info": {
-    "description": "Normative docs/API.md contract. This artifact does not imply that later PLAN method/listener tasks are implemented.",
+    "description": "Public API reference; see docs/API.md for resource conventions and examples.",
     "title": "krun public API",
     "version": "v1"
   },

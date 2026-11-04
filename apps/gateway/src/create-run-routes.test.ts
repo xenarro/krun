@@ -128,7 +128,7 @@ const createFixture = (
     const app = yield* makePublicApp({
       routes: async (scope) => {
         await scope.register(routes);
-        // Explicit test-owned readback, not the future P3.4 public GetRun handler.
+        // Read back through the test fixture independently of the public GetRun handler.
         scope.get<{ Params: { id: string } }>(
           "/krun-test/persisted/:id",
           { config: { krun: { scope: "runs:write" } } },
@@ -541,7 +541,7 @@ it.live(
                   Wait.forLogMessage(/database system is ready to accept connections/, 2),
                 )
                 .start(),
-            catch: () => new Error("Disposable P3.3 PostgreSQL fixture failed to start"),
+            catch: () => new Error("Disposable PostgreSQL fixture failed to start"),
           }),
           (c) => Effect.promise(() => c.stop()),
         );

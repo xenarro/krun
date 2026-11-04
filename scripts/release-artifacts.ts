@@ -80,7 +80,7 @@ export const prepareNodeArtifacts = async (root: string, output: string) => {
     delete dependencies[name];
   }
   // These are the same frozen, patched Ajv bytes as the application, not a
-  // fresh registry resolution that could lose D48's prototype-key validation.
+  // fresh registry resolution that could lose the patched prototype-key validation.
   delete dependencies.ajv;
   delete dependencies["ajv-formats"];
   const rewrite = async (directory: string): Promise<void> => {

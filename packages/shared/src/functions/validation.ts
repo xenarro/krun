@@ -40,7 +40,7 @@ const ceilingsSchema = z.strictObject({
 });
 
 // Ajv2020's standard schema locations, plus its supported legacy dependencies/items.
-// Map keys and annotations/instance data are not schema keywords (SPEC D51).
+// Map keys and annotations/instance data are not schema keywords.
 const schemaMaps = new Set([
   "$defs",
   "definitions",

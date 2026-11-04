@@ -124,7 +124,7 @@ export type RunSummary = Omit<RunResource, "input" | "result" | "logTail" | "err
   readonly error?: Omit<NonNullable<RunResource["error"]>, "details">;
 };
 
-// The parser/SQL implementation belongs to P1.6. Terms compose with AND and
+// Filter terms compose with AND and
 // carry the exact supported operators; scoping is separate from user filters.
 export interface RunFilter {
   readonly function_name?: string;

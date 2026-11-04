@@ -6,7 +6,7 @@ import { ApiError } from "./errors.js";
 import { visibleRun } from "./plugins.js";
 import { publicContracts, publicSchemas } from "./public-contracts.js";
 
-// P6.1 supplies the concrete scoped ObjectStore. Absence is configuration,
+// The runtime supplies the scoped ObjectStore. Absence is configuration,
 // not a fake implementation; inline results need no object-store dependency.
 export interface RunResultObjectStore {
   readonly presignGet: (ref: string, ttlSeconds: 300) => Effect.Effect<string, unknown>;

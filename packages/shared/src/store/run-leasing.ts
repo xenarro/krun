@@ -31,7 +31,7 @@ type Methods = Pick<
   | "listByState"
 >;
 
-// D45: compose real declared methods, never fill later Store tasks with stubs.
+// Compose only the concrete leasing operations.
 export const makeRunLeasing = Effect.map(
   Database,
   ({ db, dialect }): Methods => ({

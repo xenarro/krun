@@ -1353,7 +1353,7 @@
     }
   },
   "info": {
-    "description": "Normative docs/INTERNAL-API.md; per-run token, isolated internal listener.",
+    "description": "Function-container API; per-run token, isolated internal listener.",
     "title": "krun internal API",
     "version": "v1"
   },

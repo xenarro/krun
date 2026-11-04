@@ -14,7 +14,7 @@ import type {
   State,
 } from "./model.js";
 
-// SPEC section 6 under STACK's Effect translation: Promise -> Effect,
+// The Store contract uses Effect operations rather than promises,
 // Date -> DateTime.Utc, abortable AsyncIterable -> scoped Stream. No Store
 // layer or database operations are implemented by this contract declaration.
 export interface StoreShape {

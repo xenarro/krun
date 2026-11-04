@@ -56,7 +56,7 @@ const envelope = z.object({
   }),
 });
 
-/** D86: makeInformer's public ListWatch implementation, with an owned native
+/** makeInformer's public ListWatch implementation, with an owned native
  * transport. No private fields, global Watch patches, raw Status logging, or
  * initial-sync inference from the pre-LIST connect callback.
  */
@@ -75,7 +75,7 @@ export const makeJobPodSource = (namespace: string) =>
       );
       return promise;
     };
-    // D90: one latest unacknowledged ingress generation per run, not per event.
+    // one latest unacknowledged ingress generation per run, not per event.
     const pendingJobs = new Map<string, number>();
     let jobObservation = 0;
     const jobEvents = yield* Queue.unbounded<InformerEvent>();

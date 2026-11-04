@@ -7,14 +7,14 @@ import { expect, it } from "vitest";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 
-it("root lint ignores nested evidence configurations without ignoring product defects", () => {
+it("root lint ignores nested cache configurations without ignoring product defects", () => {
   const directory = mkdtempSync(join(tmpdir(), "krun-lint-scope-"));
   try {
     for (const file of ["package.json", "biome.json", "tsconfig.json", "tsconfig.base.json"]) {
       writeFileSync(join(directory, file), readFileSync(join(root, file)));
     }
     symlinkSync(join(root, "node_modules"), join(directory, "node_modules"), "dir");
-    const nested = join(directory, ".agent-state/krun/evidence/review/snapshot");
+    const nested = join(directory, ".cache/fixtures/snapshot");
     mkdirSync(nested, { recursive: true });
     writeFileSync(join(nested, "biome.json"), '{"root": true}\n');
     const source = join(directory, "test/scaffold");

@@ -40,9 +40,9 @@ config:
   maxRunning: 100
   # -- Maximum queued runs before submission is rejected.
   maxQueued: 1000
-  # -- Default maximum input body size in bytes; runtime validation enforces the SPEC hard cap.
+  # -- Default maximum input body size in bytes; runtime validation enforces the 1 MiB hard cap.
   maxInputBytes: 262144
-  # -- Default maximum inline result body size in bytes; runtime validation enforces the SPEC hard cap.
+  # -- Default maximum inline result body size in bytes; runtime validation enforces the 1 MiB hard cap.
   maxResultBytes: 262144
   # -- Maximum synchronous CreateRun/WaitRun wait duration, expressed as a runtime duration.
   maxWait: 60s
@@ -178,7 +178,7 @@ metrics:
     # -- Additional PodMonitor labels for Prometheus selection; fixed chart identity labels take precedence on collision.
     labels: {}
   prometheusRule:
-    # -- Render the seven SPEC alert rules as a PrometheusRule; requires operator-installed Prometheus Operator CRDs and Prometheus rule selection.
+    # -- Render the seven documented alert rules as a PrometheusRule; requires operator-installed Prometheus Operator CRDs and Prometheus rule selection.
     enabled: false
     # -- Additional PrometheusRule labels for Prometheus selection; fixed chart identity labels take precedence on collision.
     labels: {}

@@ -171,42 +171,40 @@ const expectWriterBusy = (competitor: DatabaseSync) => {
   });
 };
 
-it.effect(
-  "P1.9 reserves the writer before any transaction-body SQL while WAL readers proceed",
-  () =>
-    Effect.gen(function* () {
-      const { db } = yield* Database;
-      yield* Effect.promise(async () => {
-        await sql`create table probe (value text)`.execute(db);
-        await sql`insert into probe values (${"committed"})`.execute(db);
-        const competitor = new DatabaseSync(databasePath);
-        try {
-          competitor.exec("pragma busy_timeout = 0");
-          expect(competitor.prepare("pragma journal_mode").get()).toEqual({ journal_mode: "wal" });
-          await db.transaction().execute(async (transaction) => {
-            expectWriterBusy(competitor);
-            expect(competitor.prepare("select value from probe").all()).toEqual([
-              { value: "committed" },
-            ]);
-            await sql`insert into probe values (${"new"})`.execute(transaction);
-            expect(competitor.prepare("select value from probe").all()).toEqual([
-              { value: "committed" },
-            ]);
-          });
-          competitor.exec("begin immediate");
-          competitor.exec("rollback");
-          expect(competitor.prepare("select value from probe order by value").all()).toEqual([
+it.effect("reserves the writer before any transaction-body SQL while WAL readers proceed", () =>
+  Effect.gen(function* () {
+    const { db } = yield* Database;
+    yield* Effect.promise(async () => {
+      await sql`create table probe (value text)`.execute(db);
+      await sql`insert into probe values (${"committed"})`.execute(db);
+      const competitor = new DatabaseSync(databasePath);
+      try {
+        competitor.exec("pragma busy_timeout = 0");
+        expect(competitor.prepare("pragma journal_mode").get()).toEqual({ journal_mode: "wal" });
+        await db.transaction().execute(async (transaction) => {
+          expectWriterBusy(competitor);
+          expect(competitor.prepare("select value from probe").all()).toEqual([
             { value: "committed" },
-            { value: "new" },
           ]);
-        } finally {
-          competitor.close();
-        }
-      });
-    }).pipe(Effect.provide(DatabaseSqlite(databasePath))),
+          await sql`insert into probe values (${"new"})`.execute(transaction);
+          expect(competitor.prepare("select value from probe").all()).toEqual([
+            { value: "committed" },
+          ]);
+        });
+        competitor.exec("begin immediate");
+        competitor.exec("rollback");
+        expect(competitor.prepare("select value from probe order by value").all()).toEqual([
+          { value: "committed" },
+          { value: "new" },
+        ]);
+      } finally {
+        competitor.close();
+      }
+    });
+  }).pipe(Effect.provide(DatabaseSqlite(databasePath))),
 );
 
-it.effect("P1.9 rollback releases the native writer lock and discards uncommitted rows", () =>
+it.effect("rollback releases the native writer lock and discards uncommitted rows", () =>
   Effect.gen(function* () {
     const { db } = yield* Database;
     yield* Effect.promise(async () => {
@@ -219,9 +217,9 @@ it.effect("P1.9 rollback releases the native writer lock and discards uncommitte
             expectWriterBusy(competitor);
             await sql`insert into probe values (${"uncommitted"})`.execute(transaction);
             expect(competitor.prepare("select * from probe").all()).toEqual([]);
-            throw new Error("P1.9 rollback sentinel");
+            throw new Error("rollback sentinel");
           }),
-        ).rejects.toThrow("P1.9 rollback sentinel");
+        ).rejects.toThrow("rollback sentinel");
         competitor.exec("begin immediate");
         competitor.exec("insert into probe values ('native writer')");
         competitor.exec("commit");
@@ -235,7 +233,7 @@ it.effect("P1.9 rollback releases the native writer lock and discards uncommitte
   }).pipe(Effect.provide(DatabaseSqlite(databasePath))),
 );
 
-it.effect("P1.9 concurrent borrowers reuse one serialized physical connection", () =>
+it.effect("concurrent borrowers reuse one serialized physical connection", () =>
   Effect.gen(function* () {
     const { db } = yield* Database;
     yield* Effect.promise(async () => {
@@ -265,7 +263,7 @@ it.effect("P1.9 concurrent borrowers reuse one serialized physical connection", 
   }).pipe(Effect.provide(DatabaseSqlite(databasePath))),
 );
 
-it.effect("P1.9 reapplies connection-local pragmas when the file is reopened", () =>
+it.effect("reapplies connection-local pragmas when the file is reopened", () =>
   Effect.gen(function* () {
     yield* Effect.gen(function* () {
       const { db } = yield* Database;

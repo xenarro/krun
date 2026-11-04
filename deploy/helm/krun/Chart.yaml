@@ -1,6 +1,6 @@
 apiVersion: v2
 name: krun
-description: Hardened common chart foundation; mode lifecycle and security integration are developed in Phase 7.
+description: Run HTTP-triggered Kubernetes Jobs with Postgres or embedded SQLite storage.
 type: application
 version: 0.0.0
 appVersion: "0.0.0"
