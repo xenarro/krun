@@ -5,6 +5,8 @@
 !pnpm-workspace.yaml
 !.node-version
 !tsconfig.base.json
+!scripts/
+!scripts/build-sdk-cjs.ts
 !patches/
 !patches/**
 !bin/

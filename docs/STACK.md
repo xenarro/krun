@@ -241,6 +241,14 @@ its built `dist` subpaths. `pnpm -r build` orders shared before its consumers;
 consumer no-emit checks (SPEC D50). Keep each package's existing source/output
 root, native ESM and full type/lint checks; do not copy schemas or bundle shared.
 
+Release packaging (SPEC D126) uses the approved TypeScript compiler to derive
+ESM and CommonJS SDK artifacts/declarations from the same dependency-free source.
+Only that CommonJS emit sets `verbatimModuleSyntax: false`; source and ordinary
+workspace builds remain strict native ESM. Explicit import/require conditions and
+legacy main/types must pass strict `attw --pack` with no ignored rules. The CLI
+release artifact vendors its existing private shared implementation and retains
+its approved dependencies; `@krun/shared` is not an extra published package.
+
 Python SDK (`sdk/python`): Python 3.11 or newer, standard library only at
 runtime; `uv`, `ruff`, `pytest`, `hypothesis` (property tests, the
 counterpart of fast-check), `mypy --strict` for development. Pure-Python

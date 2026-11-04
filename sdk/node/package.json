@@ -2,6 +2,11 @@
   "name": "@krun/sdk",
   "version": "0.0.0",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xenarro/krun.git",
+    "directory": "sdk/node"
+  },
   "type": "module",
   "files": [
     "dist"
@@ -9,14 +14,22 @@
   "engines": {
     "node": ">=22"
   },
+  "main": "./dist/index.cjs",
+  "types": "./dist/index.d.cts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node ../../scripts/build-sdk-cjs.ts",
     "test": "vitest run",
     "lint": "biome check . && tsc --noEmit -p tsconfig.json"
   },
