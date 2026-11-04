@@ -54,9 +54,11 @@ node scripts/release-dry-run.ts 97
 Version 0.1.0 is prepared, not released. `release-ownership.json` remains
 unverified and the publication gate fails closed. npm/PyPI/GHCR control and exact
 trusted-publisher bindings require owner evidence; public package existence,
-local tests and Git push access do not prove them. Hosted release-PR acceptance,
-owner-created tags, post-publication installs/signatures and the remaining
-Phase 9 operational gate are not claimed by this preparation.
+local tests and Git push access do not prove them. The
+[release-PR rehearsal](https://github.com/xenarro/krun/actions/runs/41788170398) passed for source
+`044a6280bf22ad55cdc422135d689069c064e852`, verifying all six distribution artifacts
+and clean installs without publication. Owner-created tags, post-publication
+installs/signatures and the remaining Phase 9 operational gate are not claimed.
 
 ## Quick start: both database modes on disposable kind
 
