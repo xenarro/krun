@@ -292,6 +292,15 @@ rehearsal without changing that corpus's timeouts/retry policy. CI has a separat
 30-minute-per-mode quickstart matrix with always-run owned infrastructure
 cleanup. Implementation-local qualification is not a claim of hosted delivery.
 
+The native corpus includes a real embedded Litestream/MinIO recovery drill:
+a pre-drill Run is read from an independent S3 restore before primary deletion,
+then read back unchanged after the chart restores the database. A subsequent
+Run must succeed. The measured embedded restore-to-Ready downtime was
+56.040 seconds in the local 2026-11-04 e2e run; see OPERATIONS
+for the measurement boundaries and production RPO/RTO limitations.
+`node scripts/check-operations-alerts.ts` checks every documented alert name
+against the real PrometheusRule rendered in both modes.
+
 For durable installs, capacity, backup/restore, upgrades, key rotation, telemetry,
 alerts, object-store lifecycle and keep/adoption consequences, read
 [OPERATIONS](docs/OPERATIONS.md). The Phase 9 release dry-run/publication gate

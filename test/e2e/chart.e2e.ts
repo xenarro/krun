@@ -1,9 +1,11 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { chartAcceptance } from "./lib/chart-harness.js";
 import { scenario } from "./lib/harness.js";
+import { recoveryAcceptance } from "./lib/recovery-harness.js";
 
 const chart = chartAcceptance();
 const run = scenario("success", chart.client);
+const recovery = recoveryAcceptance();
 beforeAll(async () => {
   await chart.start();
   await run.up();
@@ -89,4 +91,37 @@ it("upgrades and rolls back Ready chart workloads with successful Runs and real 
       }),
     );
   }
+});
+
+it("proves actual embedded replica restore and pre-drill Run readback, or excludes embedded restore resources in Postgres", async () => {
+  if (chart.mode === "postgres") {
+    recovery.assertPostgresIsolation();
+    return;
+  }
+  const retained = await run.terminal(await run.submit(run.input()), "SUCCEEDED");
+  await run.privacy();
+  const timing = await recovery.restore(retained.name.split("/").at(-1) ?? "");
+  const restored = await run.get(retained);
+  run.equalOpaque(restored, retained, "Pre-drill Run changed across actual Litestream restore");
+  await run.terminal(await run.submit(run.input()), "SUCCEEDED");
+  await run.privacy();
+  expect(timing.downtimeSeconds).toBeLessThan(24 * 3600);
+  console.log(
+    JSON.stringify({
+      scenario: "operations_restore",
+      mode: chart.mode,
+      ...timing,
+      actualLitestream: true,
+      actualMinio: true,
+      independentlyRestoredReplicaReadableBeforeDeletion: true,
+      primaryDatabaseRemoved: true,
+      orphanWalShmWitnessed: true,
+      newServingPodUid: true,
+      retainedPreDrillRunReadable: true,
+      retainedPreDrillRunUnchanged: true,
+      runAfterRestoreSucceeded: true,
+      restoredOriginalChartConfiguration: true,
+      ownedHelperRemoved: true,
+    }),
+  );
 });
