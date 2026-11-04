@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := check
 IMAGE ?= krun:local
 
-.PHONY: build test lint check generate docker kind-up kind-down e2e helm-lint bench-build bench
+.PHONY: build test lint check generate docker kind-up kind-down e2e helm-lint bench-build bench e2e-quickstart
 
 build:
 	pnpm -r build
@@ -40,6 +40,13 @@ e2e: kind-up
 		node test/e2e/cluster.ts verify; \
 		pnpm exec vitest run --config test/e2e/vitest.config.ts; \
 		node test/e2e/cluster.ts uninstall; \
+	done
+
+# Each mode starts and removes its own fresh disposable cluster. Keep the
+# existing Vitest corpus and its per-test allowances unchanged.
+e2e-quickstart: build
+	@set -eu; for mode in embedded postgres; do \
+		timeout 1800s node test/e2e/quickstart.ts "$$mode"; \
 	done
 
 bench-build: build
