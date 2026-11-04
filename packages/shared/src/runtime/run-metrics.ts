@@ -1,5 +1,5 @@
 import { Clock, Context, DateTime, Effect, Metric } from "effect";
-import type { State, StoreShape } from "../store/index.js";
+import { isTerminal, type State, type StoreShape } from "../store/index.js";
 import { type RunChange, RunChangeObserver } from "../store/observations.js";
 
 const transitions = Metric.counter("krun_runs_transitions_total", { incremental: true });
@@ -25,11 +25,7 @@ const observe = (run: RunChange) =>
         1,
       );
     const exitedAt = yield* TerminalExitAt;
-    if (
-      exitedAt !== undefined &&
-      run.finished_at !== null &&
-      ["succeeded", "failed", "cancelled"].includes(run.state)
-    )
+    if (exitedAt !== undefined && run.finished_at !== null && isTerminal(run.state))
       yield* Metric.update(
         Metric.withAttributes(terminalDetect, labels),
         Math.max(0, ((yield* Clock.currentTimeMillis) - DateTime.toEpochMillis(exitedAt)) / 1000),
@@ -45,11 +41,7 @@ const observe = (run: RunChange) =>
         Metric.withAttributes(coldStart, labels),
         seconds(run.scheduled_at, run.started_at),
       );
-    if (
-      run.finished_at !== null &&
-      run.started_at !== null &&
-      ["succeeded", "failed", "cancelled"].includes(run.state)
-    )
+    if (run.finished_at !== null && run.started_at !== null && isTerminal(run.state))
       yield* Metric.update(
         Metric.withAttributes(duration, { ...labels, state: run.state }),
         seconds(run.started_at, run.finished_at),

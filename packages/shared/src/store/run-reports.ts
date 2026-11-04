@@ -6,6 +6,7 @@ import { InternalStoreSignal, internalStoreCall } from "../runtime/internal-stor
 import { DatabaseError } from "./errors.js";
 import type { StoreShape } from "./index.js";
 import { decodeRun } from "./rows.js";
+import { traced } from "./traced.js";
 
 type Methods = Pick<StoreShape, "setRuntimeStatus" | "setResult" | "setError" | "setJobStatus">;
 type ReportMethod = Exclude<keyof Methods, "setJobStatus">;
@@ -27,24 +28,6 @@ const adapter = (operation: keyof Methods, execute: () => Promise<boolean>) =>
     yield* Effect.annotateCurrentSpan("db.response.returned_rows", changed ? 1 : 0);
     return changed;
   });
-const traced = (
-  operation: keyof Methods,
-  id: string,
-  body: Effect.Effect<boolean, DatabaseError>,
-) =>
-  body.pipe(
-    // Driver promises cannot be cancelled safely. Settle commit/rollback and
-    // connection release before interruption can close the Database scope.
-    Effect.uninterruptible,
-    Effect.withSpan(`store.${operation}`, {
-      kind: "client",
-      attributes: {
-        "db.operation.name": operation,
-        "db.response.returned_rows": 0,
-        "krun.run_id": id,
-      },
-    }),
-  );
 
 // D45: only real declared methods; full Store assembly follows the final slice.
 export const makeRunReports = Effect.map(Database, ({ db, dialect }): Methods => {

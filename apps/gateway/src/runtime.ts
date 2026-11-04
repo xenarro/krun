@@ -1,5 +1,5 @@
 import { KeysLive } from "@krun/shared/dist/auth/keys.js";
-import { ConfigInvalid, ConfigLive, KrunConfig } from "@krun/shared/dist/config/index.js";
+import { ConfigLive, KrunConfig } from "@krun/shared/dist/config/index.js";
 import { FunctionsLive } from "@krun/shared/dist/functions/cache.js";
 import { AdminServerLive } from "@krun/shared/dist/health/index.js";
 import { Readiness, ReadinessLive } from "@krun/shared/dist/health/readiness.js";
@@ -53,8 +53,6 @@ const gateway = Layer.unwrap(
     if (configuration.role !== "gateway")
       return yield* new GatewayStartupError({ operation: "role" });
     const config = configuration.config;
-    if (config.KRUN_DB_MODE === "postgres" && config.KRUN_DB_DSN === undefined)
-      return yield* new ConfigInvalid({ variable: "KRUN_DB_DSN" });
     const database =
       config.KRUN_DB_MODE === "embedded"
         ? DatabaseSqlite(config.KRUN_DB_PATH)

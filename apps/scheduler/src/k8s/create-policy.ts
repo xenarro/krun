@@ -162,9 +162,5 @@ export const makeCreationPolicy = Effect.gen(function* () {
         const now = yield* Clock.currentTimeMillis;
         return ((yield* Ref.get(states)).get(functionName)?.until ?? 0) > now;
       }),
-    pause: (decision: CreationDecision) =>
-      decision.kind === "transient" && decision.pauseSeconds !== undefined
-        ? Effect.sleep(decision.pauseSeconds * 1000)
-        : Effect.void,
   };
 });

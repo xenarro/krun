@@ -1,7 +1,7 @@
 import type { KubeApiError } from "@krun/shared/dist/k8s/errors.js";
 import { leaderRunStore, TerminalExitAt } from "@krun/shared/dist/runtime/run-metrics.js";
 import type { DatabaseError, JobStatus, Run } from "@krun/shared/dist/store/index.js";
-import { Store } from "@krun/shared/dist/store/index.js";
+import { isTerminal, Store } from "@krun/shared/dist/store/index.js";
 import type { V1Job, V1Pod } from "@kubernetes/client-node";
 import { Clock, Data, DateTime, Effect, Option, Schedule, Semaphore, Stream } from "effect";
 import { type InformerEvent, JobPodSource, runIdOf } from "./k8s/informers.js";
@@ -19,8 +19,6 @@ interface HeartbeatPolicy {
   readonly before: DateTime.Utc;
   readonly timeout: string;
 }
-const terminal = (run: Run) =>
-  run.state === "succeeded" || run.state === "failed" || run.state === "cancelled";
 const container = (pod: V1Pod | undefined) =>
   pod?.status?.containerStatuses?.find((status) => status.name === "function");
 const trueCondition = (job: V1Job | undefined, type: string) =>
@@ -174,6 +172,8 @@ export const makeJobController = (options: {
       hasJob(id) || source.hasPendingJob(id) || knownDeleted.has(id) || heartbeatDebt.has(id);
     const podFor = (id: string) =>
       source.pods.list(options.namespace).find((pod) => runIdOf(pod) === id);
+    const findRun = (id: string) =>
+      store.getRun(id).pipe(Effect.catchTag("NotFoundError", () => Effect.succeed(undefined)));
     const target = (id: string, name: string, run?: Pick<Run, "function_name">) => ({
       namespace: options.namespace,
       name,
@@ -249,9 +249,7 @@ export const makeJobController = (options: {
         if (heartbeatDebt.has(id)) return;
         const retained = knownDeleted.get(id);
         const job = retained?.job ?? jobFor(id) ?? event?.deletedJob;
-        const run = yield* store
-          .getRun(id)
-          .pipe(Effect.catchTag("NotFoundError", () => Effect.succeed(undefined)));
+        const run = yield* findRun(id);
         if (run === undefined) {
           tails.delete(id);
           exitTimes.delete(id);
@@ -260,7 +258,7 @@ export const makeJobController = (options: {
           return;
         }
         yield* Effect.annotateCurrentSpan("function", run.function_name);
-        if (terminal(run)) {
+        if (isTerminal(run.state)) {
           firstAbsent.delete(id);
           yield* cleanup(id, run.job_name ?? job?.metadata?.name ?? `krun-${id}`, run);
           return;
@@ -320,10 +318,8 @@ export const makeJobController = (options: {
           yield* cleanup(id, run.job_name ?? job.metadata?.name ?? `krun-${id}`, run);
           return;
         }
-        const winner = yield* store
-          .getRun(id)
-          .pipe(Effect.catchTag("NotFoundError", () => Effect.succeed(undefined)));
-        if (winner !== undefined && terminal(winner))
+        const winner = yield* findRun(id);
+        if (winner !== undefined && isTerminal(winner.state))
           yield* cleanup(id, winner.job_name ?? job.metadata?.name ?? `krun-${id}`, winner);
         else if (winner?.state === "cancelling") {
           knownDeleted.delete(id);
@@ -360,9 +356,7 @@ export const makeJobController = (options: {
         const debt = heartbeatDebt.get(id);
         if (closed || debt === undefined) return;
         if (!debt.committed) {
-          const row = yield* store
-            .getRun(id)
-            .pipe(Effect.catchTag("NotFoundError", () => Effect.succeed(undefined)));
+          const row = yield* findRun(id);
           if (row?.state === "running") {
             // Settle SQL and publish only in-memory debt in the same mask. No
             // Kubernetes request is made uninterruptible.
@@ -378,9 +372,7 @@ export const makeJobController = (options: {
               return changed;
             }).pipe(Effect.uninterruptible);
             if (!changed) {
-              const winner = yield* store
-                .getRun(id)
-                .pipe(Effect.catchTag("NotFoundError", () => Effect.succeed(undefined)));
+              const winner = yield* findRun(id);
               if (winner?.state === "failed" && winner.failure_reason === "heartbeat_timeout")
                 debt.committed = true;
               else {
@@ -405,9 +397,7 @@ export const makeJobController = (options: {
         if (trueCondition(job, "Complete") || trueCondition(job, "Failed")) return undefined;
         const pod = podFor(id);
         if (pod?.status?.phase !== "Running") return undefined;
-        const row = yield* store
-          .getRun(id)
-          .pipe(Effect.catchTag("NotFoundError", () => Effect.succeed(undefined)));
+        const row = yield* findRun(id);
         if (closed || row?.state !== "running" || row.started_at === null) return undefined;
         // Refresh Function policy after the Store I/O, inside the same per-run
         // gate and again after log capture. Old batch cutoffs never authorize a
@@ -542,9 +532,7 @@ export const makeJobController = (options: {
           firstAbsent.delete(id);
           return;
         }
-        const row = yield* store
-          .getRun(id)
-          .pipe(Effect.catchTag("NotFoundError", () => Effect.succeed(undefined)));
+        const row = yield* findRun(id);
         if (closed) return;
         if (row === undefined || (row.state !== "scheduled" && row.state !== "running")) {
           firstAbsent.delete(id);
@@ -589,9 +577,7 @@ export const makeJobController = (options: {
           return changed;
         }).pipe(Effect.uninterruptible);
         if (changed) return yield* deleteLostSecret(debt, attempted);
-        const winner = yield* store
-          .getRun(id)
-          .pipe(Effect.catchTag("NotFoundError", () => Effect.succeed(undefined)));
+        const winner = yield* findRun(id);
         if (winner === undefined || (winner.state !== "scheduled" && winner.state !== "running"))
           firstAbsent.delete(id);
         if (winner?.state === "failed" && winner.failure_reason === "job_lost") {

@@ -109,4 +109,4 @@ export type {
   RuntimeStatus,
   State,
 } from "./model.js";
-export { failureReasons, states } from "./model.js";
+export { failureReasons, isTerminal, states } from "./model.js";

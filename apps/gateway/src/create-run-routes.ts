@@ -2,7 +2,7 @@ import { Transform } from "node:stream";
 import { durationToMilliseconds } from "@krun/shared/dist/config/duration.js";
 import type { GatewayConfig } from "@krun/shared/dist/config/index.js";
 import type { FunctionEntry } from "@krun/shared/dist/functions/cache.js";
-import { NotFoundError, type Run, Store, toRun } from "@krun/shared/dist/store/index.js";
+import { isTerminal, type Run, Store, toRun } from "@krun/shared/dist/store/index.js";
 import { requestHash } from "@krun/shared/dist/store/request-hash.js";
 import { newRunId } from "@krun/shared/dist/store/run-id.js";
 import { DnsLookup, makeWebhookPolicy, resolveAndCheck } from "@krun/shared/dist/webhook/index.js";
@@ -22,6 +22,7 @@ import {
 import type { FastifyPluginAsync, FastifyRequest } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { ApiError, errorEnvelope } from "./errors.js";
+import { visibleRun } from "./plugins.js";
 import { publicContracts, publicSchemas } from "./public-contracts.js";
 import { GatewayShutdown } from "./shutdown.js";
 import { watchRun } from "./watch-run.js";
@@ -38,8 +39,6 @@ type Config = Pick<
 const rejections = Metric.counter("krun_admission_rejections_total", { incremental: true });
 const reject = (reason: "rate_limit" | "max_queued" | "input_size" | "schema") =>
   Metric.update(Metric.withAttributes(rejections, { reason }), 1);
-const terminal = (state: string) =>
-  state === "succeeded" || state === "failed" || state === "cancelled";
 
 // Acquire in the same owning scope as Store/Keys/Functions and the eventual app.
 // The plugin imports no ambient configuration and creates no listener or process.
@@ -95,7 +94,7 @@ export const createRunRoutes = (input: Config) =>
     const wait = <E>(queue: Queue.Queue<void>, read: Effect.Effect<Run, E>, millis: number) =>
       Effect.gen(function* () {
         const watch = Effect.gen(function* () {
-          while (!terminal((yield* read).state))
+          while (!isTerminal((yield* read).state))
             yield* Effect.raceFirst(Queue.take(queue), Effect.sleep("1 second"));
         });
         yield* Effect.raceFirst(
@@ -332,26 +331,6 @@ export const createRunRoutes = (input: Config) =>
             ),
           ),
       });
-      const readRun = (request: FastifyRequest<{ Params: { function: string; run: string } }>) =>
-        Effect.gen(function* () {
-          const key = request.principal;
-          if (!key) return yield* new ApiError({ reason: "INTERNAL" });
-          const row = yield* store
-            .getRun(request.params.run)
-            .pipe(
-              Effect.mapError((error) =>
-                error instanceof NotFoundError ? new ApiError({ reason: "RUN_NOT_FOUND" }) : error,
-              ),
-            );
-          if (
-            (request.params.function !== "-" && request.params.function !== row.function_name) ||
-            !key.allowsFunction(row.function_name) ||
-            (!key.hasScope("admin") && row.created_by !== key.name)
-          )
-            return yield* new ApiError({ reason: "RUN_NOT_FOUND" });
-          Reflect.set(request, "audit", { run_id: row.id, function: row.function_name });
-          return row;
-        });
       // WaitRun shares the admission plugin's one Store consumer, not a second
       // LISTEN connection or a competing notification queue. History visibility
       // comes from the stored row, never current Function readiness.
@@ -374,7 +353,7 @@ export const createRunRoutes = (input: Config) =>
                 if (Option.isSome(shutdown) && !shutdown.value.track(reply.raw))
                   return yield* new ApiError({ reason: "NOT_READY" });
                 const queue = yield* register(request.params.run);
-                const read = readRun(request);
+                const read = visibleRun(store, request);
                 return publicSchemas.Run.parse(
                   toRun(yield* wait(queue, read, Math.min(requested, config.maxWait))),
                 );
@@ -397,7 +376,7 @@ export const createRunRoutes = (input: Config) =>
                   reply,
                   request.id,
                   queue,
-                  readRun(request),
+                  visibleRun(store, request),
                   Option.isSome(shutdown) ? shutdown.value.closing : Effect.never,
                 );
               }),
